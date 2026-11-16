@@ -87,8 +87,24 @@ public class IdentityAndConfigurationTests
     [Fact]
     public void ProductionNeverAcceptsDevelopmentIdentitiesOrWildcardOrigins()
     {
-        Assert.Contains("Development identities", Assert.Throws<InvalidOperationException>(() => Dev().Validate(new FakeEnvironment("Production"))).Message);
-        Assert.Contains("No production identity verifier", Assert.Throws<InvalidOperationException>(() => new GatewayOptions().Validate(new FakeEnvironment("Production"))).Message);
+        static GatewayOptions Firebase() => new() { Firebase = new FirebaseOptions { ProjectId = "orbitdrive-prod" }, AllowedWebOrigins = ["https://orbitdrive.example"] };
+        var production = new FakeEnvironment("Production");
+        Assert.Contains("Development identities", Assert.Throws<InvalidOperationException>(() => Dev().Validate(production)).Message);
+        Assert.Contains("No production identity verifier", Assert.Throws<InvalidOperationException>(() => new GatewayOptions().Validate(production)).Message);
+        Firebase().Validate(production);
+        var fakeKeys = Firebase(); fakeKeys.Firebase.KeysUrl = "https://attacker.example/keys";
+        Assert.Contains("Google's signing keys", Assert.Throws<InvalidOperationException>(() => fakeKeys.Validate(production)).Message);
+        var unverified = Firebase(); unverified.Firebase.RequireVerifiedEmail = false;
+        Assert.Throws<InvalidOperationException>(() => unverified.Validate(production));
+        var noOrigins = Firebase(); noOrigins.AllowedWebOrigins = [];
+        Assert.Throws<InvalidOperationException>(() => noOrigins.Validate(production));
+        var httpOrigin = Firebase(); httpOrigin.AllowedWebOrigins = ["http://orbitdrive.example"];
+        Assert.Throws<InvalidOperationException>(() => httpOrigin.Validate(production));
+        var both = Dev(); both.Firebase.ProjectId = "orbitdrive-dev";
+        Assert.Throws<InvalidOperationException>(() => both.Validate(new FakeEnvironment("Development")));
+        var badProject = new GatewayOptions { Firebase = new FirebaseOptions { ProjectId = "Not A Project!" } };
+        Assert.Throws<InvalidOperationException>(() => badProject.Validate(new FakeEnvironment("Development")));
+
         Assert.Throws<InvalidOperationException>(() => new GatewayOptions().Validate(new FakeEnvironment("Development")));
         Assert.Throws<InvalidOperationException>(() => new GatewayOptions { DevIdentity = new DevIdentityOptions { Enabled = true, Secret = "short" } }.Validate(new FakeEnvironment("Development")));
         var wildcard = Dev(); wildcard.AllowedWebOrigins = ["https://*.web.app"];

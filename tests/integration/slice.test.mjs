@@ -575,4 +575,5 @@ test('download capabilities expire', async () => {
 test('production refuses development identities and refuses to start without a real verifier (R57)', async () => {
   await assert.rejects(startGateway({ ASPNETCORE_ENVIRONMENT: 'Production' }), /Development identities cannot be enabled in Production/);
   await assert.rejects(startGateway({ ASPNETCORE_ENVIRONMENT: 'Production', OrbitDrive__DevIdentity__Enabled: 'false' }), /No production identity verifier/);
+  await assert.rejects(startGateway({ ASPNETCORE_ENVIRONMENT: 'Production', OrbitDrive__DevIdentity__Enabled: 'false', OrbitDrive__Firebase__ProjectId: 'orbitdrive-dev', OrbitDrive__Firebase__KeysUrl: 'http://127.0.0.1:1/keys', OrbitDrive__AllowedWebOrigins__0: 'https://orbitdrive.example' }), /Google's signing keys/);
 });

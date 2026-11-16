@@ -8,7 +8,7 @@ slice, IPC, devices, QR suites), web 43965532389, security 43965532437.
 
 Branch policy (owner, 2026-11-17): `main` exists and is the default branch. Work lands on
 `feature/orbitdrive-foundation` first; `main` is fast-forwarded only to commits whose seven workflows are green.
-Firebase is parked by the owner for now: keep the development identity and build everything that does not need it.
+Firebase is back in scope (owner, 2026-11-17): project `orbitdrive-dev` was created for development.
 
 ## Phase status
 
@@ -16,7 +16,7 @@ Firebase is parked by the owner for now: keep the development identity and build
 |---|---|---|
 | W0 | IN_PROGRESS | Done: schema + generated models, drift/serialization tests, CI baseline, threat model, production guards, static/relay boundary. Missing: Firebase emulator config, dependency licence review, start scripts, **real-phone 1 GiB download spike (needs devices)** |
 | D0 | IN_PROGRESS | Done: solution, Core/Agent separation, WPF launch + UI Automation + capture spike on windows-2025, bounded-memory 1 GiB stream, toolchain record. Missing: modern Explorer command spike (needs Windows 11 + package identity), packaging/app-identity route, reconnect-without-duplicates spike |
-| W1 | NOT_STARTED | Parked with Firebase. Development identity stands in |
+| W1 | IN_PROGRESS | Gateway verifies Firebase ID tokens (RS256 against Google's keys, audience/issuer/expiry/subject, verified email required, key rotation); Production accepts only this verifier with Google's keys. Firebase project `orbitdrive-dev` exists with Email/Password on (see `infra/firebase/PROJECTS.md`). Missing: web sign-in/sign-up/reset/verify UI with the Firebase SDK, Auth-emulator browser tests, a live sign-in against `orbitdrive-dev`, token-revocation check (needs service credentials), Google sign-in, MFA decision |
 | D1 | AUTOMATED_VERIFIED (partial) | Owner console (7 pages), tray, close-to-tray, Quit, single instance (console + agent), same-user local channel with closed command set, pause, persisted settings. UI Automation 29/29 on windows-2025. Missing: start-at-sign-in, crash-restart policy, lock/sleep behaviour, dark/high-contrast themes, DPI review, standard-user and second-Windows-user evidence, tray interaction test, **visual review of screenshots (artifact `owner-console-ui`, not viewable from the build sandbox)** |
 | W2 / D2 | IN_PROGRESS | Pairing state machine, PC-side approval UI (account, browser, matching code), revocation of a browser; QR image on the PC (encoder verified against a reference encoder and a real decoder), device list + revoke on the PC, gateway device list / revoke / disconnect-PC APIs with isolation tests. Missing: web Devices page, in-site QR scanner, per-IP rate limits, QR scan with a real phone camera |
 | W3 / D3 | IN_PROGRESS (early) | Outbound control channel, generations, reconnect; no leases/heartbeat expiry, no Firestore, no fault-injection suite |
@@ -29,7 +29,7 @@ web) works end to end in CI. It is a slice through M1–M2, not completion of th
 
 ## Blockers needing the owner
 
-1. **Firebase**: parked by the owner. Needed later for W1 (Auth), W3 (Firestore), W6 (FCM).
+1. **Firebase service-account key** (owner to create and store as a secret) for Firestore (W3), revocation checks and FCM (W6). Auth itself needs none.
 2. **Real Windows 11 machine (standard user)** for the Explorer modern-menu spike (D0/D6), lifecycle and DPI evidence.
 3. **Physical Android / iPhone** for the 1 GiB native-download spike (W0) and all device claims.
 4. **Relay host** (VM/VPS + TLS + DNS) — nothing provisioned; cross-network proof is impossible until one exists.
@@ -49,12 +49,14 @@ web) works end to end in CI. It is a slice through M1–M2, not completion of th
 
 ## Next steps (dependency order)
 
-1. W2 remainder: web Devices page (list/rename/revoke, disconnect PC) on the existing APIs, in-site QR scanner with
-   manual fallback, per-IP rate limits. W1 (Firebase Auth) can start as soon as the owner confirms the project to use.
-2. D1 leftovers: start at sign-in (opt-in), bounded crash restart, themes/high contrast, keyboard pass, tray test.
-3. W3/D3: durable gateway store (file-backed stand-in for Firestore), leases/heartbeats, fault-injection; decide ADR-1.
-4. D4/W4: Windows-style web shell + full Explorer; root volume binding. Then D5/W5 completion, D6/W6.
-5. When Firebase is back in scope: W1 (ID-token verification), Firestore store, FCM.
+1. W1 web side: Firebase SDK sign-in / sign-up with email verification / password reset / sign-out in `apps/web`
+   (`VITE_AUTH_MODE=firebase`), token refresh in `api.ts`, Auth-emulator Playwright tests, then one live sign-in against
+   `orbitdrive-dev`. Record ADR for verifying tokens without the Admin SDK (done in code; see decisions.md ADR-11).
+2. W2 remainder: web Devices page (list/revoke, disconnect PC) on the existing APIs, in-site QR scanner with manual
+   fallback, per-IP rate limits.
+3. D1 leftovers: start at sign-in (opt-in), bounded crash restart, themes/high contrast, keyboard pass, tray test.
+4. W3/D3: durable gateway store (file-backed stand-in for Firestore), leases/heartbeats, fault-injection; decide ADR-1.
+5. D4/W4: Windows-style web shell + full Explorer; root volume binding. Then D5/W5 completion, D6/W6.
 
 ## Continue from here
 

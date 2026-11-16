@@ -26,7 +26,14 @@ builder.Services.AddSingleton<Store>();
 builder.Services.AddSingleton<AgentHub>();
 builder.Services.AddSingleton<StreamRegistry>();
 builder.Services.AddSingleton<DevIdentityVerifier>();
-builder.Services.AddSingleton<IIdentityVerifier>(s => s.GetRequiredService<DevIdentityVerifier>());
+builder.Services.AddHttpClient();
+if (options.DevIdentity.Enabled) builder.Services.AddSingleton<IIdentityVerifier>(s => s.GetRequiredService<DevIdentityVerifier>());
+else
+{
+    builder.Services.AddSingleton<FirebaseIdentityVerifier>();
+    builder.Services.AddSingleton<IIdentityVerifier>(s => s.GetRequiredService<FirebaseIdentityVerifier>());
+    builder.Services.AddHostedService(s => s.GetRequiredService<FirebaseIdentityVerifier>());
+}
 builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy => policy
     .WithOrigins(options.AllowedWebOrigins)
     .WithMethods("GET", "POST", "DELETE", "HEAD")
