@@ -14,11 +14,13 @@ internal static class NativeFile
     private static extern SafeFileHandle CreateFileW(string lpFileName, uint dwDesiredAccess, uint dwShareMode, IntPtr lpSecurityAttributes,
         uint dwCreationDisposition, uint dwFlagsAndAttributes, IntPtr hTemplateFile);
 
-    [StructLayout(LayoutKind.Sequential)]
+    // BY_HANDLE_FILE_INFORMATION: FILETIME is two DWORDs (4-byte aligned). Declaring them as 64-bit fields
+    // would insert padding and shift NumberOfLinks - caught by the Windows CI run of the first slice.
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
     private struct ByHandleFileInformation
     {
         public uint FileAttributes;
-        public long CreationTime, LastAccessTime, LastWriteTime;
+        public uint CreationTimeLow, CreationTimeHigh, LastAccessTimeLow, LastAccessTimeHigh, LastWriteTimeLow, LastWriteTimeHigh;
         public uint VolumeSerialNumber, FileSizeHigh, FileSizeLow, NumberOfLinks, FileIndexHigh, FileIndexLow;
     }
 
