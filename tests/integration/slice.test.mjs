@@ -32,6 +32,14 @@ async function session(browser, ...path) {
   secretsSeen.push(created.body.capability);
   return created.body;
 }
+// The agent holds a share-read handle while it streams. After a transfer ends or is cut, the handle must be
+// released promptly; on Windows an open handle blocks deletion, so this also proves the release (within 10 s).
+async function removeWhenReleased(path) {
+  for (let attempt = 0; ; attempt++) {
+    try { rmSync(path); return; }
+    catch (e) { if (e.code !== 'EBUSY' && e.code !== 'EPERM' || attempt >= 50) throw e; await sleep(200); }
+  }
+}
 const download = (s, headers = {}, method = 'GET') => fetch(gateway.url + s.urlPath, { method, headers });
 
 before(async () => {
@@ -414,7 +422,7 @@ describe('downloads, ranges and revisions (R18-R21, R59)', () => {
     assert.ok(metrics.agentRssGrowthMiB < 96, `agent memory grew ${metrics.agentRssGrowthMiB} MiB`);
     const finished = await agent.next('stream_finished');
     assert.deepEqual([finished.outcome, finished.bytes], ['sent_to_relay', String(LARGE_MIB << 20)]);
-    rmSync(path);
+    await removeWhenReleased(path);
   });
 });
 
@@ -464,7 +472,7 @@ describe('pause, removal, restart and revocation (R06, R14, R51)', () => {
     let recovered = 0;
     for (let i = 0; i < 50 && recovered !== 206; i++) { await sleep(100); const retry = await download(prepared, { range: 'bytes=0-9' }); recovered = retry.status; await retry.arrayBuffer(); }
     assert.equal(recovered, 206, 'slots are released when receivers go away');
-    rmSync(path);
+    await removeWhenReleased(path);
 
     const oversized = await fetch(`${gateway.url}/v1/download-sessions`, { method: 'POST', headers: owner.headers({ 'content-type': 'application/json' }), body: JSON.stringify({ pcId, entryId: 'x'.repeat(100_000) }) });
     assert.equal(oversized.status, 413);
@@ -496,7 +504,7 @@ describe('pause, removal, restart and revocation (R06, R14, R51)', () => {
     assert.equal((await owner.get('/v1/pcs')).status, 403);
     assert.equal((await list(owner)).status, 403);
     assert.notEqual((await agent.next('stream_finished')).outcome, 'sent_to_relay', 'the PC must not report a revoked transfer as sent');
-    rmSync(path);
+    await removeWhenReleased(path);
   });
 
   test('removing a root on the PC ends access to it, including prepared downloads', async () => {

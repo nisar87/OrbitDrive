@@ -90,11 +90,11 @@ try {
     Check ((WaitText 'RootsEmpty' 'Nothing is shared') -ne '') 'nothing is shared by default'
     SetText 'RootName' 'Ghost'; SetText 'RootPath' (Join-Path $work 'no-such-folder'); Click 'AddRootButton'
     [void](WaitText 'RootError' 'Folder not found')
-    Check ((ListItems 'RootsList').Count -eq 0) 'a missing folder is refused with a clear message'
+    Check (@(ListItems 'RootsList').Count -eq 0) 'a missing folder is refused with a clear message'
     Shot 'shared-folders-error'
     SetText 'RootName' 'Holiday Photos'; SetText 'RootPath' $share; Click 'AddRootButton'
-    for ($i = 0; $i -lt 50 -and (ListItems 'RootsList').Count -eq 0; $i++) { Start-Sleep -Milliseconds 200 }
-    $items = ListItems 'RootsList'
+    for ($i = 0; $i -lt 50 -and @(ListItems 'RootsList').Count -eq 0; $i++) { Start-Sleep -Milliseconds 200 }
+    $items = @(ListItems 'RootsList')
     Check ($items.Count -eq 1 -and $items[0] -match 'Holiday Photos' -and $items[0] -match 'read-only') 'the chosen folder is listed as read-only'
     Shot 'shared-folders'
 
@@ -142,7 +142,7 @@ try {
     [void](WaitText 'StateText' '^Online$')
     Check ((Api 'Get' "/v1/pcs/$pcId/roots" $null $device).status -eq 200) 'Resume restores access'
     Nav 'Activity'
-    Check ((ListItems 'ActivityList').Count -ge 4) 'activity history recorded the session'
+    Check (@(ListItems 'ActivityList').Count -ge 4) 'activity history recorded the session'
     Shot 'activity'
     Nav 'Diagnostics'
     $diagnostics = WaitText 'DiagnosticsText' 'PC id'
@@ -159,7 +159,7 @@ try {
     AttachWindow $console
     [void](WaitText 'StateText' '^Online$')
     Nav 'Shared folders'
-    Check ((ListItems 'RootsList').Count -eq 1) 'relay address, identity and shared folder persist across a restart'
+    Check (@(ListItems 'RootsList').Count -eq 1) 'relay address, identity and shared folder persist across a restart'
     Check ((Api 'Get' "/v1/pcs/$pcId/roots" $null $device).status -eq 200) 'the paired browser works again without re-pairing'
     $script:win.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
     Start-Sleep -Seconds 2
