@@ -32,6 +32,12 @@ jobs:
       - name: npm audit (high and above)
         working-directory: apps/web
         run: npm ci && npm audit --audit-level=high
+      - name: Integration-test dependencies audit (high and above)
+        working-directory: tests/integration
+        run: npm ci && npm audit --audit-level=high
+      - name: Emulator tooling audit (test-only, never shipped; report only)
+        working-directory: tests/emulators
+        run: npm ci && (npm audit --audit-level=high || echo "::warning::firebase-tools (test-only emulator tooling) has known advisories; it is not part of any shipped artifact")
       - name: NuGet vulnerability audit
         run: |
           dotnet restore OrbitDrive.slnx

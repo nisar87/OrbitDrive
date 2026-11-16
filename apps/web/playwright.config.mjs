@@ -12,12 +12,15 @@ export default defineConfig({
   timeout: 90_000,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: { baseURL: 'http://localhost:5173', trace: 'retain-on-failure', screenshot: 'only-on-failure' },
-  webServer: {
-    command: 'npx vite --mode e2e',
-    url: 'http://localhost:5173',
-    env: { VITE_GATEWAY_URL: 'http://127.0.0.1:5199', VITE_AUTH_MODE: 'dev' },
-    reuseExistingServer: false,
-  },
+  webServer: [
+    { command: 'npx vite --mode e2e', url: 'http://localhost:5173', env: { VITE_GATEWAY_URL: 'http://127.0.0.1:5199', VITE_AUTH_MODE: 'dev' }, reuseExistingServer: false },
+    // Firebase mode against the local Auth emulator ("demo-" projects never touch a real Firebase project).
+    { command: 'npx firebase emulators:start --only auth --project demo-orbitdrive', cwd: '../../tests/emulators', url: 'http://127.0.0.1:9099', reuseExistingServer: false, timeout: 120_000 },
+    {
+      command: 'npx vite --mode e2e --port 5174', url: 'http://localhost:5174', reuseExistingServer: false,
+      env: { VITE_GATEWAY_URL: 'http://127.0.0.1:5198', VITE_AUTH_MODE: 'firebase', VITE_FIREBASE_API_KEY: 'emulator-key', VITE_FIREBASE_AUTH_DOMAIN: 'localhost', VITE_FIREBASE_PROJECT_ID: 'demo-orbitdrive', VITE_FIREBASE_APP_ID: 'emulator-app', VITE_FIREBASE_AUTH_EMULATOR_URL: 'http://127.0.0.1:9099' },
+    },
+  ],
   projects: local
     ? [
         { name: 'desktop-chrome', use: { ...devices['Desktop Chrome'], ...channel } },

@@ -77,6 +77,13 @@ for (const [name, make] of Object.entries(rejected)) {
   test(`rejected: ${name}`, async () => { assert.equal(await status(make()), 401); });
 }
 
+test('unsigned emulator-style tokens are refused unless the gateway was explicitly started in emulator mode', async () => {
+  const unsigned = `${b64({ alg: 'none', typ: 'JWT' })}.${token().split('.')[1]}.`;
+  assert.equal(await status(unsigned), 401);
+  await assert.rejects(startGateway({ ASPNETCORE_ENVIRONMENT: 'Production', OrbitDrive__DevIdentity__Enabled: 'false', OrbitDrive__Firebase__ProjectId: PROJECT,
+    OrbitDrive__Firebase__AcceptEmulatorTokens: 'true', OrbitDrive__AllowedWebOrigins__0: 'https://orbitdrive.example' }), /emulator tokens cannot be accepted in Production/i);
+});
+
 test('an unverified email address is refused with a clear message, not treated as signed in', async () => {
   const response = await fetch(`${gateway.url}/v1/pcs`, { headers: { authorization: `Bearer ${token({ email_verified: false })}` } });
   assert.equal(response.status, 403);

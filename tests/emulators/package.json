@@ -1,0 +1,8 @@
+{
+  "name": "@orbitdrive/emulator-tooling",
+  "private": true,
+  "description": "Test-only tooling (Firebase Auth emulator). Never shipped; audited separately from product dependencies.",
+  "devDependencies": {
+    "firebase-tools": "^15.36.0"
+  }
+}

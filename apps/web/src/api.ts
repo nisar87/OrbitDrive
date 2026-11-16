@@ -17,9 +17,22 @@ export function saveSession(session: Session | null): void {
   if (session) localStorage.setItem(KEY, JSON.stringify(session)); else localStorage.removeItem(KEY);
 }
 
+let tokenProvider: (() => Promise<string | null>) | null = null;
+/** Firebase mode: tokens come from the SDK (which refreshes them) instead of being stored by OrbitDrive. */
+export function setTokenProvider(provider: (() => Promise<string | null>) | null): void { tokenProvider = provider; }
+
+const deviceKey = (uid: string) => `orbitdrive.device.v1.${uid}`;
+export function loadDevice(uid: string): Session['device'] {
+  try { return (JSON.parse(localStorage.getItem(deviceKey(uid)) ?? 'null') as Session['device']) ?? undefined; } catch { return undefined; }
+}
+export function saveDevice(uid: string, device: Session['device']): void {
+  if (device) localStorage.setItem(deviceKey(uid), JSON.stringify(device)); else localStorage.removeItem(deviceKey(uid));
+}
+
 async function call<K extends keyof ProtocolTypeMap>(type: K, session: Session | null, method: string, path: string, body?: unknown): Promise<ProtocolTypeMap[K]> {
   const headers: Record<string, string> = {};
-  if (session) headers.Authorization = `Bearer ${session.idToken}`;
+  const token = session ? (tokenProvider ? await tokenProvider() : session.idToken) : null;
+  if (token) headers.Authorization = `Bearer ${token}`;
   if (session?.device) headers['X-OrbitDrive-Device'] = `${session.device.id}.${session.device.secret}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   let response: Response;

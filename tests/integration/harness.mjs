@@ -108,8 +108,8 @@ export function agentCli(stateDir, ...args) {
   return result.stdout;
 }
 
-export async function startAgent(gateway, stateDir, name = 'Test PC') {
-  const connection = gateway ? ['--gateway', gateway.url, '--web-origin', WEB_ORIGIN] : [];
+export async function startAgent(gateway, stateDir, name = 'Test PC', webOrigin = WEB_ORIGIN) {
+  const connection = gateway ? ['--gateway', gateway.url, '--web-origin', webOrigin] : [];
   const child = spawn('dotnet', [agentDll, 'run', ...connection, '--state', stateDir, '--name', name], { stdio: ['pipe', 'pipe', 'pipe'] });
   const events = [];
   const waiters = [];

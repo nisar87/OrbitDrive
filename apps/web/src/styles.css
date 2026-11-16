@@ -63,3 +63,6 @@ input { min-height: 44px; padding: 8px 12px; border-radius: 6px; border: 1px sol
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 @media (forced-colors: active) { .window { border: 1px solid CanvasText; } button { border: 1px solid ButtonText; } }
+label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--text); }
+label.check input { width: 20px; height: 20px; min-height: 0; flex: none; }
+.links { display: flex; flex-wrap: wrap; gap: 4px; }

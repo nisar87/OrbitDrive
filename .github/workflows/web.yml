@@ -24,6 +24,9 @@ jobs:
       - name: Install
         working-directory: apps/web
         run: npm ci
+      - name: Install test-only emulator tooling
+        working-directory: tests/emulators
+        run: npm ci
       - name: Typecheck and unit tests
         working-directory: apps/web
         run: npx tsc --noEmit && npx vitest run
@@ -31,7 +34,8 @@ jobs:
         working-directory: apps/web
         run: |
           if VITE_AUTH_MODE=dev VITE_GATEWAY_URL=http://127.0.0.1:5199 npx vite build; then echo "guard failed"; exit 1; fi
-          VITE_AUTH_MODE=firebase VITE_GATEWAY_URL=https://relay.example.invalid npx vite build
+          VITE_AUTH_MODE=firebase VITE_GATEWAY_URL=https://relay.example.invalid VITE_FIREBASE_API_KEY=public-web-key VITE_FIREBASE_AUTH_DOMAIN=example.firebaseapp.com VITE_FIREBASE_PROJECT_ID=example-project VITE_FIREBASE_APP_ID=1:1:web:1 npx vite build
+          if VITE_AUTH_MODE=firebase VITE_GATEWAY_URL=https://relay.example.invalid VITE_FIREBASE_API_KEY=k VITE_FIREBASE_AUTH_DOMAIN=d VITE_FIREBASE_PROJECT_ID=demo-x VITE_FIREBASE_APP_ID=a VITE_FIREBASE_AUTH_EMULATOR_URL=http://127.0.0.1:9099 npx vite build; then echo "emulator guard failed"; exit 1; fi
           if grep -R "dev/sign-in" dist/assets >/dev/null; then echo "note: dev sign-in client code is present but disabled by VITE_AUTH_MODE"; fi
       - run: dotnet build OrbitDrive.slnx -c Release
       - name: Install browsers

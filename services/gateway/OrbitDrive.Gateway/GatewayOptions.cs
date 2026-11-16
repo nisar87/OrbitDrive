@@ -13,6 +13,8 @@ public sealed class FirebaseOptions
     /// <summary>JWK set used to verify ID-token signatures. Only tests may point this away from Google.</summary>
     public string KeysUrl { get; set; } = GoogleKeysUrl;
     public bool RequireVerifiedEmail { get; set; } = true;
+    /// <summary>Development only: accept the unsigned tokens issued by the local Firebase Auth emulator.</summary>
+    public bool AcceptEmulatorTokens { get; set; }
 }
 
 public sealed class GatewayOptions
@@ -36,6 +38,7 @@ public sealed class GatewayOptions
             if (DevIdentity.Enabled) throw new InvalidOperationException("Development identities cannot be enabled in Production.");
             if (!firebase) throw new InvalidOperationException("No production identity verifier is configured. Set OrbitDrive:Firebase:ProjectId.");
             if (Firebase.KeysUrl != FirebaseOptions.GoogleKeysUrl) throw new InvalidOperationException("Production must verify tokens against Google's signing keys.");
+            if (Firebase.AcceptEmulatorTokens) throw new InvalidOperationException("Auth-emulator tokens cannot be accepted in Production.");
             if (!Firebase.RequireVerifiedEmail) throw new InvalidOperationException("Production requires verified email addresses.");
             if (AllowedWebOrigins.Length == 0 || AllowedWebOrigins.Any(o => !o.StartsWith("https://", StringComparison.Ordinal)))
                 throw new InvalidOperationException("Production requires explicit https web origins.");

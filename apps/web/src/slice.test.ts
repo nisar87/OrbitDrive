@@ -63,7 +63,7 @@ describe('pairing links', () => {
 });
 
 describe('production build guard', () => {
-  const good = { VITE_AUTH_MODE: 'firebase', VITE_GATEWAY_URL: 'https://relay.orbitdrive.example' };
+  const good = { VITE_AUTH_MODE: 'firebase', VITE_GATEWAY_URL: 'https://relay.orbitdrive.example', VITE_FIREBASE_API_KEY: 'public-web-key', VITE_FIREBASE_AUTH_DOMAIN: 'orbitdrive.firebaseapp.com', VITE_FIREBASE_PROJECT_ID: 'orbitdrive', VITE_FIREBASE_APP_ID: '1:1:web:1' };
   it('accepts a real configuration and ignores non-production modes', () => {
     expect(() => assertProductionSafe('production', good)).not.toThrow();
     expect(() => assertProductionSafe('e2e', { VITE_AUTH_MODE: 'dev' })).not.toThrow();
@@ -74,7 +74,10 @@ describe('production build guard', () => {
     [{ ...good, VITE_GATEWAY_URL: 'http://relay.example' }, /https origin/],
     [{ ...good, VITE_GATEWAY_URL: 'https://localhost' }, /local or emulator/],
     [{ ...good, VITE_GATEWAY_URL: 'https://x.web.app/api' }, /https origin/],
-    [{ ...good, VITE_USE_EMULATORS: 'true' }, /EMULATORS/],
+    [{ ...good, VITE_USE_EMULATORS: 'true' }, /emulator settings/],
+    [{ ...good, VITE_FIREBASE_AUTH_EMULATOR_URL: 'http://127.0.0.1:9099' }, /emulator settings/],
+    [{ ...good, VITE_FIREBASE_PROJECT_ID: 'demo-orbitdrive' }, /real project/],
+    [{ ...good, VITE_FIREBASE_API_KEY: undefined }, /VITE_FIREBASE_API_KEY is required/],
   ])('rejects %j', (env, message) => {
     expect(() => assertProductionSafe('production', env)).toThrow(message);
   });

@@ -54,19 +54,27 @@ public sealed class FirebaseIdentityVerifier(GatewayOptions options, TimeProvide
         if (bearerToken is null || bearerToken.Length > 8192) throw fail;
         var parts = bearerToken.Split('.');
         if (parts.Length != 3) throw fail;
-        var keys = _keys ?? throw new ProtocolException(ErrorCode.Unavailable, "Sign-in verification is temporarily unavailable. Try again shortly.");
         try
         {
             using var header = JsonDocument.Parse(Base64Url.DecodeFromChars(parts[0]));
-            if (header.RootElement.GetProperty("alg").GetString() != "RS256") throw fail; // never "none", never HMAC
-            if (!keys.TryGetValue(header.RootElement.GetProperty("kid").GetString() ?? "", out var key))
+            var algorithm = header.RootElement.GetProperty("alg").GetString();
+            if (options.Firebase.AcceptEmulatorTokens && algorithm == "none" && parts[2].Length == 0)
             {
-                var now = time.GetUtcNow().ToUnixTimeSeconds(); // a rotated key: refresh, at most once every 10 s
-                var last = Interlocked.Read(ref _lastForcedRefresh);
-                if (now - last >= 10 && Interlocked.CompareExchange(ref _lastForcedRefresh, now, last) == last && _refreshNow.CurrentCount == 0) _refreshNow.Release();
-                throw fail;
+                // Local Auth emulator (Development only, refused by GatewayOptions.Validate in Production): claims are still checked below.
             }
-            if (!key.VerifyData(Encoding.ASCII.GetBytes(parts[0] + "." + parts[1]), Base64Url.DecodeFromChars(parts[2]), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)) throw fail;
+            else
+            {
+                var keys = _keys ?? throw new ProtocolException(ErrorCode.Unavailable, "Sign-in verification is temporarily unavailable. Try again shortly.");
+                if (algorithm != "RS256") throw fail; // never "none", never HMAC
+                if (!keys.TryGetValue(header.RootElement.GetProperty("kid").GetString() ?? "", out var key))
+                {
+                    var now = time.GetUtcNow().ToUnixTimeSeconds(); // a rotated key: refresh, at most once every 10 s
+                    var last = Interlocked.Read(ref _lastForcedRefresh);
+                    if (now - last >= 10 && Interlocked.CompareExchange(ref _lastForcedRefresh, now, last) == last && _refreshNow.CurrentCount == 0) _refreshNow.Release();
+                    throw fail;
+                }
+                if (!key.VerifyData(Encoding.ASCII.GetBytes(parts[0] + "." + parts[1]), Base64Url.DecodeFromChars(parts[2]), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)) throw fail;
+            }
 
             using var payload = JsonDocument.Parse(Base64Url.DecodeFromChars(parts[1]));
             var claims = payload.RootElement;
