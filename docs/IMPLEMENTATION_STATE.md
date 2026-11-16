@@ -2,9 +2,12 @@
 
 Updated: 2026-11-17 (session 1). Branch: `feature/orbitdrive-foundation`.
 
-**Last code-verified commit: `899e0ff`** — all seven workflows green: contracts 43971788317, gateway 43971788430,
-desktop 43971788387, desktop-ui 43971788475, integration 43971788213, web 43971788364 (dev-identity and Firebase-emulator
-browser suites in 5 browser projects), security 43971788480.
+**Last code-verified commit: `258ebc3`** — all seven workflows green: contracts 43973939562, gateway 43973939570,
+desktop 43973940031, desktop-ui 43973939538, integration 43973939649, web 43973939569, security 43973939668.
+
+Hosting decision (owner, 2026-11-17): no subdomain of the AI CV Studio domain. The web app will be served from the
+`orbitdrive-dev` project's own Hosting address until the owner buys a new domain. **Nothing is deployed.** A live site
+is pointless until a public relay exists, and the relay host (possible cost) is still the owner's open decision.
 
 Branch policy (owner, 2026-11-17): `main` exists and is the default branch. Work lands on
 `feature/orbitdrive-foundation` first; `main` is fast-forwarded only to commits whose seven workflows are green.
@@ -18,7 +21,7 @@ Firebase is back in scope (owner, 2026-11-17): project `orbitdrive-dev` was crea
 | D0 | IN_PROGRESS | Done: solution, Core/Agent separation, WPF launch + UI Automation + capture spike on windows-2025, bounded-memory 1 GiB stream, toolchain record. Missing: modern Explorer command spike (needs Windows 11 + package identity), packaging/app-identity route, reconnect-without-duplicates spike |
 | W1 | AUTOMATED_VERIFIED (partial) | Gateway verifies Firebase ID tokens (23 real-signature cases). Web: sign-up with email verification, sign-in, password reset (no account enumeration), sign-out, optional "keep me signed in", tokens never stored by OrbitDrive; tested in 5 browser projects against the local Auth emulator with the real gateway and agent. Firebase project `orbitdrive-dev` exists (Email/Password on). Missing: **a real sign-in against `orbitdrive-dev` with real email delivery**, token-revocation check (needs service credentials), revoke-all-devices, Google sign-in, MFA decision |
 | D1 | AUTOMATED_VERIFIED (partial) | Owner console (7 pages), tray, close-to-tray, Quit, single instance (console + agent), same-user local channel with closed command set, pause, persisted settings. UI Automation 29/29 on windows-2025. Missing: start-at-sign-in, crash-restart policy, lock/sleep behaviour, dark/high-contrast themes, DPI review, standard-user and second-Windows-user evidence, tray interaction test, **visual review of screenshots (artifact `owner-console-ui`, not viewable from the build sandbox)** |
-| W2 / D2 | IN_PROGRESS | Pairing state machine, PC-side approval UI (account, browser, matching code), revocation of a browser; QR image on the PC (encoder verified against a reference encoder and a real decoder), device list + revoke on the PC, gateway device list / revoke / disconnect-PC APIs with isolation tests. Missing: web Devices page, in-site QR scanner, per-IP rate limits, QR scan with a real phone camera |
+| W2 / D2 | IN_PROGRESS | Pairing state machine, PC-side approval UI (account, browser, matching code), revocation of a browser; QR image on the PC (encoder verified against a reference encoder and a real decoder), device list + revoke on the PC, gateway device list / revoke / disconnect-PC APIs with isolation tests. Web: approved-browsers list, remove another browser, disconnect PC (two-step confirm). Missing: in-site QR scanner, rename device, per-IP rate limits, QR scan with a real phone camera |
 | W3 / D3 | IN_PROGRESS (early) | Outbound control channel, generations, reconnect; no leases/heartbeat expiry, no Firestore, no fault-injection suite |
 | W4 / D4 | IN_PROGRESS (early) | Secure browsing core + minimal Explorer view; no shell, sorting, selection, properties, volume binding |
 | W5 / D5 | IN_PROGRESS (early) | Range relay, revisions, capabilities, 1 GiB verified; no managed save mode, interrupted-resume e2e, quotas |
@@ -52,8 +55,7 @@ web) works end to end in CI. It is a slice through M1–M2, not completion of th
 1. W1 live check: build the web app with the real `orbitdrive-dev` config, run a gateway with
    `OrbitDrive__Firebase__ProjectId=orbitdrive-dev`, create a real account, confirm the verification email arrives and
    the gateway accepts the real token. Needs `localhost` (or the chosen web origin) in Firebase authorized domains.
-2. W2 remainder: web Devices page (list/revoke, disconnect PC) on the existing APIs, in-site QR scanner with manual
-   fallback, per-IP rate limits.
+2. W2 remainder: in-site QR scanner with manual fallback (camera test needs a fake video feed), per-IP rate limits.
 3. D1 leftovers: start at sign-in (opt-in), bounded crash restart, themes/high contrast, keyboard pass, tray test.
 4. W3/D3: durable gateway store (file-backed stand-in for Firestore), leases/heartbeats, fault-injection; decide ADR-1.
 5. D4/W4: Windows-style web shell + full Explorer; root volume binding. Then D5/W5 completion, D6/W6.
