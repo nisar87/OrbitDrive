@@ -8,6 +8,7 @@ $Scope = [System.Windows.Automation.TreeScope]
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $OutDir = (Resolve-Path $OutDir).Path
 $Exe = (Resolve-Path $Exe).Path
+$GatewayDll = (Resolve-Path $GatewayDll).Path
 $AgentExe = Join-Path (Split-Path $Exe) 'orbitdrive-agent.exe'
 $work = Join-Path $env:RUNNER_TEMP ("orbit-ui-" + [guid]::NewGuid().ToString('N'))
 $state = Join-Path $work 'state'; $share = Join-Path $work 'Holiday Photos'
@@ -69,10 +70,12 @@ $env:ASPNETCORE_ENVIRONMENT = 'Development'
 $env:OrbitDrive__DevIdentity__Enabled = 'true'
 $env:OrbitDrive__DevIdentity__Secret = [guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')
 $env:OrbitDrive__AllowedWebOrigins__0 = 'http://localhost:5173'
-$gateway = Start-Process -FilePath 'dotnet' -ArgumentList "`"$GatewayDll`"", '--urls', $relay -WorkingDirectory (Split-Path (Resolve-Path $GatewayDll)) -PassThru -WindowStyle Hidden
+$gateway = Start-Process -FilePath 'dotnet' -ArgumentList "`"$GatewayDll`"", '--urls', $relay -WorkingDirectory (Split-Path $GatewayDll) -PassThru -WindowStyle Hidden
 $console = $null
 try {
-    for ($i = 0; $i -lt 100; $i++) { try { if ((Invoke-WebRequest -UseBasicParsing "$relay/healthz").StatusCode -eq 200) { break } } catch { Start-Sleep -Milliseconds 200 } }
+    $healthy = $false
+    for ($i = 0; $i -lt 100 -and -not $healthy; $i++) { try { $healthy = (Invoke-WebRequest -UseBasicParsing "$relay/healthz").StatusCode -eq 200 } catch { Start-Sleep -Milliseconds 200 } }
+    Check $healthy 'the real gateway process is running'
     Check ((Agents).Count -eq 0) 'no agent is running before the console starts'
 
     $console = Start-Process -FilePath $Exe -ArgumentList '--state', "`"$state`"" -PassThru
