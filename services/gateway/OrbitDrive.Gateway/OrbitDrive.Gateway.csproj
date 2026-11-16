@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="../../../packages/protocol/csharp/OrbitDrive.Protocol.csproj" />
+    <InternalsVisibleTo Include="OrbitDrive.Gateway.Tests" />
+  </ItemGroup>
+</Project>

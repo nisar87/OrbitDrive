@@ -1,0 +1,39 @@
+name: security
+on:
+  push:
+    branches: ['feature/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Secret scan of tracked files
+        run: node scripts/secret-scan.mjs
+      - name: Workflows pin actions to commit SHAs
+        run: |
+          if grep -RnE "uses: [^@]+@(v[0-9]|main|master)" .github/workflows; then echo "unpinned action"; exit 1; fi
+      - name: No deployment or elevated permissions in ordinary workflows
+        run: |
+          if grep -RnE "firebase deploy|id-token: write|contents: write" .github/workflows; then echo "unexpected privileged step"; exit 1; fi
+      - name: npm audit (high and above)
+        working-directory: apps/web
+        run: npm ci && npm audit --audit-level=high
+      - name: NuGet vulnerability audit
+        run: |
+          dotnet restore OrbitDrive.slnx
+          dotnet list OrbitDrive.slnx package --vulnerable --include-transitive | tee nuget-audit.txt
+          if grep -qiE "\b(High|Critical)\b" nuget-audit.txt; then exit 1; fi

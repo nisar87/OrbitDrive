@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../../packages/protocol/csharp/OrbitDrive.Protocol.csproj" />
+    <InternalsVisibleTo Include="OrbitDrive.Core.Tests" />
+  </ItemGroup>
+</Project>

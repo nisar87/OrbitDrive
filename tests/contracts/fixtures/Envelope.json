@@ -1,0 +1,1 @@
+{"v":1,"id":"req-1","kind":"req","action":"open_read","deadlineUnixMs":"1794787200123","payload":{"readToken":"tok","offset":"9223372036854775806","length":"1","streamId":"s","uplinkToken":"u"}}

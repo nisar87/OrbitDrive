@@ -1,0 +1,30 @@
+name: desktop-ui
+on:
+  push:
+    branches: ['feature/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  wpf-spike:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet build apps/desktop/OrbitDrive.Desktop -c Release
+      - name: Launch the real WPF window, inspect via UI Automation, capture real pixels
+        shell: powershell
+        run: ./scripts/wpf-spike.ps1 -Exe "apps/desktop/OrbitDrive.Desktop/bin/Release/net10.0-windows/OrbitDrive.exe" -OutDir artifacts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: wpf-spike
+          path: artifacts/
+          retention-days: 14

@@ -1,0 +1,50 @@
+name: web
+on:
+  push:
+    branches: ['feature/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install
+        working-directory: apps/web
+        run: npm ci
+      - name: Typecheck and unit tests
+        working-directory: apps/web
+        run: npx tsc --noEmit && npx vitest run
+      - name: Production build is refused with development identities
+        working-directory: apps/web
+        run: |
+          if VITE_AUTH_MODE=dev VITE_GATEWAY_URL=http://127.0.0.1:5199 npx vite build; then echo "guard failed"; exit 1; fi
+          VITE_AUTH_MODE=firebase VITE_GATEWAY_URL=https://relay.example.invalid npx vite build
+          if grep -R "dev/sign-in" dist/assets >/dev/null; then echo "note: dev sign-in client code is present but disabled by VITE_AUTH_MODE"; fi
+      - run: dotnet build OrbitDrive.slnx -c Release
+      - name: Install browsers
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Browser tests against the real gateway and agent
+        working-directory: apps/web
+        run: npx playwright test
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: web-evidence
+          path: |
+            artifacts/web-screenshots/
+            apps/web/playwright-report/
+          retention-days: 14

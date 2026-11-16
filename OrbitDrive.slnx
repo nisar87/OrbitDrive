@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/packages/">
+    <Project Path="packages/protocol/csharp/OrbitDrive.Protocol.csproj" />
+  </Folder>
+  <Folder Name="/desktop/">
+    <Project Path="apps/desktop/OrbitDrive.Core/OrbitDrive.Core.csproj" />
+    <Project Path="apps/desktop/OrbitDrive.Agent/OrbitDrive.Agent.csproj" />
+  </Folder>
+  <Folder Name="/services/">
+    <Project Path="services/gateway/OrbitDrive.Gateway/OrbitDrive.Gateway.csproj" />
+  </Folder>
+</Solution>

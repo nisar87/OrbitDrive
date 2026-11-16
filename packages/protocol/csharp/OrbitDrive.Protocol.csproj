@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <Compile Include="../generated/csharp/Protocol.g.cs" Link="Protocol.g.cs" />
+  </ItemGroup>
+</Project>

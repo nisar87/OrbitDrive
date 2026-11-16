@@ -1,0 +1,50 @@
+using System.Buffers.Text;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using OrbitDrive.Protocol;
+
+namespace OrbitDrive.Gateway;
+
+public sealed record Identity(string Uid, string Email);
+
+public interface IIdentityVerifier
+{
+    /// <summary>Returns the verified account, or throws <see cref="ProtocolException"/> with Unauthenticated.</summary>
+    Identity Verify(string? bearerToken);
+}
+
+/// <summary>
+/// HMAC-signed development/test identities. Only registered outside Production (see GatewayOptions.Validate).
+/// It stands in for Firebase ID-token verification until W1 and must never ship as the production verifier.
+/// </summary>
+public sealed class DevIdentityVerifier(GatewayOptions options, TimeProvider time) : IIdentityVerifier
+{
+    private readonly byte[] _key = Encoding.UTF8.GetBytes(options.DevIdentity.Secret);
+    private sealed record Payload(string uid, string email, long exp);
+
+    public string Issue(string email, TimeSpan lifetime)
+    {
+        var uid = "dev-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(email.ToLowerInvariant())))[..20];
+        var payload = Base64Url.EncodeToString(JsonSerializer.SerializeToUtf8Bytes(new Payload(uid, email, time.GetUtcNow().Add(lifetime).ToUnixTimeSeconds())));
+        return $"dev.{payload}.{Base64Url.EncodeToString(HMACSHA256.HashData(_key, Encoding.ASCII.GetBytes(payload)))}";
+    }
+
+    public static string UidFor(string token) => JsonSerializer.Deserialize<Payload>(Base64Url.DecodeFromChars(token.Split('.')[1]))!.uid;
+
+    public Identity Verify(string? bearerToken)
+    {
+        var fail = new ProtocolException(ErrorCode.Unauthenticated, "Sign in again to continue.");
+        var parts = bearerToken?.Split('.');
+        if (parts is not { Length: 3 } || parts[0] != "dev") throw fail;
+        try
+        {
+            var expected = HMACSHA256.HashData(_key, Encoding.ASCII.GetBytes(parts[1]));
+            if (!CryptographicOperations.FixedTimeEquals(expected, Base64Url.DecodeFromChars(parts[2]))) throw fail;
+            var payload = JsonSerializer.Deserialize<Payload>(Base64Url.DecodeFromChars(parts[1]));
+            if (payload is null || string.IsNullOrEmpty(payload.uid) || payload.exp <= time.GetUtcNow().ToUnixTimeSeconds()) throw fail;
+            return new Identity(payload.uid, payload.email);
+        }
+        catch (Exception e) when (e is FormatException or JsonException) { throw fail; }
+    }
+}

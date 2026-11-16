@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>orbitdrive-agent</AssemblyName>
+    <RootNamespace>OrbitDrive.Agent</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../OrbitDrive.Core/OrbitDrive.Core.csproj" />
+  </ItemGroup>
+</Project>
