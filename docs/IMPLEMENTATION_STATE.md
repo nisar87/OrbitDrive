@@ -2,8 +2,9 @@
 
 Updated: 2026-11-17 (session 1). Branch: `feature/orbitdrive-foundation`.
 
-**Last code-verified commit: `9592d39`** — all seven workflows green (run IDs in `docs/evidence/phase-evidence.md`).
-Commits after it in this session change documentation/infra drafts only; check their runs before relying on them.
+**Last code-verified commit: `ea8337d`** — all seven workflows green: contracts 43952452561, gateway 43952452336,
+desktop 43952452583, desktop-ui 43952452536, integration 43952452314 (Windows 37/37; Linux 36 + 1 Windows-only skip),
+web 43952452370, security 43952452437. The commit that records these IDs changes this file and the evidence log only.
 
 ## Phase status
 

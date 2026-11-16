@@ -30,6 +30,13 @@ These are loopback numbers on CI VMs. They show memory does not grow with file s
 | a5ce542 | integration 43950581534 (Windows), desktop 43950581272 | `BY_HANDLE_FILE_INFORMATION` declared FILETIMEs as 64-bit fields; padding shifted `NumberOfLinks`, so every file on Windows was refused as hard-linked | `Pack = 4`, DWORD pairs (9592d39) | Windows integration 36/36 incl. real hard-link refusal test; Core xunit 42/42 |
 | a5ce542 | security 43950581538 | Privileged-step grep matched its own pattern | `--exclude=security.yml` | security 43951326854 green |
 
+## Commit `ea8337d` — head of the session
+
+All seven workflows green again: contracts 43952452561, gateway 43952452336, desktop 43952452583, desktop-ui 43952452536,
+integration 43952452314, web 43952452370, security 43952452437. Adds resource-limit and reconnect regression tests
+(integration: Windows 37/37, Linux 36 passed + 1 Windows-only skip). Runs for the docs-only commit `ae6c112` were
+partly cancelled by the next push (concurrency group) and are not evidence.
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were
