@@ -217,6 +217,7 @@ public sealed class MainWindow : Window
                     var client = await LocalIpcClient.ConnectAsync(name, TimeSpan.FromSeconds(attempt == 0 ? 1 : 10));
                     client.EventReceived += (eventName, data) => Dispatcher.InvokeAsync(() => OnEvent(eventName, data));
                     client.Disconnected += () => Dispatcher.InvokeAsync(() => { _client = null; });
+                    _autoStartUsed = true; // attached once: from now on the agent is only started by an explicit owner action
                     return _client = client;
                 }
                 catch (Exception e) when (e is TimeoutException or IOException or UnauthorizedAccessException)
