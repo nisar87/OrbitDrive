@@ -37,7 +37,7 @@ web) works end to end in CI. It is a slice through M1–M2, not completion of th
 - Gateway state is in memory: a restart drops pairings and grants (fails closed).
 - Device credential and dev token live in `localStorage`; no CSP yet.
 - Same-size rewrite that restores the timestamp between prepare and read is not detected.
-- Per-owner stream cap, control-message size cap and agent busy limits have no dedicated tests yet.
+- Agent-side busy limits (16 requests, 4 streams) and pending-request caps have no dedicated tests yet.
 - Hard-link refusal is Windows-only; root volume-identity binding not implemented.
 - Relay Dockerfile and firebase.json are unvalidated drafts. No draft PR exists (no base branch).
 - WPF screenshot artifact exists in CI but was not visually reviewed.

@@ -439,7 +439,42 @@ describe('pause, removal, restart and revocation (R06, R14, R51)', () => {
     assert.equal(agent.identity.pcId, pcId);
     assert.equal(agent.identity.ownerBound, true);
     assert.equal((await list(owner)).status, 200, 'no re-pairing needed');
+    const afterRestart = (await owner.get('/v1/pcs')).body.pcs;
+    assert.deepEqual(afterRestart.map((p) => [p.pcId, p.online]), [[pcId, true]], 'reconnect must not create a duplicate PC');
+    assert.ok(Number(agent.identity.generation) > 1, 'a reconnect is a new connection generation');
     assert.equal(await (await download(prepared)).text(), 'Hello from OrbitDrive\n');
+  });
+
+  test('resource limits: per-owner stream cap, request body cap and control-message cap (R42)', async () => {
+    const path = join(root, 'slots.bin');
+    await writeLargeFile(path, 48);
+    const prepared = await session(owner, 'slots.bin');
+    const aborts = [], open = [];
+    for (let i = 0; i < 4; i++) {
+      const controller = new AbortController();
+      aborts.push(controller);
+      const response = await fetch(gateway.url + prepared.urlPath, { signal: controller.signal }); // body deliberately left unread
+      assert.equal(response.status, 200);
+      open.push(response);
+    }
+    const fifth = await download(prepared);
+    assert.equal(fifth.status, 429);
+    assert.equal((await fifth.json()).error.code, 'limit_exceeded');
+    aborts.forEach((a) => a.abort());
+    let recovered = 0;
+    for (let i = 0; i < 50 && recovered !== 206; i++) { await sleep(100); const retry = await download(prepared, { range: 'bytes=0-9' }); recovered = retry.status; await retry.arrayBuffer(); }
+    assert.equal(recovered, 206, 'slots are released when receivers go away');
+    rmSync(path);
+
+    const oversized = await fetch(`${gateway.url}/v1/download-sessions`, { method: 'POST', headers: owner.headers({ 'content-type': 'application/json' }), body: JSON.stringify({ pcId, entryId: 'x'.repeat(100_000) }) });
+    assert.equal(oversized.status, 413);
+
+    const ws = new WebSocket(gateway.url.replace('http', 'ws') + '/v1/agent-control');
+    const messages = [];
+    const closed = new Promise((resolve) => { ws.onclose = resolve; ws.onerror = resolve; });
+    ws.onmessage = (m) => { messages.push(JSON.parse(m.data)); if (messages.length === 1) ws.send(JSON.stringify({ v: 1, id: 'hello', kind: 'req', action: 'hello', payload: { junk: 'x'.repeat(400_000) } })); };
+    await closed;
+    assert.equal(messages.length, 1, 'an oversized control message ends the connection without a reply');
   });
 
   test('revoking the browser cuts an active transfer and all later access', async () => {

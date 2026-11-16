@@ -46,7 +46,7 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R39 | AUTOMATED_VERIFIED | /v1/meta and web taskbar state TLS-via-relay, not E2EE (integration test); README/SECURITY agree |
 | R40 | IN_PROGRESS | Static build + production guard tested; firebase.json has no backend rewrite. Not validated with Firebase CLI |
 | R41 | NOT_STARTED | In-memory store; W3 |
-| R42 | IN_PROGRESS | Body/message/stream/pending caps exist; per-owner stream cap not yet covered by a test; no quotas |
+| R42 | IN_PROGRESS | Per-owner stream cap (429 + recovery), 64 KiB body cap (413) and control-message cap tested (integration); no relay-byte quotas yet |
 | R43 | NOT_STARTED | D10 |
 | R44 | NOT_STARTED | D10 (signing identity required) |
 | R45 | IN_PROGRESS | Transfer metrics recorded per run; 10,000-entry listing test. Budgets beyond transfer memory not set |
