@@ -2,9 +2,9 @@
 
 Updated: 2026-11-17 (session 1). Branch: `feature/orbitdrive-foundation`.
 
-**Last code-verified commit: `83f84b1`** — all seven workflows green: contracts 43965532440, gateway 43965532600,
-desktop 43965532583, desktop-ui 43965532374 (33/33 UI Automation checks), integration 43965532417 (Windows + Linux:
-slice, IPC, devices, QR suites), web 43965532389, security 43965532437.
+**Last code-verified commit: `23b7d3f`** — all seven workflows green: contracts 43969406278, gateway 43969406301,
+desktop 43969406291, desktop-ui 43969406306, integration 43969406281 (Windows + Linux: slice, IPC, devices, QR,
+firebase-auth suites), web 43969406325, security 43969406602.
 
 Branch policy (owner, 2026-11-17): `main` exists and is the default branch. Work lands on
 `feature/orbitdrive-foundation` first; `main` is fast-forwarded only to commits whose seven workflows are green.

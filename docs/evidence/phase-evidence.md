@@ -67,6 +67,13 @@ integration 43965532417, web 43965532389, security 43965532437.
   PC ends that browser's access). Defect found and fixed: a console that attached to a running agent could relaunch it once
   after an external quit (desktop-ui 43964769582 failed → fixed in 83f84b1).
 
+## Commit `23b7d3f` — Firebase ID-token verification (W1, gateway side)
+
+All seven workflows green: contracts 43969406278, gateway 43969406301, desktop 43969406291, desktop-ui 43969406306,
+integration 43969406281, web 43969406325, security 43969406602. `firebase-auth.test.mjs`: 22 cases with real RS256 tokens
+signed by a test key (served as a JWK set). **Not** evidence about the live `orbitdrive-dev` project: no real Firebase
+sign-in has been performed yet.
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were

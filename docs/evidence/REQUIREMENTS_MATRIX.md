@@ -1,7 +1,7 @@
 # Requirement matrix (live status)
 
 Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists for the implemented scope; hardware/device proof still required), COMPLETE, BLOCKED.
-**No requirement is COMPLETE.** Last code-verified commit: `83f84b1` (runs in `phase-evidence.md`).
+**No requirement is COMPLETE.** Last code-verified commit: `23b7d3f` (runs in `phase-evidence.md`).
 
 | ID | Status | Evidence / gap |
 |---|---|---|
