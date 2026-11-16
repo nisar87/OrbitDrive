@@ -56,6 +56,7 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
     private volatile bool _paused;
 
     public string? PendingPairingId { get; private set; }
+    public int ActiveStreams => _streams.Count;
 
     public bool Paused
     {

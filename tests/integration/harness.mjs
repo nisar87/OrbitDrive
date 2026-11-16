@@ -70,6 +70,38 @@ async function stop(child) {
   await Promise.race([once(child, 'exit'), sleep(5000)]);
 }
 
+export function agentCliRaw(stateDir, ...args) {
+  return spawnSync('dotnet', [agentDll, ...args, '--state', stateDir], { encoding: 'utf8' });
+}
+
+/** Connects to the agent's same-user local pipe, like the owner console does. */
+export async function connectIpc(pipeName) {
+  const { connect } = await import('node:net');
+  const socket = connect(process.platform === 'win32' ? `\\\\.\\pipe\\${pipeName}` : `/tmp/CoreFxPipe_${pipeName}`);
+  await once(socket, 'connect');
+  const pending = new Map(), events = [];
+  let buffer = '', next = 0, closed = false;
+  socket.on('data', (chunk) => {
+    buffer += chunk;
+    let newline;
+    while ((newline = buffer.indexOf('\n')) >= 0) {
+      const message = JSON.parse(buffer.slice(0, newline));
+      buffer = buffer.slice(newline + 1);
+      if (message.event) events.push(message);
+      else pending.get(message.id)?.(message);
+    }
+  });
+  socket.on('error', () => {});
+  socket.on('close', () => { closed = true; for (const resolve of pending.values()) resolve({ ok: false, error: 'closed' }); });
+  return {
+    events, socket,
+    get closed() { return closed; },
+    raw: (text) => new Promise((resolve) => { pending.set(null, resolve); pending.set(undefined, resolve); socket.write(text); }),
+    send: (cmd, args) => new Promise((resolve) => { const id = String(++next); pending.set(id, resolve); socket.write(JSON.stringify({ id, cmd, args }) + '\n'); }),
+    close: () => socket.destroy(),
+  };
+}
+
 export function agentCli(stateDir, ...args) {
   const result = spawnSync('dotnet', [agentDll, ...args, '--state', stateDir], { encoding: 'utf8' });
   if (result.status !== 0) throw new Error(`agent ${args.join(' ')} failed: ${result.stderr}`);
@@ -77,7 +109,8 @@ export function agentCli(stateDir, ...args) {
 }
 
 export async function startAgent(gateway, stateDir, name = 'Test PC') {
-  const child = spawn('dotnet', [agentDll, 'run', '--gateway', gateway.url, '--state', stateDir, '--name', name, '--web-origin', WEB_ORIGIN], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const connection = gateway ? ['--gateway', gateway.url, '--web-origin', WEB_ORIGIN] : [];
+  const child = spawn('dotnet', [agentDll, 'run', ...connection, '--state', stateDir, '--name', name], { stdio: ['pipe', 'pipe', 'pipe'] });
   const events = [];
   const waiters = [];
   let buffer = '';
@@ -111,7 +144,8 @@ export async function startAgent(gateway, stateDir, name = 'Test PC') {
     }
   });
   child.stderr.on('data', (d) => { agent.log += d; });
-  agent.identity = await agent.next('connected');
+  agent.ready = await agent.next('ready');
+  if (gateway) agent.identity = await agent.next('connected');
   return agent;
 }
 

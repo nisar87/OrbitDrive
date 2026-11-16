@@ -3,8 +3,16 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>OrbitDrive</AssemblyName>
     <RootNamespace>OrbitDrive.Desktop</RootNamespace>
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Windows Forms is referenced only for the tray icon; keep its types out of the global namespace. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <ProjectReference Include="../OrbitDrive.Core/OrbitDrive.Core.csproj" />
+    <ProjectReference Include="../OrbitDrive.Agent/OrbitDrive.Agent.csproj" />
+  </ItemGroup>
 </Project>

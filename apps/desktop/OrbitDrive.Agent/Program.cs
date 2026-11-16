@@ -1,9 +1,11 @@
-using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using OrbitDrive.Agent;
+using OrbitDrive.Core.Ipc;
 using OrbitDrive.Protocol;
 
-// OrbitDrive agent (per-user, never elevated). Headless host for the worker until the WPF owner console (D1) drives it.
+// OrbitDrive agent: per-user, never elevated. The WPF owner console drives it over a same-user local pipe;
+// "ctl" and the interactive console commands are the headless equivalents.
 // Machine-readable events are written to stdout as lines starting with "@@ ".
 static void Emit(string name, object? data)
 {
@@ -20,20 +22,42 @@ static string? Option(string[] args, string name)
 static int Usage()
 {
     Console.Error.WriteLine("""
-        orbitdrive-agent run --gateway <https-url> [--state <dir>] [--name <pc-name>] [--web-origin <https-url>]
-        orbitdrive-agent roots add <name> <folder> [--state <dir>]
-        orbitdrive-agent roots list [--state <dir>]
-        orbitdrive-agent roots remove <rootId> [--state <dir>]
+        orbitdrive-agent run [--gateway <https-url>] [--web-origin <https-url>] [--state <dir>] [--name <pc-name>]
+        orbitdrive-agent ctl <status|pair|approve|deny|pause|resume|quit> [--state <dir>]      (talks to the running agent)
+        orbitdrive-agent ctl add_root <name> <folder> | remove_root <rootId> | set_gateway <https-url> [web-origin]
+        orbitdrive-agent roots add <name> <folder> | list | remove <rootId> [--state <dir>]   (agent not running)
 
-        While running, type: pair | approve | deny | pause | resume | reload | quit
+        While "run" is in the foreground you can also type: pair | approve | deny | pause | resume | reload | quit
         """);
     return 2;
 }
 
 if (args.Length == 0) return Usage();
 var stateDirectory = Option(args, "--state") ?? Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OrbitDrive", "agent");
-var state = new AgentState(stateDirectory);
 
+if (args[0] == "ctl" && args.Length >= 2)
+{
+    var positional = args.Skip(2).TakeWhile(a => !a.StartsWith("--", StringComparison.Ordinal)).ToArray();
+    var arguments = (args[1], positional.Length) switch
+    {
+        ("add_root", 2) => new JsonObject { ["name"] = positional[0], ["path"] = positional[1] },
+        ("remove_root", 1) => new JsonObject { ["rootId"] = positional[0] },
+        ("set_gateway", 1 or 2) => new JsonObject { ["gateway"] = positional[0], ["webOrigin"] = positional.Length == 2 ? positional[1] : null },
+        (_, 0) => new JsonObject(),
+        _ => null,
+    };
+    if (arguments is null) return Usage();
+    try
+    {
+        await using var ipc = await LocalIpcClient.ConnectAsync(LocalIpc.PipeName(stateDirectory), TimeSpan.FromSeconds(3));
+        Console.WriteLine((await ipc.SendAsync(args[1], arguments))?.ToJsonString() ?? "ok");
+        return 0;
+    }
+    catch (IpcException e) { Console.Error.WriteLine(e.Message); return 1; }
+    catch (Exception e) when (e is TimeoutException or IOException or UnauthorizedAccessException) { Console.Error.WriteLine("The OrbitDrive agent is not running for this user."); return 1; }
+}
+
+var state = new AgentState(stateDirectory);
 if (args[0] == "roots" && args.Length >= 2)
 {
     switch (args[1])
@@ -52,44 +76,55 @@ if (args[0] == "roots" && args.Length >= 2)
 }
 if (args[0] != "run") return Usage();
 
-if (!Uri.TryCreate(Option(args, "--gateway"), UriKind.Absolute, out var gateway)) return Usage();
-var loopback = gateway.IsLoopback || (IPAddress.TryParse(gateway.Host, out var address) && IPAddress.IsLoopback(address));
-if (gateway.Scheme != "https" && !(gateway.Scheme == "http" && loopback))
+// One agent per user state directory. The lock is released by the OS when the process ends, however it ends.
+FileStream instanceLock;
+try { instanceLock = new FileStream(Path.Join(state.Directory_, "agent.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+catch (IOException)
 {
-    Console.Error.WriteLine("The gateway must use HTTPS. Plain HTTP is accepted only for a loopback development gateway.");
-    return 2;
+    Console.Error.WriteLine("OrbitDrive agent is already running for this user.");
+    return 3;
 }
-var webOrigin = Option(args, "--web-origin") ?? gateway.GetLeftPart(UriPartial.Authority);
-using var shutdown = new CancellationTokenSource();
-Console.CancelKeyPress += (_, e) => { e.Cancel = true; shutdown.Cancel(); };
-using var client = new ControlClient(gateway, state, Option(args, "--name") ?? Environment.MachineName, Emit);
-var running = client.RunAsync(shutdown.Token);
+using var instance = instanceLock;
 
-// Local owner commands. Approval can only come from this local console, never from the network.
-while (!shutdown.IsCancellationRequested && await Console.In.ReadLineAsync(shutdown.Token).AsTask().ContinueWith(t => t.IsCompletedSuccessfully ? t.Result : null) is { } line)
+if (Option(args, "--gateway") is { } gatewayOption)
 {
-    try
-    {
-        switch (line.Trim().ToLowerInvariant())
-        {
-            case "pair":
-                var pairing = await client.CreatePairingAsync(shutdown.Token);
-                // The secret travels in the URL fragment so it is never sent to a web server, proxy log or Referer header.
-                Emit("pairing", new { url = $"{webOrigin}/pair#id={pairing.PairingId}&s={pairing.Secret}", code = $"{pairing.PairingId}-{pairing.Secret}", expiresAtUnixMs = pairing.ExpiresAtUnixMs.ToString() });
-                break;
-            case "approve": Emit("pairing_result", new { state = (await client.ConfirmPairingAsync(true, shutdown.Token)).ToString().ToLowerInvariant() }); break;
-            case "deny": Emit("pairing_result", new { state = (await client.ConfirmPairingAsync(false, shutdown.Token)).ToString().ToLowerInvariant() }); break;
-            case "pause": client.Paused = true; Emit("paused", null); break;
-            case "resume": client.Paused = false; Emit("resumed", null); break;
-            case "reload": state.ReloadRoots(); Emit("roots_reloaded", new { count = state.Roots.Count }); break;
-            case "quit": shutdown.Cancel(); break;
-            case "": break;
-            default: Emit("error", new { message = "Unknown command." }); break;
-        }
-    }
-    catch (ProtocolException e) { Emit("error", new { code = e.Code.ToString(), message = e.Message }); }
-    catch (TimeoutException) { Emit("error", new { message = "The service did not answer in time." }); }
+    try { state.SetGateway(gatewayOption, Option(args, "--web-origin")); }
+    catch (Exception e) when (e is ArgumentException or UriFormatException) { Console.Error.WriteLine(e.Message); return 2; }
 }
-if (!shutdown.IsCancellationRequested) await Task.Delay(Timeout.Infinite, shutdown.Token).ContinueWith(_ => { }); // stdin closed: keep serving until signalled
-await running;
+using var host = new AgentHost(state, Option(args, "--name") ?? Environment.MachineName, Emit);
+Console.CancelKeyPress += (_, e) => { e.Cancel = true; host.Quit(); };
+var ipcTask = host.RunIpcAsync();
+host.StartClient();
+Emit("ready", new { state = host.Status()["state"]!.GetValue<string>(), pipe = LocalIpc.PipeName(state.Directory_) });
+
+// Foreground console commands (development convenience; same operations as the local pipe).
+_ = Task.Run(async () =>
+{
+    while (!host.Shutdown.IsCancellationRequested && await Console.In.ReadLineAsync() is { } line)
+    {
+        try
+        {
+            switch (line.Trim().ToLowerInvariant())
+            {
+                case "pair": await host.PairAsync(host.Shutdown); break;
+                case "approve": await host.ConfirmAsync(true, host.Shutdown); break;
+                case "deny": await host.ConfirmAsync(false, host.Shutdown); break;
+                case "pause": host.SetPaused(true); break;
+                case "resume": host.SetPaused(false); break;
+                case "reload": state.ReloadRoots(); Emit("roots_reloaded", new { count = state.Roots.Count }); break;
+                case "quit": host.Quit(); break;
+                case "": break;
+                default: Emit("error", new { message = "Unknown command." }); break;
+            }
+        }
+        catch (ProtocolException e) { Emit("error", new { code = e.Code.ToString(), message = e.Message }); }
+        catch (IpcException e) { Emit("error", new { message = e.Message }); }
+        catch (TimeoutException) { Emit("error", new { message = "The service did not answer in time." }); }
+        catch (OperationCanceledException) { }
+    }
+}, CancellationToken.None);
+
+await host.WaitAsync();
+await ipcTask;
+Emit("stopped", null);
 return 0;
