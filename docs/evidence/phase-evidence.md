@@ -74,6 +74,19 @@ integration 43969406281, web 43969406325, security 43969406602. `firebase-auth.t
 signed by a test key (served as a JWK set). **Not** evidence about the live `orbitdrive-dev` project: no real Firebase
 sign-in has been performed yet.
 
+## Commit `899e0ff` — Firebase account flows in the web app (W1, web side)
+
+All seven workflows green: contracts 43971788317, gateway 43971788430, desktop 43971788387, desktop-ui 43971788475,
+integration 43971788213, web 43971788364, security 43971788480. The web job ran the new `firebase.spec.mjs` in Chromium,
+Firefox, WebKit and the two emulated phones: create account → gateway refuses the unverified account → verification link
+→ pair → hash-checked download → sign out (device credential cleared and revoked) → duplicate sign-up refused → sign in
+→ password reset with identical answer for unknown emails. Identity provider was the **local Firebase Auth emulator**
+(`demo-orbitdrive`); no email was really sent and the live project was not used.
+
+Dependency note: the `firebase` umbrella package was rejected because it pulls `@grpc/grpc-js` with a high-severity
+advisory; only `@firebase/app` and `@firebase/auth` ship. `firebase-tools` (emulator) lives in `tests/emulators`, is never
+shipped, and its own advisories are reported as a warning by the security workflow rather than failing it.
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were

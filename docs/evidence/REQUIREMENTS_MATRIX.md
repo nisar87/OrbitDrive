@@ -1,14 +1,14 @@
 # Requirement matrix (live status)
 
 Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists for the implemented scope; hardware/device proof still required), COMPLETE, BLOCKED.
-**No requirement is COMPLETE.** Last code-verified commit: `23b7d3f` (runs in `phase-evidence.md`).
+**No requirement is COMPLETE.** Last code-verified commit: `899e0ff` (runs in `phase-evidence.md`).
 
 | ID | Status | Evidence / gap |
 |---|---|---|
 | R01 | IN_PROGRESS | One repo, generated C#/TS models, drift check + shared fixtures green (contracts 43951326845). Reproducible toolchain pinned via global.json/lockfile |
 | R02 | IN_PROGRESS | Loop followed for the slice; evidence in phase-evidence.md |
 | R03 | IN_PROGRESS | Web: slice UI only, W4 shell not built. WPF console: functional 7-page console, unstyled beyond basics, screenshots unreviewed. No rubric score claimed |
-| R04 | IN_PROGRESS | Gateway-side Firebase token verification with 22 positive/negative cases incl. wrong project, expired, forged, alg-none, unverified email (integration firebase-auth suite). No web login/reset/logout UI on Firebase yet; nothing tested against the live project |
+| R04 | AUTOMATED_VERIFIED | Sign-up, email verification, login, reset, logout in 5 browser projects against the Auth emulator; gateway token checks incl. wrong-project/expired/forged/unverified (web 43971788364, integration firebase-auth). Awaiting a real sign-in against the live project |
 | R05 | IN_PROGRESS | One-use expiring code + PC approval implemented and tested (integration: expiry, reuse, lockout, race in StoreTests). QR image rendered on the PC and verified by reference encoder + decoder (integration qr suite); in-site scanner and real camera scan outstanding |
 | R06 | IN_PROGRESS | Device grant persists across agent restart; unapproved/revoked browser denied (integration). Lost on gateway restart until W3 |
 | R07 | IN_PROGRESS | ECDSA identity, DPAPI CurrentUser via P/Invoke on Windows; restart keeps pcId (Windows integration). Rotation not built |
