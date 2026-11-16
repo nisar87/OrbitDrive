@@ -1,7 +1,7 @@
 # Requirement matrix (live status)
 
 Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists for the implemented scope; hardware/device proof still required), COMPLETE, BLOCKED.
-**No requirement is COMPLETE.** Last code-verified commit: `c23e4ae` (runs in `phase-evidence.md`).
+**No requirement is COMPLETE.** Last code-verified commit: `83f84b1` (runs in `phase-evidence.md`).
 
 | ID | Status | Evidence / gap |
 |---|---|---|
@@ -9,7 +9,7 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R02 | IN_PROGRESS | Loop followed for the slice; evidence in phase-evidence.md |
 | R03 | IN_PROGRESS | Web: slice UI only, W4 shell not built. WPF console: functional 7-page console, unstyled beyond basics, screenshots unreviewed. No rubric score claimed |
 | R04 | NOT_STARTED | Development HMAC identity only. Firebase Auth is W1 (needs project config) |
-| R05 | IN_PROGRESS | One-use expiring code + PC approval implemented and tested (integration: expiry, reuse, lockout, race in StoreTests). QR image rendering/scanning not built |
+| R05 | IN_PROGRESS | One-use expiring code + PC approval implemented and tested (integration: expiry, reuse, lockout, race in StoreTests). QR image rendered on the PC and verified by reference encoder + decoder (integration qr suite); in-site scanner and real camera scan outstanding |
 | R06 | IN_PROGRESS | Device grant persists across agent restart; unapproved/revoked browser denied (integration). Lost on gateway restart until W3 |
 | R07 | IN_PROGRESS | ECDSA identity, DPAPI CurrentUser via P/Invoke on Windows; restart keeps pcId (Windows integration). Rotation not built |
 | R08 | IN_PROGRESS | Roots added only by local owner action (console or CLI); remote side sees exactly those (desktop-ui, integration). Drive-root warning exists but is untested |

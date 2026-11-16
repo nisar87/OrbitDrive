@@ -54,6 +54,19 @@ integration 43961529432, web 43961529400, security 43961529697.
 - Defects found on the way: UI test list handling and gateway start path (test script only); a Windows fixture-deletion
   race in the slice suite, now an explicit handle-release check.
 
+## Commit `83f84b1` — pairing QR and device management (D2/W2 part)
+
+All seven workflows green: contracts 43965532440, gateway 43965532600, desktop 43965532583, desktop-ui 43965532374,
+integration 43965532417, web 43965532389, security 43965532437.
+
+- QR encoder (`OrbitDrive.Core.QrCode`): 11/11 on Windows and Linux — every module equals the `qrcode` reference encoder
+  for 9 texts across versions 1-10, all 8 masks decode with `jsQR`, oversized text refused. No camera scan has been done.
+- Devices: 5/5 — lists are per account / per PC, one PC cannot revoke another PC's device, PC-side revoke cuts a live
+  transfer, browser-side revoke, disconnect PC releases ownership.
+- Console UI Automation 33/33 (adds: QR image shown, reattach without a second agent, paired browser listed, revoke on the
+  PC ends that browser's access). Defect found and fixed: a console that attached to a running agent could relaunch it once
+  after an external quit (desktop-ui 43964769582 failed → fixed in 83f84b1).
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were

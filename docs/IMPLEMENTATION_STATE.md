@@ -2,9 +2,9 @@
 
 Updated: 2026-11-17 (session 1). Branch: `feature/orbitdrive-foundation`.
 
-**Last code-verified commit: `c23e4ae`** — all seven workflows green: contracts 43961529396, gateway 43961529361,
-desktop 43961529459, desktop-ui 43961529507 (29/29 UI Automation checks on the real console), integration 43961529432
-(Windows + Linux, slice + IPC suites), web 43961529400, security 43961529697.
+**Last code-verified commit: `83f84b1`** — all seven workflows green: contracts 43965532440, gateway 43965532600,
+desktop 43965532583, desktop-ui 43965532374 (33/33 UI Automation checks), integration 43965532417 (Windows + Linux:
+slice, IPC, devices, QR suites), web 43965532389, security 43965532437.
 
 Branch policy (owner, 2026-11-17): `main` exists and is the default branch. Work lands on
 `feature/orbitdrive-foundation` first; `main` is fast-forwarded only to commits whose seven workflows are green.
@@ -18,7 +18,7 @@ Firebase is parked by the owner for now: keep the development identity and build
 | D0 | IN_PROGRESS | Done: solution, Core/Agent separation, WPF launch + UI Automation + capture spike on windows-2025, bounded-memory 1 GiB stream, toolchain record. Missing: modern Explorer command spike (needs Windows 11 + package identity), packaging/app-identity route, reconnect-without-duplicates spike |
 | W1 | NOT_STARTED | Parked with Firebase. Development identity stands in |
 | D1 | AUTOMATED_VERIFIED (partial) | Owner console (7 pages), tray, close-to-tray, Quit, single instance (console + agent), same-user local channel with closed command set, pause, persisted settings. UI Automation 29/29 on windows-2025. Missing: start-at-sign-in, crash-restart policy, lock/sleep behaviour, dark/high-contrast themes, DPI review, standard-user and second-Windows-user evidence, tray interaction test, **visual review of screenshots (artifact `owner-console-ui`, not viewable from the build sandbox)** |
-| W2 / D2 | IN_PROGRESS | Pairing state machine, PC-side approval UI (account, browser, matching code), revocation of a browser; no QR image yet (link + code shown), no in-site scanner, no device list/revoke on the PC, no web Devices page |
+| W2 / D2 | IN_PROGRESS | Pairing state machine, PC-side approval UI (account, browser, matching code), revocation of a browser; QR image on the PC (encoder verified against a reference encoder and a real decoder), device list + revoke on the PC, gateway device list / revoke / disconnect-PC APIs with isolation tests. Missing: web Devices page, in-site QR scanner, per-IP rate limits, QR scan with a real phone camera |
 | W3 / D3 | IN_PROGRESS (early) | Outbound control channel, generations, reconnect; no leases/heartbeat expiry, no Firestore, no fault-injection suite |
 | W4 / D4 | IN_PROGRESS (early) | Secure browsing core + minimal Explorer view; no shell, sorting, selection, properties, volume binding |
 | W5 / D5 | IN_PROGRESS (early) | Range relay, revisions, capabilities, 1 GiB verified; no managed save mode, interrupted-resume e2e, quotas |
@@ -49,8 +49,8 @@ web) works end to end in CI. It is a slice through M1–M2, not completion of th
 
 ## Next steps (dependency order)
 
-1. D2/W2 without Firebase: QR image on the PC (needs a QR encoder; no third-party package has been vetted yet),
-   device list + revoke on the PC and in the web app, revoke PC, in-site QR scanner with manual fallback, per-IP rate limits.
+1. W2 remainder: web Devices page (list/rename/revoke, disconnect PC) on the existing APIs, in-site QR scanner with
+   manual fallback, per-IP rate limits. W1 (Firebase Auth) can start as soon as the owner confirms the project to use.
 2. D1 leftovers: start at sign-in (opt-in), bounded crash restart, themes/high contrast, keyboard pass, tray test.
 3. W3/D3: durable gateway store (file-backed stand-in for Firestore), leases/heartbeats, fault-injection; decide ADR-1.
 4. D4/W4: Windows-style web shell + full Explorer; root volume binding. Then D5/W5 completion, D6/W6.
