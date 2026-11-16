@@ -1,24 +1,24 @@
 # Requirement matrix (live status)
 
 Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists for the implemented scope; hardware/device proof still required), COMPLETE, BLOCKED.
-**No requirement is COMPLETE.** Last code-verified commit: `ea8337d` (runs in `phase-evidence.md`).
+**No requirement is COMPLETE.** Last code-verified commit: `c23e4ae` (runs in `phase-evidence.md`).
 
 | ID | Status | Evidence / gap |
 |---|---|---|
 | R01 | IN_PROGRESS | One repo, generated C#/TS models, drift check + shared fixtures green (contracts 43951326845). Reproducible toolchain pinned via global.json/lockfile |
 | R02 | IN_PROGRESS | Loop followed for the slice; evidence in phase-evidence.md |
-| R03 | IN_PROGRESS | Slice UI only (single window, details list). W4 shell not built; no rubric score claimed. WPF console is a D0 feasibility window |
+| R03 | IN_PROGRESS | Web: slice UI only, W4 shell not built. WPF console: functional 7-page console, unstyled beyond basics, screenshots unreviewed. No rubric score claimed |
 | R04 | NOT_STARTED | Development HMAC identity only. Firebase Auth is W1 (needs project config) |
 | R05 | IN_PROGRESS | One-use expiring code + PC approval implemented and tested (integration: expiry, reuse, lockout, race in StoreTests). QR image rendering/scanning not built |
 | R06 | IN_PROGRESS | Device grant persists across agent restart; unapproved/revoked browser denied (integration). Lost on gateway restart until W3 |
 | R07 | IN_PROGRESS | ECDSA identity, DPAPI CurrentUser via P/Invoke on Windows; restart keeps pcId (Windows integration). Rotation not built |
-| R08 | IN_PROGRESS | Roots only via local CLI; only approved root listed (integration, Core tests). Owner UI is D1/D4 |
+| R08 | IN_PROGRESS | Roots added only by local owner action (console or CLI); remote side sees exactly those (desktop-ui, integration). Drive-root warning exists but is untested |
 | R09 | IN_PROGRESS | Traversal/ADS/reserved/symlink/junction/ancestor-swap/hard-link denied on Windows CI. Volume identity, placeholder, race fuzzing outstanding |
 | R10 | IN_PROGRESS | No write path exists at all; every root reports readOnly. Upload enablement is D9/W9 |
-| R11 | NOT_STARTED | Tray/startup/quit lifecycle is D1 |
+| R11 | IN_PROGRESS | Tray, close-to-tray, Quit with no orphan agent, single instance verified by UI Automation (desktop-ui 43961529507). Start-at-sign-in, standard-user run outstanding |
 | R12 | IN_PROGRESS | Agent is outbound-only by construction (no listener). Only loopback tested; no external-network or mobile-data trial |
 | R13 | IN_PROGRESS | Backoff+jitter reconnect; restart test. No fault-injection/idempotency suite yet |
-| R14 | IN_PROGRESS | Online/offline/paused states tested (integration, web e2e). Lease/heartbeat expiry not built |
+| R14 | IN_PROGRESS | Not-set-up/connecting/online/paused/offline states shown truthfully in console and web (desktop-ui, integration, web e2e). Lease/heartbeat expiry not built |
 | R15 | AUTOMATED_VERIFIED | Listing compared with the real folder on Windows + Linux, through the web UI in 3 engines (integration, web 43951327095). Awaiting real-device use |
 | R16 | IN_PROGRESS | Details view, click to open/download. No sort/selection/context menu/icon view yet |
 | R17 | IN_PROGRESS | Breadcrumbs, Unicode names, real size/mtime tested. Back/forward/up, properties panel outstanding |
@@ -58,7 +58,7 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R51 | IN_PROGRESS | Revoke cuts an active stream and later access; sign-out revokes the browser (integration, web e2e). Account removal, PC removal outstanding |
 | R52 | NOT_STARTED | No service worker exists yet (W6) |
 | R53 | IN_PROGRESS | Account/request/PC binding, substituted PC, second account refused (integration, StoreTests). Origin display + anti-phishing copy on the PC is D2 |
-| R54 | IN_PROGRESS | Empty/offline/error/paused states in web slice with screenshots; desktop states are D1 |
+| R54 | IN_PROGRESS | Empty/offline/error/paused states in web slice and owner console (asserted text; console screenshots unreviewed) |
 | R55 | NOT_STARTED | D6/W6 |
 | R56 | IN_PROGRESS | Locked file → truthful 'in use' error on Windows (Core test). Removable/placeholder/EFS not tested |
 | R57 | IN_PROGRESS | Gateway refuses Production with dev identity; web build guard (tests). No Firebase projects exist |

@@ -37,6 +37,23 @@ integration 43952452314, web 43952452370, security 43952452437. Adds resource-li
 (integration: Windows 37/37, Linux 36 passed + 1 Windows-only skip). Runs for the docs-only commit `ae6c112` were
 partly cancelled by the next push (concurrency group) and are not evidence.
 
+## Commit `c23e4ae` — D1 owner console
+
+All seven workflows green: contracts 43961529396, gateway 43961529361, desktop 43961529459, desktop-ui 43961529507,
+integration 43961529432, web 43961529400, security 43961529697.
+
+- **desktop-ui 43961529507** (windows-2025, Windows Server 2025, elevated): `scripts/desktop-ui-test.ps1` drove the real
+  `OrbitDrive.exe` through Windows UI Automation against a real agent and gateway — 29/29 checks: not-set-up state, single
+  console instance, exactly one agent, nothing shared by default, missing folder refused, folder shared read-only, non-HTTPS
+  relay refused, Online, pairing code, approval prompt with account/browser/matching code, no access before approval, browser
+  then sees exactly that folder and its real file, Pause cuts access (503) and Resume restores it, Quit leaves no orphan agent
+  and the PC goes offline, settings/identity/grant persist across restart, close-to-tray keeps access, an externally stopped
+  agent is not relaunched. 9 real screen captures in artifact `owner-console-ui` (**not visually reviewed**).
+- **integration 43961529432**: `ipc.test.mjs` 8/8 on Windows and Linux (closed command set, malformed/oversized input,
+  HTTPS-only relay, second agent exits with code 3, pair/approve/pause/quit over the pipe, restart persistence).
+- Defects found on the way: UI test list handling and gateway start path (test script only); a Windows fixture-deletion
+  race in the slice suite, now an explicit handle-release check.
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were
