@@ -87,10 +87,11 @@ Dependency note: the `firebase` umbrella package was rejected because it pulls `
 advisory; only `@firebase/app` and `@firebase/auth` ship. `firebase-tools` (emulator) lives in `tests/emulators`, is never
 shipped, and its own advisories are reported as a warning by the security workflow rather than failing it.
 
-## Commit `258ebc3` — web Devices page (W2)
+## Commit `8390f81` — web Devices page (W2; code from `258ebc3`)
 
-All seven workflows green: contracts 43973939562, gateway 43973939570, desktop 43973940031, desktop-ui 43973939538,
-integration 43973939649, web 43973939569, security 43973939668. New browser test (5 projects): approved browsers listed,
+All seven workflows green on `8390f81`: contracts 43974825117, gateway 43974825202, desktop 43974825184, desktop-ui
+43974825160, integration 43974825234, web 43974825166, security 43974825223. (On `258ebc3` itself six were green and the
+security run 43973939668 was cancelled by the next push, so `258ebc3` is not counted as verified.) New browser test (5 projects): approved browsers listed,
 removing another browser needs a second confirmation and then locks it out (403), disconnecting the PC empties the list.
 
 ## Local-only observations (not CI evidence)

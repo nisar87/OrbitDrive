@@ -2,8 +2,8 @@
 
 Updated: 2026-11-17 (session 1). Branch: `feature/orbitdrive-foundation`.
 
-**Last code-verified commit: `258ebc3`** — all seven workflows green: contracts 43973939562, gateway 43973939570,
-desktop 43973940031, desktop-ui 43973939538, integration 43973939649, web 43973939569, security 43973939668.
+**Last code-verified commit: `8390f81`** — all seven workflows green: contracts 43974825117, gateway 43974825202,
+desktop 43974825184, desktop-ui 43974825160, integration 43974825234, web 43974825166, security 43974825223.
 
 Hosting decision (owner, 2026-11-17): no subdomain of the AI CV Studio domain. The web app will be served from the
 `orbitdrive-dev` project's own Hosting address until the owner buys a new domain. **Nothing is deployed.** A live site
