@@ -150,6 +150,13 @@ internal sealed class AgentHost : IDisposable
                 case "pair": return await PairAsync(cancellation);
                 case "approve": return new JsonObject { ["state"] = await ConfirmAsync(true, cancellation) };
                 case "deny": return new JsonObject { ["state"] = await ConfirmAsync(false, cancellation) };
+                case "devices":
+                    var devices = await Client.ListDevicesAsync(cancellation);
+                    return new JsonArray([.. devices.Devices.Select(d => (JsonNode)new JsonObject { ["deviceId"] = d.DeviceId, ["name"] = d.Name })]);
+                case "revoke_device":
+                    await Client.RevokeDeviceAsync(Arg(args, "deviceId", 128), cancellation);
+                    Emit("device_revoked", null);
+                    return null;
                 case "pause": SetPaused(true); return null;
                 case "resume": SetPaused(false); return null;
                 case "set_gateway":

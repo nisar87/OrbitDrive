@@ -272,6 +272,22 @@ app.MapPost("/v1/agent-streams/{streamId}", async (HttpContext context, string s
     context.Response.StatusCode = (int)HttpStatusCode.NoContent;
 });
 
+app.MapGet("/v1/browser-devices", (HttpContext context) =>
+{
+    var current = AuthorizeBrowser(context);
+    return WriteJson(context, new BrowserDeviceListResponse
+    {
+        Devices = [.. store.DevicesForOwner(current.OwnerUid).Select(d => new BrowserDeviceSummary { DeviceId = d.Id, Name = d.Name, Current = d.Id == current.Id, PcIds = [.. d.PcIds] })],
+    });
+});
+
+app.MapDelete("/v1/pcs/{pcId}", (HttpContext context, string pcId) =>
+{
+    AuthorizeBrowser(context, pcId);
+    store.RemovePc(pcId);
+    return WriteJson(context, new Ack { Ok = true });
+});
+
 app.MapDelete("/v1/browser-devices/{deviceId}", (HttpContext context, string deviceId) =>
 {
     var device = AuthorizeBrowser(context);

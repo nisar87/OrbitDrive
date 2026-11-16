@@ -35,6 +35,16 @@ static int Usage()
 if (args.Length == 0) return Usage();
 var stateDirectory = Option(args, "--state") ?? Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OrbitDrive", "agent");
 
+if (args[0] == "qr" && args.Length >= 2)
+{
+    // Diagnostic: prints the QR matrix the console draws for a pairing link (used by the encoder conformance test).
+    OrbitDrive.Core.QrCode qr;
+    try { qr = OrbitDrive.Core.QrCode.Encode(args[1], args.Length >= 3 && int.TryParse(args[2], out var forcedMask) && forcedMask is >= 0 and <= 7 ? forcedMask : -1); }
+    catch (ArgumentException e) { Console.Error.WriteLine(e.Message); return 1; }
+    Console.WriteLine(JsonSerializer.Serialize(new { version = qr.Version, mask = qr.Mask, size = qr.Size, rows = qr.ToRows() }));
+    return 0;
+}
+
 if (args[0] == "ctl" && args.Length >= 2)
 {
     var positional = args.Skip(2).TakeWhile(a => !a.StartsWith("--", StringComparison.Ordinal)).ToArray();
@@ -42,6 +52,7 @@ if (args[0] == "ctl" && args.Length >= 2)
     {
         ("add_root", 2) => new JsonObject { ["name"] = positional[0], ["path"] = positional[1] },
         ("remove_root", 1) => new JsonObject { ["rootId"] = positional[0] },
+        ("revoke_device", 1) => new JsonObject { ["deviceId"] = positional[0] },
         ("set_gateway", 1 or 2) => new JsonObject { ["gateway"] = positional[0], ["webOrigin"] = positional.Length == 2 ? positional[1] : null },
         (_, 0) => new JsonObject(),
         _ => null,

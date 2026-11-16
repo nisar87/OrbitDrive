@@ -22,7 +22,9 @@ public static class Actions
     public const string PrepareRead = "prepare_read";
     public const string OpenRead = "open_read";
     public const string CancelStream = "cancel_stream";
-    public static readonly IReadOnlySet<string> All = new HashSet<string> { "challenge", "hello", "create_pairing", "confirm_pairing", "pairing_claimed", "list_roots", "list_directory", "prepare_read", "open_read", "cancel_stream" };
+    public const string ListDevices = "list_devices";
+    public const string RevokeDevice = "revoke_device";
+    public static readonly IReadOnlySet<string> All = new HashSet<string> { "challenge", "hello", "create_pairing", "confirm_pairing", "pairing_claimed", "list_roots", "list_directory", "prepare_read", "open_read", "cancel_stream", "list_devices", "revoke_device" };
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<EnvelopeKind>))]
@@ -285,6 +287,24 @@ public sealed record OpenReadRequest
 public sealed record CancelStreamRequest
 {
     [JsonPropertyName("streamId")] public required string StreamId { get; init; }
+}
+
+public sealed record BrowserDeviceSummary
+{
+    [JsonPropertyName("deviceId")] public required string DeviceId { get; init; }
+    [JsonPropertyName("name")] public required string Name { get; init; }
+    [JsonPropertyName("current")] public required bool Current { get; init; }
+    [JsonPropertyName("pcIds")] public required IReadOnlyList<string> PcIds { get; init; }
+}
+
+public sealed record BrowserDeviceListResponse
+{
+    [JsonPropertyName("devices")] public required IReadOnlyList<BrowserDeviceSummary> Devices { get; init; }
+}
+
+public sealed record RevokeDeviceRequest
+{
+    [JsonPropertyName("deviceId")] public required string DeviceId { get; init; }
 }
 
 public sealed record Ack

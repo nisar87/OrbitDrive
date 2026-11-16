@@ -5,7 +5,7 @@ export type Int64String = string;
 
 export const PROTOCOL_VERSION = 1;
 export const MIN_PROTOCOL_VERSION = 1;
-export const ACTIONS = ["challenge","hello","create_pairing","confirm_pairing","pairing_claimed","list_roots","list_directory","prepare_read","open_read","cancel_stream"] as const;
+export const ACTIONS = ["challenge","hello","create_pairing","confirm_pairing","pairing_claimed","list_roots","list_directory","prepare_read","open_read","cancel_stream","list_devices","revoke_device"] as const;
 
 export type EnvelopeKind = 'req' | 'res' | 'evt';
 
@@ -190,6 +190,21 @@ export interface CancelStreamRequest {
   streamId: string;
 }
 
+export interface BrowserDeviceSummary {
+  deviceId: string;
+  name: string;
+  current: boolean;
+  pcIds: string[];
+}
+
+export interface BrowserDeviceListResponse {
+  devices: BrowserDeviceSummary[];
+}
+
+export interface RevokeDeviceRequest {
+  deviceId: string;
+}
+
 export interface Ack {
   ok: boolean;
 }
@@ -239,6 +254,9 @@ export interface ProtocolTypeMap {
   DownloadSession: DownloadSession;
   OpenReadRequest: OpenReadRequest;
   CancelStreamRequest: CancelStreamRequest;
+  BrowserDeviceSummary: BrowserDeviceSummary;
+  BrowserDeviceListResponse: BrowserDeviceListResponse;
+  RevokeDeviceRequest: RevokeDeviceRequest;
   Ack: Ack;
   GatewayMeta: GatewayMeta;
   DevSignInRequest: DevSignInRequest;
@@ -441,6 +459,18 @@ export const SCHEMA = {
     },
     "CancelStreamRequest": {
       "streamId": "string"
+    },
+    "BrowserDeviceSummary": {
+      "deviceId": "string",
+      "name": "string",
+      "current": "bool",
+      "pcIds": "string[]"
+    },
+    "BrowserDeviceListResponse": {
+      "devices": "BrowserDeviceSummary[]"
+    },
+    "RevokeDeviceRequest": {
+      "deviceId": "string"
     },
     "Ack": {
       "ok": "bool"

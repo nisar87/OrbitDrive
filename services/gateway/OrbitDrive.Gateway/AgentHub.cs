@@ -192,6 +192,12 @@ public sealed class AgentHub(Store store, GatewayOptions options, ILogger<AgentH
             case Actions.ConfirmPairing:
                 var confirm = ProtocolJson.FromElement<ConfirmPairingRequest>(envelope.Payload ?? throw new JsonException());
                 return new ConfirmPairingResult { State = store.ConfirmPairing(confirm.PairingId, connection.PcId, confirm.Approve) };
+            case Actions.ListDevices:
+                return new BrowserDeviceListResponse { Devices = [.. store.DevicesForPc(connection.PcId).Select(d => new BrowserDeviceSummary { DeviceId = d.Id, Name = d.Name, Current = false, PcIds = [connection.PcId] })] };
+            case Actions.RevokeDevice:
+                // Scoped to the calling PC's own grants: one PC can never revoke (or learn about) another PC's devices.
+                store.RevokeGrant(connection.PcId, ProtocolJson.FromElement<RevokeDeviceRequest>(envelope.Payload ?? throw new JsonException()).DeviceId);
+                return new Ack { Ok = true };
             default:
                 throw new ProtocolException(ErrorCode.UnknownAction, "Unknown action.");
         }

@@ -273,6 +273,12 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
         return (await RequestAsync<ConfirmPairingResult>(Actions.ConfirmPairing, new ConfirmPairingRequest { PairingId = id, Approve = approve }, cancellation)).State;
     }
 
+    public Task<BrowserDeviceListResponse> ListDevicesAsync(CancellationToken cancellation) =>
+        RequestAsync<BrowserDeviceListResponse>(Actions.ListDevices, new Ack { Ok = true }, cancellation);
+
+    public Task RevokeDeviceAsync(string deviceId, CancellationToken cancellation) =>
+        RequestAsync<Ack>(Actions.RevokeDevice, new RevokeDeviceRequest { DeviceId = deviceId }, cancellation);
+
     public void Dispose()
     {
         _http.Dispose();

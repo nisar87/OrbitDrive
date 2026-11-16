@@ -8,7 +8,7 @@
     "PairingState": ["issued", "claimed", "approved", "denied", "expired"],
     "TransferState": ["offered", "accepted", "preparing", "transferring", "interrupted", "cancelled", "expired", "revoked", "sent_to_browser", "confirmed_saved"]
   },
-  "actions": ["challenge", "hello", "create_pairing", "confirm_pairing", "pairing_claimed", "list_roots", "list_directory", "prepare_read", "open_read", "cancel_stream"],
+  "actions": ["challenge", "hello", "create_pairing", "confirm_pairing", "pairing_claimed", "list_roots", "list_directory", "prepare_read", "open_read", "cancel_stream", "list_devices", "revoke_device"],
   "types": {
     "ErrorInfo": { "code": "ErrorCode", "message": "string" },
     "ErrorResponse": { "error": "ErrorInfo" },
@@ -37,6 +37,9 @@
     "DownloadSession": { "capability": "string", "urlPath": "string", "name": "string", "size": "int64", "revision": "string", "expiresAtUnixMs": "int64" },
     "OpenReadRequest": { "readToken": "string", "offset": "int64", "length": "int64", "streamId": "string", "uplinkToken": "string" },
     "CancelStreamRequest": { "streamId": "string" },
+    "BrowserDeviceSummary": { "deviceId": "string", "name": "string", "current": "bool", "pcIds": "string[]" },
+    "BrowserDeviceListResponse": { "devices": "BrowserDeviceSummary[]" },
+    "RevokeDeviceRequest": { "deviceId": "string" },
     "Ack": { "ok": "bool" },
     "GatewayMeta": { "protocolVersion": "int32", "minProtocolVersion": "int32", "relayTerminatesTls": "bool", "endToEndEncrypted": "bool", "environment": "string" },
     "DevSignInRequest": { "email": "string" },

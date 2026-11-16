@@ -116,6 +116,8 @@ try {
     Click 'PairButton'
     $code = WaitText 'PairCode' '^[A-Z2-9]{6}-[A-Z2-9]{10}$'
     Check $true 'a one-time pairing code is shown'
+    $qr = Find 'PairQr'
+    Check ($qr.Current.BoundingRectangle.Width -ge 200 -and $qr.Current.BoundingRectangle.Height -ge 200) 'a QR code image is shown with the pairing code'
     $signIn = (Api 'Post' '/v1/dev/sign-in' @{ email = 'owner@example.test' }).body
     $auth = @{ Authorization = "Bearer $($signIn.idToken)" }
     $parts = $code.Split('-')
@@ -168,6 +170,21 @@ try {
     Start-Sleep -Seconds 2
     Check (-not $console.HasExited -and (Agents).Count -eq 1) 'closing the window keeps the console (tray) and agent running'
     Check ((Api 'Get' "/v1/pcs/$pcId/roots" $null $device).status -eq 200) 'remote access continues while the window is closed'
+    $console.Kill(); $console.WaitForExit()
+    $console = Start-Process -FilePath $Exe -ArgumentList '--state', "`"$state`"" -PassThru
+    AttachWindow $console
+    Check ((Agents).Count -eq 1) 'a reopened console attaches to the running agent instead of starting another'
+    Nav 'Devices'
+    for ($i = 0; $i -lt 60 -and @(ListItems 'DevicesList').Count -eq 0; $i++) { Start-Sleep -Milliseconds 250 }
+    $paired = @(ListItems 'DevicesList')
+    Check ($paired.Count -eq 1 -and $paired[0] -eq 'Pixel 9') 'the paired browser is listed on the PC'
+    $condition = New-Object System.Windows.Automation.PropertyCondition($AE::NameProperty, 'Pixel 9')
+    (Find 'DevicesList').FindFirst($Scope::Descendants, $condition).GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+    Shot 'devices-paired'
+    Click 'RevokeDeviceButton'
+    $after = $null
+    for ($i = 0; $i -lt 50; $i++) { $after = Api 'Get' "/v1/pcs/$pcId/roots" $null $device; if ($after.status -eq 404) { break }; Start-Sleep -Milliseconds 200 }
+    Check ($after.status -eq 404) 'removing the device on the PC ends that browser''s access'
 
     # The agent is stopped from outside; the console must not relaunch it in a loop.
     & $AgentExe ctl quit --state $state | Out-Null

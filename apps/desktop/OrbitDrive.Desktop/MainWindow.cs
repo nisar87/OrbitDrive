@@ -48,7 +48,13 @@ public sealed class MainWindow : Window
     private readonly ListBox _activity = new() { MinHeight = 200 };
     private readonly TextBlock _settingsError = MakeText("SettingsError", "", 13, FontWeights.Normal, Danger);
     private readonly TextBlock _diagnostics = MakeText("DiagnosticsText", "", 13, FontWeights.Normal);
+    private readonly Image _pairQr = new() { Width = 220, Height = 220, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 8), Visibility = Visibility.Collapsed };
+    private readonly ListBox _devices = new() { MinHeight = 80, Margin = new Thickness(0, 8, 0, 8) };
+    private readonly TextBlock _devicesEmpty = MakeText("DevicesEmpty", "No phone or browser is paired with this PC.", 13, FontWeights.Normal, Muted);
     private List<string> _rootIds = [];
+    private List<string> _deviceIds = [];
+    private string _qrFor = "";
+    private int _tick;
 
     public MainWindow(string stateDirectory)
     {
@@ -64,6 +70,10 @@ public sealed class MainWindow : Window
         AutomationProperties.SetAutomationId(_activity, "ActivityList");
         AutomationProperties.SetAutomationId(_pairLink, "PairLink");
         AutomationProperties.SetName(_nav, "Sections");
+        AutomationProperties.SetAutomationId(_pairQr, "PairQr");
+        AutomationProperties.SetName(_pairQr, "Pairing QR code");
+        AutomationProperties.SetAutomationId(_devices, "DevicesList");
+        RenderOptions.SetBitmapScalingMode(_pairQr, BitmapScalingMode.NearestNeighbor);
 
         BuildPages();
         foreach (var page in Pages) _nav.Items.Add(page);
@@ -170,7 +180,15 @@ public sealed class MainWindow : Window
         _approvalPanel.Children.Add(new TextBlock { Text = "A browser wants access", FontSize = 18, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) });
         _approvalPanel.Children.Add(_approvalText);
         _approvalPanel.Children.Add(decision);
-        Page("Devices", pair, _pairCode, _pairLink, _pairHelp, _approvalPanel, _deviceError);
+        var revoke = MakeButton("RevokeDeviceButton", "Remove selected device's access");
+        revoke.Click += (_, _) => _ = RunAsync(_deviceError, async client =>
+        {
+            if (_devices.SelectedIndex < 0 || _devices.SelectedIndex >= _deviceIds.Count) throw new IpcException("Select a device first.");
+            await client.SendAsync("revoke_device", new JsonObject { ["deviceId"] = _deviceIds[_devices.SelectedIndex] });
+            _tick = 0;
+        });
+        Page("Devices", pair, _pairQr, _pairCode, _pairLink, _pairHelp, _approvalPanel, _deviceError,
+            new TextBlock { Text = "Paired devices", FontSize = 18, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 20, 0, 4) }, _devicesEmpty, _devices, revoke);
 
         Page("Transfers", _transfers,
             MakeText("TransfersHint", "OrbitDrive can see what it has sent to the relay. It cannot see whether a browser finished saving a file.", 13, FontWeights.Normal, Muted));
@@ -226,12 +244,14 @@ public sealed class MainWindow : Window
             "pairing_claimed" => $"{data?["browserName"]} asked to pair",
             "pairing_result" => $"Pairing {data?["state"]}",
             "roots_changed" => "Shared folders changed",
+            "device_revoked" => "A device's access was removed",
             "stream_finished" => $"Transfer {data?["outcome"]} ({data?["bytes"]} bytes sent to the relay)",
             "update_required" => "This version is too old for the service",
             _ => name,
         };
         _activity.Items.Insert(0, $"{DateTime.Now:HH:mm:ss}  {line}");
         while (_activity.Items.Count > 200) _activity.Items.RemoveAt(_activity.Items.Count - 1); // bounded history
+        if (name is "pairing_result" or "device_revoked") _tick = 0;
         if (name == "pairing_claimed" && !IsVisible) Reopen(); // an approval needs the owner's attention
         _ = RefreshAsync();
     }
@@ -305,6 +325,29 @@ public sealed class MainWindow : Window
         _pairLink.Text = pairing?["url"]?.GetValue<string>() ?? "";
         _pairHelp.Text = pairing is null ? "Create a one-time code, then open the link (or type the code) in the OrbitDrive web app on your phone. Codes expire after two minutes."
             : "Open this link on your phone, or type the code in the OrbitDrive web app. It works once and expires in two minutes. Only use a code you created yourself just now.";
+        var link = pairing?["url"]?.GetValue<string>() ?? "";
+        if (link != _qrFor)
+        {
+            _qrFor = link;
+            _pairQr.Source = link.Length == 0 ? null : RenderQr(link);
+            _pairQr.Visibility = link.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        }
+        if (state is "online" or "paused" && _tick++ % 5 == 0)
+        {
+            try
+            {
+                var list = _client is null ? new JsonArray() : (await _client.SendAsync("devices") as JsonArray) ?? new JsonArray();
+                var deviceIds = list.Select(d => d!["deviceId"]!.GetValue<string>()).ToList();
+                if (!deviceIds.SequenceEqual(_deviceIds))
+                {
+                    _deviceIds = deviceIds;
+                    _devices.Items.Clear();
+                    foreach (var device in list) _devices.Items.Add(device!["name"]!.GetValue<string>());
+                }
+                _devicesEmpty.Visibility = deviceIds.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+            catch (Exception e) when (e is IpcException or TimeoutException) { }
+        }
         var approval = status["pendingApproval"];
         _approvalPanel.Visibility = approval is null ? Visibility.Collapsed : Visibility.Visible;
         _approvalText.Text = approval is null ? "" : $"Account: {approval["accountLabel"]}\nBrowser: {approval["browserName"]}\nCode: {approval["confirmationCode"]}\n\nApprove only if this is you and the same code is shown in your browser.";
@@ -313,6 +356,20 @@ public sealed class MainWindow : Window
         if (!_gateway.IsKeyboardFocused && _gateway.Text.Length == 0) _gateway.Text = status["gateway"]?.GetValue<string>() ?? "";
         _diagnostics.Text = $"PC id: {status["pcId"]}\nAgent version: {status["agentVersion"]}\nRelay: {status["gateway"] ?? "(not set)"}\nState folder: {_stateDirectory}\n" +
                             $"{RuntimeInformation.OSDescription} · {RuntimeInformation.ProcessArchitecture} · {RuntimeInformation.FrameworkDescription}\nRunning elevated: {Environment.IsPrivilegedProcess}";
+    }
+
+    /// <summary>Draws the pairing link as a QR code with the 4-module quiet zone scanners need.</summary>
+    private static System.Windows.Media.Imaging.BitmapSource RenderQr(string text)
+    {
+        var qr = OrbitDrive.Core.QrCode.Encode(text);
+        const int quiet = 4;
+        var side = qr.Size + quiet * 2;
+        var pixels = new byte[side * side];
+        Array.Fill(pixels, (byte)255);
+        for (var y = 0; y < qr.Size; y++)
+            for (var x = 0; x < qr.Size; x++)
+                if (qr[x, y]) pixels[(y + quiet) * side + x + quiet] = 0;
+        return System.Windows.Media.Imaging.BitmapSource.Create(side, side, 96, 96, PixelFormats.Gray8, null, pixels, side);
     }
 
     private void Reopen() { Show(); WindowState = WindowState.Normal; Activate(); }

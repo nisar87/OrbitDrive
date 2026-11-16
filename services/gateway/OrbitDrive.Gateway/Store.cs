@@ -205,6 +205,40 @@ public sealed class Store(GatewayOptions options, TimeProvider time)
         lock (_gate) return [.. _pcs.Values.Where(p => p.OwnerUid == device.OwnerUid && device.PcIds.Contains(p.PcId))];
     }
 
+    public List<BrowserDeviceRecord> DevicesForOwner(string ownerUid)
+    {
+        lock (_gate) return [.. _devices.Values.Where(d => d.OwnerUid == ownerUid && d.Active && !d.Revoked)];
+    }
+
+    public List<BrowserDeviceRecord> DevicesForPc(string pcId)
+    {
+        lock (_gate) return [.. _devices.Values.Where(d => d.Active && !d.Revoked && d.PcIds.Contains(pcId))];
+    }
+
+    /// <summary>The PC owner, at the PC, withdraws one browser's grant for that PC only. Live transfers to it are cut.</summary>
+    public void RevokeGrant(string pcId, string deviceId)
+    {
+        lock (_gate)
+        {
+            if (!_devices.TryGetValue(deviceId, out var device) || !device.PcIds.Remove(pcId))
+                throw new ProtocolException(ErrorCode.NotFound, "That device is not paired with this PC.");
+            foreach (var session in _downloads.Values.Where(d => d.BrowserDeviceId == deviceId && d.PcId == pcId)) session.Revoked.Cancel();
+        }
+    }
+
+    /// <summary>Disconnects a PC from its account: every grant and download for it ends and ownership is released.</summary>
+    public void RemovePc(string pcId)
+    {
+        lock (_gate)
+        {
+            if (!_pcs.TryGetValue(pcId, out var pc)) throw new ProtocolException(ErrorCode.NotFound, "PC not found.");
+            pc.OwnerUid = null;
+            foreach (var device in _devices.Values) device.PcIds.Remove(pcId);
+            foreach (var session in _downloads.Values.Where(d => d.PcId == pcId)) session.Revoked.Cancel();
+            foreach (var pairing in _pairings.Values.Where(p => p.PcId == pcId && p.State is PairingState.Issued or PairingState.Claimed)) pairing.State = PairingState.Expired;
+        }
+    }
+
     public string AddDownload(DownloadSessionRecord session)
     {
         var capability = Secrets.Token();
