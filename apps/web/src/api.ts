@@ -57,5 +57,8 @@ export const api = {
   roots: (s: Session, pcId: string) => call('RootListResponse', s, 'GET', `/v1/pcs/${encodeURIComponent(pcId)}/roots`),
   directory: (s: Session, pcId: string, query: DirectoryQuery) => call('DirectoryPage', s, 'POST', `/v1/pcs/${encodeURIComponent(pcId)}/directory-queries`, query),
   prepareDownload: (s: Session, pcId: string, entryId: string) => call('DownloadSession', s, 'POST', '/v1/download-sessions', { pcId, entryId }),
+  devices: (s: Session) => call('BrowserDeviceListResponse', s, 'GET', '/v1/browser-devices'),
+  revokeDevice: (s: Session, deviceId: string) => call('Ack', s, 'DELETE', `/v1/browser-devices/${encodeURIComponent(deviceId)}`),
+  disconnectPc: (s: Session, pcId: string) => call('Ack', s, 'DELETE', `/v1/pcs/${encodeURIComponent(pcId)}`),
   revokeThisBrowser: (s: Session) => call('Ack', s, 'DELETE', '/v1/browser-devices/current'),
 };

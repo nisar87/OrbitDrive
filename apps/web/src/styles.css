@@ -66,3 +66,9 @@ input { min-height: 44px; padding: 8px 12px; border-radius: 6px; border: 1px sol
 label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--text); }
 label.check input { width: 20px; height: 20px; min-height: 0; flex: none; }
 .links { display: flex; flex-wrap: wrap; gap: 4px; }
+button.danger { background: var(--danger); color: #fff; }
+button.ghost.danger { background: transparent; color: var(--danger); }
+.confirm { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.device-list { list-style: none; margin: 0; padding: 0; }
+.device-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.device-list small { display: block; color: var(--muted); font-size: 0.8rem; }

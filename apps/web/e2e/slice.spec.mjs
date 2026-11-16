@@ -3,7 +3,7 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { startGateway, startAgent, agentCli, tempDir, makeFixtureRoot, sha256, repoRoot } from '../../../tests/integration/harness.mjs';
+import { startGateway, startAgent, agentCli, tempDir, makeFixtureRoot, sha256, repoRoot, Browser, pair } from '../../../tests/integration/harness.mjs';
 
 let gateway, agent, root, stateDir;
 const shots = join(repoRoot, 'artifacts', 'web-screenshots');
@@ -115,4 +115,39 @@ test('manual code entry, a wrong code, and refusal of a second account', async (
   // This PC already belongs to owner@example.test, so a different account is refused outright.
   await expect(page.getByRole('alert')).toContainText('different account');
   await expect(page.getByTestId('confirmation-code')).toHaveCount(0);
+});
+
+test('devices page: see approved browsers, remove another browser, disconnect the PC', async ({ page }, info) => {
+  await signIn(page, 'owner@example.test');
+  agent.send('pair');
+  const pairing = await agent.next('pairing');
+  await page.goto(pairing.url);
+  await expect(page.getByTestId('confirmation-code')).toBeVisible();
+  await agent.next('pairing_claimed');
+  agent.send('approve');
+  const browsers = page.getByRole('article', { name: 'Approved browsers' });
+  await expect(browsers.getByText('(this browser)')).toBeVisible();
+
+  // A second browser of the same account, paired through the real API.
+  const tablet = await new Browser(gateway, 'owner@example.test').signIn();
+  await pair(agent, tablet, 'Kitchen tablet');
+  await page.getByRole('button', { name: 'Refresh' }).click();
+  await expect(browsers.getByText('Kitchen tablet', { exact: true })).toBeVisible();
+  await expect(browsers.getByText('Can reach Office PC').first()).toBeVisible();
+  await page.screenshot({ path: join(shots, `${info.project.name}-08-devices.png`) });
+
+  await browsers.getByRole('button', { name: 'Remove Kitchen tablet' }).click();
+  expect((await tablet.get('/v1/pcs')).status, 'nothing happens until the second, explicit confirmation').toBe(200);
+  await browsers.getByRole('button', { name: 'Cancel' }).click();
+  await browsers.getByRole('button', { name: 'Remove Kitchen tablet' }).click();
+  await browsers.getByRole('button', { name: 'Yes, remove its access' }).click();
+  await expect(browsers.getByText('Kitchen tablet', { exact: true })).toHaveCount(0);
+  expect((await tablet.get('/v1/pcs')).status).toBe(403);
+  await expect(browsers.getByRole('button', { name: /^Remove/ })).toHaveCount(0); // the current browser is removed by signing out
+
+  await page.getByRole('button', { name: 'Disconnect this PC' }).click();
+  await page.getByRole('button', { name: 'Yes, disconnect Office PC' }).click();
+  await expect(page.getByText('No PCs are paired with this browser yet.')).toBeVisible();
+  await expect(browsers.getByText('No PC access')).toBeVisible();
+  await page.screenshot({ path: join(shots, `${info.project.name}-09-pc-disconnected.png`) });
 });

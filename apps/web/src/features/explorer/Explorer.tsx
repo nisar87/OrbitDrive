@@ -2,9 +2,22 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError, GATEWAY_URL, type Session } from '../../api';
 import type { Breadcrumb, DownloadSession, FileEntry, PcSummary, RootSummary } from '../../protocol';
 import { formatBytes, formatTime } from '../../format';
+import { Devices } from '../devices/Devices';
 
 interface Location { pc: PcSummary; root: RootSummary; entryId: string | null }
 type Transfer = { name: string; phase: 'preparing' } | { name: string; phase: 'handed'; session: DownloadSession } | { name: string; phase: 'failed'; message: string };
+
+/** Two-step button for actions that end access; avoids blocking browser dialogs. */
+export function ConfirmButton({ label, confirmLabel, onConfirm }: { label: string; confirmLabel: string; onConfirm: () => void | Promise<void> }) {
+  const [armed, setArmed] = useState(false);
+  if (!armed) return <button type="button" className="ghost danger" onClick={() => setArmed(true)}>{label}</button>;
+  return (
+    <span className="confirm">
+      <button type="button" className="danger" onClick={() => { setArmed(false); void onConfirm(); }}>{confirmLabel}</button>
+      <button type="button" className="ghost" onClick={() => setArmed(false)}>Cancel</button>
+    </span>
+  );
+}
 
 export function Explorer({ session, onAuthLost }: { session: Session; onAuthLost: (error: unknown) => void }) {
   const [pcs, setPcs] = useState<PcSummary[] | null>(null);
@@ -97,9 +110,12 @@ export function Explorer({ session, onAuthLost }: { session: Session; onAuthLost
                   ))}
                 </ul>
               )}
+              <ConfirmButton label="Disconnect this PC" confirmLabel={`Yes, disconnect ${pc.name}`}
+                onConfirm={async () => { try { await api.disconnectPc(session, pc.pcId); await loadHome(); } catch (e) { fail(e); } }} />
             </article>
           );
         })}
+        {pcs !== null && <Devices session={session} pcs={pcs} onError={fail} />}
       </section>
     );
   }
