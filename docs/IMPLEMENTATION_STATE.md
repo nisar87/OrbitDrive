@@ -2,9 +2,12 @@
 
 Updated: 2026-11-17 (session 1). Branch: `feature/orbitdrive-foundation`.
 
-**Last code-verified commit: `ea8337d`** — all seven workflows green: contracts 43952452561, gateway 43952452336,
-desktop 43952452583, desktop-ui 43952452536, integration 43952452314 (Windows 37/37; Linux 36 + 1 Windows-only skip),
-web 43952452370, security 43952452437. The commit that records these IDs changes this file and the evidence log only.
+**Last code-verified commit: `4ff60d3`** — all seven workflows green: contracts 43955443647, gateway 43955443565,
+desktop 43955443668, desktop-ui 43955443604, integration 43955443530, web 43955443663, security 43955443537.
+
+Branch policy (owner, 2026-11-17): `main` exists and is the default branch. Work lands on
+`feature/orbitdrive-foundation` first; `main` is fast-forwarded only to commits whose seven workflows are green.
+Firebase is parked by the owner for now: keep the development identity and build everything that does not need it.
 
 ## Phase status
 
@@ -24,14 +27,12 @@ web) works end to end in CI. It is a slice through M1–M2, not completion of th
 
 ## Blockers needing the owner
 
-1. **Firebase**: no project IDs/config. Needed for W1 (Auth), W3 (Firestore), W6 (FCM). Emulator work can proceed without it.
+1. **Firebase**: parked by the owner. Needed later for W1 (Auth), W3 (Firestore), W6 (FCM).
 2. **Real Windows 11 machine (standard user)** for the Explorer modern-menu spike (D0/D6), lifecycle and DPI evidence.
 3. **Physical Android / iPhone** for the 1 GiB native-download spike (W0) and all device claims.
 4. **Relay host** (VM/VPS + TLS + DNS) — nothing provisioned; cross-network proof is impossible until one exists.
 5. **Code-signing identity** for D10.
-6. **Repository default branch**: the repo was empty, so GitHub made `feature/orbitdrive-foundation` the default.
-   No `main` was created (not authorised). Create `main` and set it as default when you want a PR target.
-7. **Decision**: ADR-1 (plain WebSocket envelope instead of SignalR) — see `docs/architecture/decisions.md`.
+6. **Decision**: ADR-1 (plain WebSocket envelope instead of SignalR) — see `docs/architecture/decisions.md`.
 
 ## Known gaps in what exists
 
@@ -40,7 +41,7 @@ web) works end to end in CI. It is a slice through M1–M2, not completion of th
 - Same-size rewrite that restores the timestamp between prepare and read is not detected.
 - Agent-side busy limits (16 requests, 4 streams) and pending-request caps have no dedicated tests yet.
 - Hard-link refusal is Windows-only; root volume-identity binding not implemented.
-- Relay Dockerfile and firebase.json are unvalidated drafts. No draft PR exists (no base branch).
+- Relay Dockerfile and firebase.json are unvalidated drafts.
 - WPF screenshot artifact exists in CI but was not visually reviewed.
 
 ## Next steps (dependency order)

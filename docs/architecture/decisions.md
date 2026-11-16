@@ -11,4 +11,4 @@
 | ADR-7 | Multi-range requests are answered with the full representation (200) | Permitted by RFC 9110; avoids multipart complexity and abuse | W5 |
 | ADR-8 | Hard-linked files are refused on Windows | Reparse checks alone do not establish unique origin | D4 |
 | ADR-9 | Workflows have no path filters yet | Avoids required checks that never start; revisit when CI minutes matter | W11 |
-| ADR-10 | No `main` branch was created; the first push made `feature/orbitdrive-foundation` the repository's default branch | Pushing a baseline to `main` was not authorised in this session | Owner: create `main` and set it as default when ready |
+| ADR-10 | `main` is the default branch and only ever fast-forwards to commits with all seven workflows green; work lands on `feature/orbitdrive-foundation` first | Owner authorised `main` on 2026-11-17 on condition of proper testing | — |

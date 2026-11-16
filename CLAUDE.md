@@ -7,7 +7,7 @@ Read `docs/IMPLEMENTATION_STATE.md` first, then `docs/plans/OrbitDrive_Complete_
   local run → push to `feature/orbitdrive-foundation` → inspect GitHub Actions for that exact SHA → fix → record
   evidence in `docs/evidence/` and update `REQUIREMENTS_MATRIX.md` and `IMPLEMENTATION_STATE.md`.
 - Never weaken assertions, skip critical tests, fake CI results or present browser/emulator output as Windows or phone evidence.
-- Do not deploy Firebase, create paid resources, change DNS, publish installers or merge to `main` without the owner's explicit say-so.
+- Do not deploy Firebase, create paid resources, change DNS, or publish installers without the owner's explicit say-so. `main` may be fast-forwarded only to a commit whose seven workflows are all green.
 - Read-only by default; no remote execution, FTP, whole-file buffering or E2EE claims.
 
 ## Commands
