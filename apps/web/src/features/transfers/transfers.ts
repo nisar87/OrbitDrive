@@ -30,7 +30,7 @@ interface Destination { createWritable(options?: { keepExistingData?: boolean })
 interface WritableFile { write(data: Uint8Array | { type: 'truncate'; size: number }): Promise<void>; seek(position: number): Promise<void>; close(): Promise<void>; abort?: () => Promise<void> }
 type SavePicker = (options: { suggestedName: string }) => Promise<Destination>;
 
-interface Internal extends Transfer { destination?: Destination; abort?: AbortController; autoRetries: number; session: Session }
+interface Internal extends Transfer { destination?: Destination; abort?: AbortController; autoRetries: number; generation: number; session: Session }
 
 const AUTO_RETRIES = 3;
 /** A connection that delivers nothing for this long is treated as lost (networks can die without closing anything). */
@@ -46,7 +46,7 @@ let nextId = 1;
 const listeners = new Set<() => void>();
 
 function publish() {
-  snapshot = items.map(({ destination: _d, abort: _a, autoRetries: _r, session: _s, ...visible }) => visible).reverse();
+  snapshot = items.map(({ destination: _d, abort: _a, autoRetries: _r, generation: _g, session: _s, ...visible }) => visible).reverse();
   for (const listener of listeners) listener();
 }
 function update(item: Internal, patch: Partial<Internal>) { Object.assign(item, patch); publish(); }
@@ -115,7 +115,7 @@ export const transfers = {
 };
 
 function add(session: Session, mode: 'browser' | 'file', pcId: string, entry: { entryId: string; name: string }): Internal {
-  const item: Internal = { id: nextId++, mode, pcId, entryId: entry.entryId, name: entry.name, size: null, revision: null, sessionId: null, state: 'preparing', received: 0, bytesPerSecond: null, message: null, startedAt: Date.now(), autoRetries: 0, session };
+  const item: Internal = { id: nextId++, mode, pcId, entryId: entry.entryId, name: entry.name, size: null, revision: null, sessionId: null, state: 'preparing', received: 0, bytesPerSecond: null, message: null, startedAt: Date.now(), autoRetries: 0, generation: 0, session };
   items = [...items.slice(-49), item];                            // bounded history
   publish();
   return item;
@@ -125,6 +125,8 @@ const find = (id: number) => items.find((item) => item.id === id);
 /** Streams [offset, end) into the chosen file. Resumes only when the PC confirms the content is still the same revision. */
 async function run(item: Internal, offset: number): Promise<void> {
   const abort = new AbortController();
+  const generation = ++item.generation;                           // only the newest attempt may retry: two writers must never run at once
+  item.abort?.abort();
   update(item, { state: 'preparing', abort, message: null, bytesPerSecond: null, received: offset });
   let writable: WritableFile | null = null;
   try {
@@ -173,14 +175,14 @@ async function run(item: Internal, offset: number): Promise<void> {
   } catch (e) {
     // Keep what was written so the download can continue from there.
     if (writable) await writable.close().catch(() => undefined);
-    if (item.state === 'cancelled' || abort.signal.aborted) return;
+    if (item.state === 'cancelled' || item.generation !== generation || (abort.signal.aborted && !(e instanceof Stalled))) return;
     if (e instanceof Stalled) abort.abort();                     // give up on the silent connection before trying again
     const fatal = e instanceof ApiError && e.code !== 'network' && ![502, 503, 504].includes(e.status);
     if (fatal) { update(item, { state: 'failed', bytesPerSecond: null, message: (e as ApiError).message }); return; }
     update(item, { state: 'interrupted', bytesPerSecond: null, message: 'The connection was lost. What was saved so far is kept.' });
     if (item.autoRetries < AUTO_RETRIES) {
       const attempt = ++item.autoRetries;
-      setTimeout(() => { if (item.state === 'interrupted' && item.autoRetries === attempt) void run(item, item.received); }, 1500 * attempt);
+      setTimeout(() => { if (item.state === 'interrupted' && item.generation === generation) void run(item, item.received); }, 1500 * attempt);
     }
   }
 }

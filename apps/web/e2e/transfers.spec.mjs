@@ -169,7 +169,8 @@ test('save to a file: real progress, the connection drops mid-transfer, resume c
   // It retries by itself a few times; the Resume button covers the case where those attempts ran out.
   await expect(async () => {
     const resume = row.getByRole('button', { name: 'Resume' });
-    if (await resume.isVisible()) await resume.click();
+    // The button can vanish between the check and the click when an automatic retry starts: do not wait for it.
+    if (await resume.isVisible()) await resume.click({ timeout: 2000 }).catch(() => undefined);
     await expect(row).toContainText('Saved to the place you chose (24 MB)', { timeout: 8000 });
   }).toPass({ timeout: 120_000 });
   const saved = await page.evaluate(async () => (await (await (await navigator.storage.getDirectory()).getFileHandle('big.bin')).getFile()).size);
@@ -207,7 +208,8 @@ test('save to a file: a source that changes during an interruption is never mixe
   link.heal();
   await expect(async () => {
     const resume = row.getByRole('button', { name: 'Resume' });
-    if (await resume.isVisible()) await resume.click();
+    // The button can vanish between the check and the click when an automatic retry starts: do not wait for it.
+    if (await resume.isVisible()) await resume.click({ timeout: 2000 }).catch(() => undefined);
     await expect(row).toContainText('the file changed on the PC', { timeout: 8000 });
   }).toPass({ timeout: 90_000 });
   await expect(row).toContainText('never mixed');
