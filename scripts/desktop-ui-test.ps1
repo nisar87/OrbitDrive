@@ -282,6 +282,21 @@ try {
     Toggle 'StartAtSignIn'
     $entries = @(RunEntries)
     Check ((IsOn 'StartAtSignIn') -and $entries.Count -eq 1 -and $entries[0] -like "*$Exe*" -and $entries[0] -like '*--background*') 'turning it on registers this console for the current user only (HKCU Run, hidden start)'
+    # Sending limits set by the owner in the console reach the agent and are validated.
+    Check ((Find 'MaxSpeedBox').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value -eq '0' -and (Find 'MaxFilesBox').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value -eq '4') 'limits start as: no speed limit, four files at once'
+    SetText 'MaxSpeedBox' '750'; SetText 'MaxFilesBox' '2'
+    Click 'SaveLimitsButton'
+    $limits = $null
+    for ($i = 0; $i -lt 40; $i++) { $limits = (& $AgentExe ctl status --state $state | ConvertFrom-Json); if ($limits.maxUploadKBps -eq 750) { break }; Start-Sleep -Milliseconds 250 }
+    Check ($limits.maxUploadKBps -eq 750 -and $limits.maxConcurrentTransfers -eq 2) 'the agent stored the limits chosen in the console'
+    SetText 'MaxFilesBox' '99'
+    Click 'SaveLimitsButton'
+    Check ((WaitText 'LimitsError' '1 and 16') -ne '') 'an out-of-range limit is refused with a clear message'
+    Check ((& $AgentExe ctl status --state $state | ConvertFrom-Json).maxConcurrentTransfers -eq 2) '...and the stored limit is unchanged'
+    SetText 'MaxSpeedBox' '0'; SetText 'MaxFilesBox' '4'
+    Click 'SaveLimitsButton'
+    for ($i = 0; $i -lt 40; $i++) { if ((& $AgentExe ctl status --state $state | ConvertFrom-Json).maxUploadKBps -eq 0) { break }; Start-Sleep -Milliseconds 250 }
+    Check (-not (IsOn 'PauseOnMetered')) 'pause-on-metered is off by default'
     Check (-not (IsOn 'PauseWhenLocked')) 'pause-while-locked is off by default'
     Toggle 'PauseWhenLocked'
     Check ((Get-Content (Join-Path $state 'console.json') -Raw) -match '"pauseWhenLocked":\s*true') 'the lock setting is saved'
@@ -324,6 +339,8 @@ try {
     Nav 'Settings'; Shot 'dark-settings'
     Nav 'Diagnostics'
     Check ((WaitText 'DiagnosticsText' 'Theme: Dark') -ne '') 'the console runs with the dark theme when asked'
+    $diagnostics = (Find 'DiagnosticsText').Current.Name
+    Check ($diagnostics -match 'Network cost: (unrestricted|metered|unknown)') "Windows answered the network-cost query: $([regex]::Match($diagnostics, 'Network cost: [^\r\n]*').Value)"
     Shot 'dark-diagnostics'
     Nav 'Overview'
     Click 'QuitButton'

@@ -8,7 +8,7 @@ import { test, expect } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { startGateway, startAgent, startProxy, connectIpc, agentCli, tempDir, makeFixtureRoot, writeLargeFile, repoRoot } from '../../../tests/integration/harness.mjs';
+import { startGateway, startAgent, startProxy, connectIpc, agentCli, tempDir, makeFixtureRoot, writeLargeFile, rssBytes, repoRoot } from '../../../tests/integration/harness.mjs';
 
 let gateway, agent, root, bigHash, ipc, link;
 const shots = join(repoRoot, 'artifacts', 'web-screenshots');
@@ -61,7 +61,12 @@ async function installPicker(page, delayMs) {
         async createWritable(options) {
           const real = await handle.createWritable(options);
           return {
-            write: async (data) => { if (data instanceof Uint8Array) await new Promise((r) => setTimeout(r, delay)); await real.write(data); },
+            // window.__orbitWriteRate (bytes per second) lets a test make this page a slow receiver for a while.
+            write: async (data) => {
+              const wait = data instanceof Uint8Array && window.__orbitWriteRate > 0 ? (data.length / window.__orbitWriteRate) * 1000 : data instanceof Uint8Array ? delay : 0;
+              if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+              await real.write(data);
+            },
             seek: (position) => real.seek(position),
             close: () => real.close(),
           };
@@ -241,4 +246,105 @@ test('save to a file: a source that changes during an interruption is never mixe
   await expect.poll(async () => (await ipc.send('status')).data.activeStreams, { timeout: 15_000 }).toBe(0);
   await expect(cancelRow.getByRole('button', { name: 'Resume' })).toHaveCount(0);
   await page.screenshot({ path: join(shots, `${info.project.name}-35-transfers-cancelled.png`) });
+});
+
+test('a large file (1 GiB in CI) is saved byte-exact with a slow receiver, and memory stays bounded everywhere', async ({ page }, info) => {
+  test.skip(!/^desktop-chrom/.test(info.project.name), 'run once, in desktop Chromium, where page memory can be measured');
+  const largeMib = Number(process.env.ORBIT_E2E_LARGE_MIB ?? 96);
+  test.setTimeout(900_000);
+  const largeHash = await writeLargeFile(join(root, 'huge.bin'), largeMib);
+  page.on('console', (message) => { if (message.text().includes('[OrbitDrive]')) console.log(`PAGE: ${message.text()}`); });
+  await installPicker(page, 0);
+  await pairAndOpen(page);
+  const cdp = await page.context().newCDPSession(page);
+  // Test browsers get a small private-storage allowance; raise it so the large file fits (real saves go to disk).
+  await cdp.send('Storage.overrideQuotaForOrigin', { origin: new URL(page.url()).origin, quotaSize: (largeMib + 512) * (1 << 20) });
+  const pageMemory = async () => { await cdp.send('HeapProfiler.collectGarbage'); const usage = await cdp.send('Runtime.getHeapUsage'); return usage.usedSize + (usage.backingStorageSize ?? 0); };
+  const processes = { relay: gateway.child.pid, pc: agent.child.pid };
+  const baseline = { page: await pageMemory(), relay: rssBytes(processes.relay), pc: rssBytes(processes.pc) };
+  const peak = { ...baseline };
+  const sample = async () => {
+    peak.page = Math.max(peak.page, await pageMemory());
+    peak.relay = Math.max(peak.relay, rssBytes(processes.relay));
+    peak.pc = Math.max(peak.pc, rssBytes(processes.pc));
+  };
+
+  await explorer(page).getByRole('button', { name: 'Refresh' }).click();
+  await expect(explorer(page).getByRole('button', { name: 'Download huge.bin' })).toBeVisible();
+  await page.evaluate(() => { window.__orbitWriteRate = 8 << 20; });  // a slow receiver: it can only save about 8 MiB per second
+  const started = Date.now();
+  await saveToFile(page, 'huge.bin');
+  const row = item(page, 'huge.bin');
+  await expect(row).toContainText(/Saving… \d/, { timeout: 120_000 });
+  // While the receiver is slow the sender must be held back (backpressure), not buffered in the relay or the page.
+  const slowPhase = [];
+  for (let i = 0; i < 8; i++) {
+    await page.waitForTimeout(1000);
+    await sample();
+    slowPhase.push({ sentByPc: Number((await ipc.send('status')).data.transfers[0].sent) });
+  }
+  const last = slowPhase[slowPhase.length - 1];
+  const received = Number(await row.getByRole('progressbar').getAttribute('value'));
+  expect(received, 'the transfer is under way but far from finished after 8 slow seconds').toBeGreaterThan(0);
+  expect(received).toBeLessThan(100);
+  // The PC may be ahead of the receiver only by what sits in network buffers, not by the rest of the file.
+  const writtenByPage = (received / 100) * largeMib * (1 << 20);
+  expect(last.sentByPc, 'the PC did not send the whole file while the receiver was slow').toBeLessThan(largeMib * (1 << 20));
+  expect(last.sentByPc - writtenByPage, 'the sender is held back to the receiver\'s pace (bounded lead)').toBeLessThan(160 * (1 << 20));
+  await page.evaluate(() => { window.__orbitWriteRate = 0; });        // receiver back to full speed
+  for (;;) {
+    await sample();
+    if (/Saved to the place you chose/.test(await row.textContent())) break;
+    if (/Interrupted|Could not|changed/.test(await row.textContent())) throw new Error(`transfer stopped: ${await row.textContent()}`);
+    await page.waitForTimeout(1500);
+  }
+  const seconds = (Date.now() - started) / 1000;
+  await sample();
+
+  const hashed = createHash('sha256');
+  let hashedBytes = 0;
+  await page.exposeFunction('orbitHugeChunk', (base64) => { const chunk = Buffer.from(base64, 'base64'); hashed.update(chunk); hashedBytes += chunk.length; });
+  await page.evaluate(async () => {
+    const file = await (await (await navigator.storage.getDirectory()).getFileHandle('huge.bin')).getFile();
+    const step = 4 << 20;
+    for (let offset = 0; offset < file.size; offset += step) {
+      const bytes = new Uint8Array(await file.slice(offset, offset + step).arrayBuffer());
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      await window.orbitHugeChunk(btoa(binary));
+    }
+  });
+  expect(hashedBytes).toBe(largeMib * (1 << 20));
+  expect(hashed.digest('hex'), 'the saved file is exactly the source').toBe(largeHash);
+
+  const mib = (bytes) => Math.round(bytes / (1 << 20));
+  const growth = { page: mib(peak.page - baseline.page), relay: mib(peak.relay - baseline.relay), pc: mib(peak.pc - baseline.pc) };
+  console.log(`LARGE-SAVE ${info.project.name} size=${largeMib}MiB seconds=${seconds.toFixed(1)} slowPhase: receiverWrote=${mib(writtenByPage)}MiB pcSent=${mib(last.sentByPc)}MiB growthMiB=${JSON.stringify(growth)}`);
+  info.annotations.push({ type: 'large-save', description: JSON.stringify({ largeMib, seconds, growth }) });
+  expect(growth.page, 'page memory growth').toBeLessThan(24);
+  expect(growth.relay, 'relay memory growth').toBeLessThan(96);
+  expect(growth.pc, 'PC agent memory growth').toBeLessThan(96);
+  await page.evaluate(async () => { await (await navigator.storage.getDirectory()).removeEntry('huge.bin'); });
+});
+
+test('save to a file: a full disk is reported as such, the PC stops sending, and nothing is retried in a loop', async ({ page }, info) => {
+  test.skip(!/chrom/.test(info.project.name), 'the storage allowance can only be lowered through the Chromium debugging protocol');
+  await installPicker(page, 0);
+  await pairAndOpen(page);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Storage.overrideQuotaForOrigin', { origin: new URL(page.url()).origin, quotaSize: 3 * (1 << 20) });   // room for 3 MB only
+  await saveToFile(page, 'big.bin');                                 // 24 MB
+  const row = item(page, 'big.bin');
+  await expect(row).toContainText('Could not download', { timeout: 60_000 });
+  await expect(row).toContainText('not enough free space');
+  await expect(row).not.toContainText('connection was lost');
+  await page.screenshot({ path: join(shots, `${info.project.name}-36-transfers-disk-full.png`) });
+  await expect.poll(async () => (await ipc.send('status')).data.activeStreams, { timeout: 15_000 }).toBe(0);
+  await page.waitForTimeout(6000);                                   // long enough for an automatic retry, if there wrongly were one
+  await expect(row).toContainText('not enough free space');
+  expect((await ipc.send('status')).data.activeStreams).toBe(0);
+  await expect(row.getByRole('button', { name: 'Start again' })).toBeVisible();
+  await cdp.send('Storage.overrideQuotaForOrigin', { origin: new URL(page.url()).origin, quotaSize: 512 * (1 << 20) });  // space is freed
+  await row.getByRole('button', { name: 'Start again' }).click();
+  await expect(row).toContainText('Saved to the place you chose (24 MB)', { timeout: 120_000 });
 });

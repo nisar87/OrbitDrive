@@ -67,7 +67,7 @@ internal static class LocalProtection
 /// <summary>Per-user agent state: device identity key, token-sealing key and the owner's approved roots.</summary>
 internal sealed class AgentState
 {
-    private sealed record Config(List<SharedRoot> Roots, string? Gateway = null, string? WebOrigin = null);
+    private sealed record Config(List<SharedRoot> Roots, string? Gateway = null, string? WebOrigin = null, int MaxUploadKBps = 0, int MaxConcurrentTransfers = 4);
     private readonly string _configPath;
     private volatile IReadOnlyList<SharedRoot> _roots = [];
 
@@ -78,6 +78,10 @@ internal sealed class AgentState
     public IReadOnlyList<SharedRoot> Roots => _roots;
     public string? Gateway { get; private set; }
     public string? WebOrigin { get; private set; }
+    /// <summary>Upload speed limit shared by all transfers, in kilobytes per second; 0 = unlimited.</summary>
+    public int MaxUploadKBps { get; private set; }
+    /// <summary>How many files this PC sends at the same time (1-16).</summary>
+    public int MaxConcurrentTransfers { get; private set; } = 4;
     public string Directory_ { get; }
 
     public AgentState(string directory)
@@ -108,6 +112,8 @@ internal sealed class AgentState
         _roots = config?.Roots ?? [];
         Gateway = config?.Gateway;
         WebOrigin = config?.WebOrigin;
+        MaxUploadKBps = Math.Clamp(config?.MaxUploadKBps ?? 0, 0, 10_000_000);
+        MaxConcurrentTransfers = Math.Clamp(config?.MaxConcurrentTransfers ?? 4, 1, 16);
         // Folders approved before disk binding existed are bound to the disk they are on now (once, when reachable).
         if (_roots.Any(r => r.VolumeId is null && Directory.Exists(r.Path)))
             Save([.. _roots.Select(r => r.VolumeId is null && NativeFile.GetVolumeIdentity(r.Path) is { } id ? r with { VolumeId = id } : r)]);
@@ -115,7 +121,7 @@ internal sealed class AgentState
 
     private void Save(List<SharedRoot> roots)
     {
-        File.WriteAllText(_configPath + ".tmp", JsonSerializer.Serialize(new Config(roots, Gateway, WebOrigin), new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(_configPath + ".tmp", JsonSerializer.Serialize(new Config(roots, Gateway, WebOrigin, MaxUploadKBps, MaxConcurrentTransfers), new JsonSerializerOptions { WriteIndented = true }));
         File.Move(_configPath + ".tmp", _configPath, overwrite: true);
         _roots = roots;
     }
@@ -146,6 +152,15 @@ internal sealed class AgentState
     {
         Gateway = ValidateGateway(gateway).GetLeftPart(UriPartial.Authority);
         WebOrigin = webOrigin is null ? null : new Uri(webOrigin).GetLeftPart(UriPartial.Authority);
+        Save([.. _roots]);
+    }
+
+    /// <summary>Owner-only transfer limits. Out-of-range values are refused rather than silently adjusted.</summary>
+    public void SetLimits(int maxUploadKBps, int maxConcurrentTransfers)
+    {
+        if (maxUploadKBps is < 0 or > 10_000_000) throw new ArgumentException("The speed limit must be 0 (no limit) to 10,000,000 KB/s.");
+        if (maxConcurrentTransfers is < 1 or > 16) throw new ArgumentException("Send between 1 and 16 files at the same time.");
+        MaxUploadKBps = maxUploadKBps; MaxConcurrentTransfers = maxConcurrentTransfers;
         Save([.. _roots]);
     }
 

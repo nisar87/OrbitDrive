@@ -64,4 +64,50 @@ public class LifecycleTests
         Assert.True(policy.OnLocked(pausedNow: false));
         Assert.False(policy.OnUnlocked(pausedNow: false)); // something else already resumed it
     }
+
+    [Fact]
+    public void RateLimiterKeepsAllTransfersTogetherAtOrBelowTheLimit()
+    {
+        var clock = new Clock();
+        long rate = 100_000;                                           // bytes per second
+        var limiter = new TransferRateLimiter(() => rate, clock);
+        Assert.Equal(TimeSpan.FromSeconds(0.5), limiter.Reserve(50_000));
+        Assert.Equal(TimeSpan.FromSeconds(1.0), limiter.Reserve(50_000));   // a second transfer queues behind the first: shared, not per transfer
+        clock.Now += TimeSpan.FromSeconds(1);
+        Assert.Equal(TimeSpan.FromSeconds(0.2), limiter.Reserve(20_000));
+        clock.Now += TimeSpan.FromSeconds(60);                         // idle time is not saved up for a later burst
+        Assert.Equal(TimeSpan.FromSeconds(1.0), limiter.Reserve(100_000));
+        rate = 400_000;                                                // the owner raises the limit while a transfer runs
+        clock.Now += TimeSpan.FromSeconds(1);
+        Assert.Equal(TimeSpan.FromSeconds(0.25), limiter.Reserve(100_000));
+    }
+
+    [Fact]
+    public void RateLimiterWithNoLimitNeverDelays()
+    {
+        var limiter = new TransferRateLimiter(() => 0, new Clock());
+        Assert.Equal(TimeSpan.Zero, limiter.Reserve(10_000_000));
+        Assert.Equal(TimeSpan.Zero, new TransferRateLimiter(() => 1000, new Clock()).Reserve(0));
+    }
+
+    [Theory]
+    [InlineData(0x1u, false, "unrestricted")]
+    [InlineData(0x2u, true, "metered with a data allowance")]
+    [InlineData(0x4u, true, "metered, charged by use")]
+    [InlineData(0x40001u, true, "unrestricted, roaming")]             // roaming is treated as metered even on an unlimited plan
+    [InlineData(0x10002u, true, "metered with a data allowance, over its data limit")]
+    [InlineData(0x80002u, true, "metered with a data allowance, approaching its data limit")]
+    [InlineData(0x20001u, false, "unrestricted, congested")]
+    [InlineData(0u, false, "unknown")]
+    public void ConnectionCostFlagsAreReadAsWindowsDefinesThem(uint cost, bool metered, string description)
+    {
+        Assert.Equal(metered, ConnectionCost.IsMetered(cost));
+        Assert.Equal(description, ConnectionCost.Describe(cost));
+    }
+
+    [Fact]
+    public void AnUnreadableConnectionCostIsReportedAsUnknownNotAsUnmetered()
+    {
+        Assert.Equal("unknown (Windows did not report it)", ConnectionCost.Describe(null));
+    }
 }

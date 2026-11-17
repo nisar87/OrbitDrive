@@ -92,10 +92,13 @@ export async function startProxy(gateway, listenPort = 0) {
     pairs.add(pair);
     const forward = (from, to, limited) => from.on('data', (chunk) => {
       if (dark) return;
-      to.write(chunk);
+      const flushed = to.write(chunk);
+      // Like a real network path, the proxy must not soak up data: when the receiving side is slow, stop reading
+      // from the sender until it has drained (otherwise the proxy itself would hide missing backpressure).
+      if (!flushed) { from.pause(); to.once('drain', () => from.resume()); }
       if (limited && downstreamRate > 0) {                        // a slow link: hold the sender back in proportion to what was sent
         from.pause();
-        setTimeout(() => from.resume(), Math.ceil((chunk.length / downstreamRate) * 1000));
+        setTimeout(() => { if (to.writableNeedDrain) to.once('drain', () => from.resume()); else from.resume(); }, Math.ceil((chunk.length / downstreamRate) * 1000));
       }
     });
     forward(client, upstream, false); forward(upstream, client, true);

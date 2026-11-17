@@ -87,6 +87,8 @@ internal sealed class AgentHost : IDisposable
                 ["pcId"] = _state.PcId,
                 ["pcName"] = _pcName,
                 ["gateway"] = _state.Gateway,
+                ["maxUploadKBps"] = _state.MaxUploadKBps,
+                ["maxConcurrentTransfers"] = _state.MaxConcurrentTransfers,
                 ["agentVersion"] = ControlClient.AgentVersion,
                 ["activeStreams"] = _client?.ActiveStreams ?? 0,
                 ["transfers"] = _client?.RecentTransfers() ?? [],
@@ -168,6 +170,10 @@ internal sealed class AgentHost : IDisposable
                     return null;
                 case "pause": SetPaused(true); return null;
                 case "resume": SetPaused(false); return null;
+                case "set_limits":
+                    try { _state.SetLimits(args["maxUploadKBps"]?.GetValue<int>() ?? -1, args["maxConcurrentTransfers"]?.GetValue<int>() ?? -1); }
+                    catch (Exception e) when (e is ArgumentException or FormatException or InvalidOperationException) { throw new IpcException(e is ArgumentException ? e.Message : "Limits must be whole numbers."); }
+                    return null;
                 case "set_gateway":
                     _state.SetGateway(Arg(args, "gateway", 512), args["webOrigin"]?.GetValue<string>());
                     StartClient();

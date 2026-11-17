@@ -44,6 +44,15 @@ public sealed class MainWindow : Window
     private readonly Button _start = MakeButton("StartAgentButton", "Start the OrbitDrive agent");
     private readonly TextBlock _statFolders = MakeStat("StatFolders"), _statTransfers = MakeStat("StatTransfers"), _statDevices = MakeStat("StatDevices");
     private readonly CheckBox _startAtSignIn = new() { Content = "Start OrbitDrive when I sign in to Windows", Margin = new Thickness(0, 4, 0, 4) };
+    private readonly CheckBox _pauseOnMetered = new() { Content = "Pause remote access while this PC is on a metered connection", Margin = new Thickness(0, 4, 0, 4) };
+    private readonly OrbitDrive.Core.LockPolicy _meteredPolicy = new();   // same rule as locking: only undo a pause it caused itself
+    private readonly TextBlock _meteredWarning = MakeText("MeteredWarning", "", 13, FontWeights.Normal, Danger);
+    private readonly TextBox _maxSpeed = MakeBox("MaxSpeedBox"), _maxFiles = MakeBox("MaxFilesBox");
+    private readonly TextBlock _limitsError = MakeText("LimitsError", "", 13, FontWeights.Normal, Danger);
+    private uint? _networkCost;
+    private bool _metered;
+    private int _ticks;
+    private string _limitsShown = "";
     private readonly CheckBox _pauseWhenLocked = new() { Content = "Pause remote access while this PC is locked", Margin = new Thickness(0, 4, 0, 4) };
 
     private readonly TextBlock _stateText = MakeText("StateText", "Starting…", 22, FontWeights.SemiBold);
@@ -89,6 +98,9 @@ public sealed class MainWindow : Window
         Icon = AppIcon.Image;
         AutomationProperties.SetAutomationId(_startAtSignIn, "StartAtSignIn");
         AutomationProperties.SetAutomationId(_pauseWhenLocked, "PauseWhenLocked");
+        AutomationProperties.SetAutomationId(_pauseOnMetered, "PauseOnMetered");
+        _meteredPolicy.Enabled = _settings.PauseOnMetered;
+        _meteredWarning.Visibility = Visibility.Collapsed;
         AutomationProperties.SetAutomationId(this, "OrbitDriveMainWindow");
         AutomationProperties.SetAutomationId(_nav, "Navigation");
         AutomationProperties.SetAutomationId(_roots, "RootsList");
@@ -279,7 +291,7 @@ public sealed class MainWindow : Window
         stats.Children.Add(Stat(_statTransfers, "Transfers running"));
         stats.Children.Add(Stat(_statDevices, "Paired devices"));
         Page("Overview",
-            Card(null, Row(_stateDot, _stateText), _stateDetail, Row(_pause, _start), _summary),
+            Card(null, Row(_stateDot, _stateText), _stateDetail, _meteredWarning, Row(_pause, _start), _summary),
             stats,
             Card("When you close this window",
                 MakeText("CloseHint", "Closing this window keeps OrbitDrive running in the notification area so your phone can still reach shared folders. Quit stops remote access.", 13, FontWeights.Normal, Muted), quit));
@@ -370,8 +382,34 @@ public sealed class MainWindow : Window
         }
         _pauseWhenLocked.Checked += ApplyPauseWhenLocked;
         _pauseWhenLocked.Unchecked += ApplyPauseWhenLocked;
+        _pauseOnMetered.IsChecked = _settings.PauseOnMetered;
+        void ApplyPauseOnMetered(object sender, RoutedEventArgs e)
+        {
+            if (applying) return;
+            applying = true;
+            _settingsError.Text = "";
+            try { _settings.SetPauseOnMetered(_pauseOnMetered.IsChecked == true); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { _settingsError.Text = "The setting could not be saved."; }
+            _meteredPolicy.Enabled = _settings.PauseOnMetered;
+            _pauseOnMetered.IsChecked = _settings.PauseOnMetered;
+            applying = false;
+        }
+        _pauseOnMetered.Checked += ApplyPauseOnMetered;
+        _pauseOnMetered.Unchecked += ApplyPauseOnMetered;
+        var saveLimits = MakeButton("SaveLimitsButton", "Save limits");
+        saveLimits.Click += (_, _) => _ = RunAsync(_limitsError, async client =>
+        {
+            if (!int.TryParse(_maxSpeed.Text.Trim(), out var speed) || !int.TryParse(_maxFiles.Text.Trim(), out var files))
+                throw new IpcException("Enter whole numbers: a speed in KB/s (0 for no limit) and 1 to 16 files.");
+            await client.SendAsync("set_limits", new JsonObject { ["maxUploadKBps"] = speed, ["maxConcurrentTransfers"] = files });
+            _limitsShown = "";                                  // show what the agent actually stored
+        });
         Page("Settings",
             Card("Connection", MakeLabel("Relay address (https://…)", _gateway), _gateway, MakeLabel("Web app address shown in pairing links (optional)", _webOrigin), _webOrigin, save),
+            Card("Sending files", MakeLabel("Upload speed limit for all files together, in KB/s (0 = no limit)", _maxSpeed), _maxSpeed,
+                MakeLabel("Files sent at the same time (1–16)", _maxFiles), _maxFiles, saveLimits, _limitsError,
+                _pauseOnMetered,
+                MakeText("MeteredHint", "Windows marks mobile hotspots and some other connections as metered. OrbitDrive shows a warning on such a connection; tick the box to stop sending until the connection is no longer metered.", 13, FontWeights.Normal, Muted)),
             Card("This PC", _startAtSignIn,
                 MakeText("StartHint", "It starts quietly in the notification area, as you, without administrator rights. Off unless you turn it on.", 13, FontWeights.Normal, Muted),
                 _pauseWhenLocked,
@@ -484,6 +522,7 @@ public sealed class MainWindow : Window
     private Task TogglePauseAsync()
     {
         _lockPolicy.OnOwnerChangedPause();
+        _meteredPolicy.OnOwnerChangedPause();
         return RunAsync(_stateDetail, client => client.SendAsync(_paused ? "resume" : "pause"));
     }
 
@@ -607,6 +646,29 @@ public sealed class MainWindow : Window
         _approvalPanel.Visibility = approval is null ? Visibility.Collapsed : Visibility.Visible;
         _approvalText.Text = approval is null ? "" : $"Account: {approval["accountLabel"]}\nBrowser: {approval["browserName"]}\nCode: {approval["confirmationCode"]}\n\nApprove only if this is you and the same code is shown in your browser.";
 
+        var limits = $"{status["maxUploadKBps"]}/{status["maxConcurrentTransfers"]}";
+        if (limits != _limitsShown && !_maxSpeed.IsKeyboardFocused && !_maxFiles.IsKeyboardFocused)
+        {
+            _limitsShown = limits;
+            _maxSpeed.Text = status["maxUploadKBps"]?.ToString() ?? "0";
+            _maxFiles.Text = status["maxConcurrentTransfers"]?.ToString() ?? "4";
+        }
+
+        // Network cost: ask Windows now and then (it is a local query, no traffic).
+        if (_ticks++ % 15 == 0)
+        {
+            _networkCost = NetworkCost.Read();
+            var metered = _networkCost is { } cost && OrbitDrive.Core.ConnectionCost.IsMetered(cost);
+            if (metered != _metered)
+            {
+                _metered = metered;
+                if (metered && _meteredPolicy.OnLocked(_paused)) { LogActivity("Metered connection: remote access paused"); _ = RunAsync(_stateDetail, c => c.SendAsync("pause")); }
+                else if (!metered && _meteredPolicy.OnUnlocked(_paused)) { LogActivity("Connection no longer metered: remote access resumed"); _ = RunAsync(_stateDetail, c => c.SendAsync("resume")); }
+            }
+            _meteredWarning.Text = metered ? $"This PC is on a metered connection ({OrbitDrive.Core.ConnectionCost.Describe(_networkCost)}). Files sent to your devices count against its data allowance." : "";
+            _meteredWarning.Visibility = metered ? Visibility.Visible : Visibility.Collapsed;
+        }
+
         var recent = status["transfers"] as JsonArray ?? [];
         var recentCount = recent.Count;
         _transfers.Text = (int)status["activeStreams"]! == 0 ? (recentCount == 0 ? "No transfers yet." : "No transfers are running. Recent ones are listed below.") : $"{status["activeStreams"]} file(s) are being sent to the relay right now.";
@@ -635,6 +697,7 @@ public sealed class MainWindow : Window
         if (!_gateway.IsKeyboardFocused && _gateway.Text.Length == 0) _gateway.Text = status["gateway"]?.GetValue<string>() ?? "";
         _diagnostics.Text = $"PC id: {status["pcId"]}\nAgent version: {status["agentVersion"]}\nRelay: {status["gateway"] ?? "(not set)"}\nState folder: {_stateDirectory}\n" +
                             $"{RuntimeInformation.OSDescription} · {RuntimeInformation.ProcessArchitecture} · {RuntimeInformation.FrameworkDescription}\nRunning elevated: {Environment.IsPrivilegedProcess}\n" +
+                            $"Network cost: {OrbitDrive.Core.ConnectionCost.Describe(_networkCost)}{(_networkCost is { } raw ? $" (0x{raw:X})" : "")}\n" +
                             $"Theme: {Program.ThemeChoice}{(SystemParameters.HighContrast ? " (Windows high contrast is on)" : "")}\nAutomatic agent restarts used: {_restarts.Used} of {_restarts.MaxRestarts} (per 10 minutes)";
     }
 

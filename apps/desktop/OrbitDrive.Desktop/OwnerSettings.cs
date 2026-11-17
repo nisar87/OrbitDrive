@@ -39,6 +39,7 @@ internal sealed class ConsoleSettings
     private readonly string _file;
 
     public bool PauseWhenLocked { get; private set; }
+    public bool PauseOnMetered { get; private set; }
 
     public ConsoleSettings(string stateDirectory)
     {
@@ -46,15 +47,20 @@ internal sealed class ConsoleSettings
         try
         {
             if (File.Exists(_file) && JsonNode.Parse(File.ReadAllText(_file)) is JsonObject saved)
+            {
                 PauseWhenLocked = saved["pauseWhenLocked"]?.GetValue<bool>() ?? false;
+                PauseOnMetered = saved["pauseOnMetered"]?.GetValue<bool>() ?? false;
+            }
         }
         catch (Exception e) when (e is IOException or System.Text.Json.JsonException or InvalidOperationException or UnauthorizedAccessException) { /* unreadable: defaults */ }
     }
 
-    public void SetPauseWhenLocked(bool value)
+    public void SetPauseWhenLocked(bool value) { PauseWhenLocked = value; Save(); }
+    public void SetPauseOnMetered(bool value) { PauseOnMetered = value; Save(); }
+
+    private void Save()
     {
-        PauseWhenLocked = value;
         Directory.CreateDirectory(Path.GetDirectoryName(_file)!);
-        File.WriteAllText(_file, new JsonObject { ["pauseWhenLocked"] = value }.ToJsonString());
+        File.WriteAllText(_file, new JsonObject { ["pauseWhenLocked"] = PauseWhenLocked, ["pauseOnMetered"] = PauseOnMetered }.ToJsonString());
     }
 }

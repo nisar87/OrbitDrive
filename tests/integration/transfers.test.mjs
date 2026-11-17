@@ -5,17 +5,17 @@ import { statSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { startGateway, startAgent, connectIpc, agentCli, tempDir, makeFixtureRoot, writeLargeFile, Browser, pair, sleep } from './harness.mjs';
+import { startGateway, startAgent, startProxy, connectIpc, agentCli, tempDir, makeFixtureRoot, writeLargeFile, Browser, pair, sleep } from './harness.mjs';
 
-let gateway, agent, ipc, phone, tablet, stranger, pcId, root, rootId, bigHash;
+let gateway, agent, ipc, phone, tablet, stranger, pcId, root, rootId, bigHash, state;
 const BIG_MIB = 24;
 
 before(async () => {
   root = makeFixtureRoot();
   bigHash = await writeLargeFile(join(root, 'big.bin'), BIG_MIB);
-  const state = tempDir('transfers-state');
+  state = tempDir('transfers-state');
   agentCli(state, 'roots', 'add', 'Share', root);
-  gateway = await startGateway({ OrbitDrive__MaxDownloadSessionsPerDevice: '6' });
+  gateway = await startGateway({ OrbitDrive__MaxDownloadSessionsPerDevice: '30' });
   agent = await startAgent(gateway, state, 'Transfer PC');
   ipc = await connectIpc(agent.ready.pipe);
   pcId = agent.identity.pcId;
@@ -74,7 +74,11 @@ test('a download the browser abandons half way is reported as interrupted on the
   agent.drain();
   const session = await prepare('big.bin');
   const controller = new AbortController();
-  const response = await fetch(gateway.url + session.urlPath, { signal: controller.signal });
+  // Through a slow link (about 2 MB/s): on a loopback connection the whole file would already be in the client's
+  // buffers before it could be abandoned, and "everything was sent" would then be the truthful report.
+  const link = await startProxy(gateway);
+  link.throttle(2 * (1 << 20));
+  const response = await fetch(link.url + session.urlPath, { signal: controller.signal });
   const reader = response.body.getReader();
   let received = 0;
   while (received < 2 * (1 << 20)) received += (await reader.read()).value.length;
@@ -84,6 +88,7 @@ test('a download the browser abandons half way is reported as interrupted on the
   assert.deepEqual([running.name, running.outcome, running.offset, running.length], ['big.bin', 'sending', '0', String(BIG_MIB * (1 << 20))]);
   assert.ok(Number(running.sent) >= received, 'the PC has sent at least what the browser received');
   controller.abort();
+  link.stop();
   const finished = await agent.next('stream_finished', 30_000);
   assert.notEqual(finished.outcome, 'sent_to_relay');
   assert.equal(finished.name, 'big.bin');
@@ -129,7 +134,7 @@ test('cancelling: only the browser that started a download can see or cancel it,
 
 test('a browser cannot pile up unlimited prepared downloads', async () => {
   const tabletSessions = [];
-  for (let i = 0; i < 6; i++) tabletSessions.push(await prepare('hello.txt', tablet));
+  for (let i = 0; i < 30; i++) tabletSessions.push(await prepare('hello.txt', tablet));
   const refused = await tablet.post('/v1/download-sessions', { pcId, entryId: (await entry('hello.txt')).entryId });
   assert.deepEqual([refused.status, refused.body.error.code], [429, 'limit_exceeded']);
   assert.match(refused.body.error.message, /Transfers/);
@@ -166,4 +171,60 @@ test('a file rewritten between two ranges (same size, old date restored) is neve
   const retried = await fetch(gateway.url + fresh.urlPath, { headers: { range: 'bytes=8-', 'if-range': `"${session.revision}"` } });
   assert.equal(retried.status, 200, 'a resume carrying the old validator gets the whole new file, not a 206 tail');
   assert.equal(await retried.text(), 'QUARTERLY REPORT\n');
+});
+
+test('owner limits: files sent at once and total upload speed are enforced by the PC and persist', { timeout: 180_000 }, async () => {
+  const mib = 1 << 20;
+  const timed = async (work) => { const start = Date.now(); const value = await work(); return [Date.now() - start, value]; };
+  const fetchAll = async (session, headers = {}) => { const response = await fetch(gateway.url + session.urlPath, { headers }); const body = Buffer.from(await response.arrayBuffer()); return { status: response.status, body }; };
+  assert.deepEqual([(await ipc.send('status')).data.maxUploadKBps, (await ipc.send('status')).data.maxConcurrentTransfers], [0, 4], 'defaults: no speed limit, four at once');
+
+  // Invalid limits are refused, not silently adjusted, and nothing remote can set them.
+  for (const bad of [{ maxUploadKBps: -1, maxConcurrentTransfers: 4 }, { maxUploadKBps: 0, maxConcurrentTransfers: 0 }, { maxUploadKBps: 0, maxConcurrentTransfers: 17 }, { maxUploadKBps: 'fast', maxConcurrentTransfers: 2 }, {}])
+    assert.equal((await ipc.send('set_limits', bad)).ok, false, JSON.stringify(bad));
+  assert.ok([404, 405].includes((await phone.call('POST', `/v1/pcs/${pcId}/limits`, { maxUploadKBps: 0, maxConcurrentTransfers: 16 })).status));
+
+  // Speed: 4 MiB at 1024 KB/s cannot arrive faster than about 4 seconds; without a limit it is far quicker.
+  const [unlimitedMs, quick] = await timed(async () => fetchAll(await prepare('big.bin'), { range: `bytes=0-${4 * mib - 1}` }));
+  assert.equal(quick.body.length, 4 * mib);
+  assert.equal((await ipc.send('set_limits', { maxUploadKBps: 1024, maxConcurrentTransfers: 4 })).ok, true);
+  const [limitedMs, slow] = await timed(async () => fetchAll(await prepare('big.bin'), { range: `bytes=0-${4 * mib - 1}` }));
+  assert.equal(slow.body.length, 4 * mib);
+  assert.ok(Buffer.compare(slow.body, quick.body) === 0, 'throttling does not change the bytes');
+  assert.ok(limitedMs >= 3500 && limitedMs < 9000, `4 MiB at 1024 KB/s took ${limitedMs} ms (unlimited: ${unlimitedMs} ms)`);
+  assert.ok(unlimitedMs < 2500, `unlimited took ${unlimitedMs} ms`);
+
+  // The limit is shared: two files at once together still move at about 1024 KB/s.
+  const [a, b] = [await prepare('big.bin'), await prepare('big.bin')];
+  const [sharedMs] = await timed(() => Promise.all([fetchAll(a, { range: `bytes=0-${2 * mib - 1}` }), fetchAll(b, { range: `bytes=${2 * mib}-${4 * mib - 1}` })]));
+  assert.ok(sharedMs >= 3500 && sharedMs < 9000, `2 x 2 MiB together took ${sharedMs} ms`);
+
+  // Files at once: with a limit of 1, a second download while one is running is refused clearly, then works afterwards.
+  assert.equal((await ipc.send('set_limits', { maxUploadKBps: 512, maxConcurrentTransfers: 1 })).ok, true);
+  const first = await prepare('big.bin'), second = await prepare('hello.txt');
+  const running = fetch(gateway.url + first.urlPath, { headers: { range: `bytes=0-${3 * mib - 1}` } });   // about 6 seconds at 512 KB/s
+  await until(async () => (await ipc.send('status')).data.activeStreams === 1, 10_000, 'first transfer running');
+  const [refusedAfterMs, refused] = await timed(() => fetch(gateway.url + second.urlPath));
+  assert.equal(refused.status, 429);
+  assert.ok(refusedAfterMs >= 1500 && refusedAfterMs < 5000, `refused after waiting briefly for a free slot (${refusedAfterMs} ms)`);
+  const refusal = await refused.json();
+  assert.equal(refusal.error.code, 'limit_exceeded');
+  assert.match(refusal.error.message, /1 file at once/);
+  // A request that arrives just as the running transfer ends is served, not refused.
+  const body = (await running).body.getReader();
+  let got = 0;
+  while (got < 3 * mib - 96 * 1024) got += (await body.read()).value.length;               // the first transfer is about to finish
+  const justInTime = fetch(gateway.url + second.urlPath);
+  for (;;) { const { done, value } = await body.read(); if (done) break; got += value.length; }
+  assert.equal(got, 3 * mib);
+  assert.equal(await (await justInTime).text(), 'Hello from OrbitDrive\n');
+
+  // Raising the limit takes effect without restarting anything; the choice is saved for the next start.
+  assert.equal((await ipc.send('set_limits', { maxUploadKBps: 0, maxConcurrentTransfers: 4 })).ok, true);
+  const [backToFastMs] = await timed(async () => fetchAll(await prepare('big.bin'), { range: `bytes=0-${4 * mib - 1}` }));
+  assert.ok(backToFastMs < 2500, `after removing the limit: ${backToFastMs} ms`);
+  assert.equal((await ipc.send('set_limits', { maxUploadKBps: 2048, maxConcurrentTransfers: 3 })).ok, true);
+  const saved = JSON.parse(readFileSync(join(state, 'config.json'), 'utf8'));
+  assert.deepEqual([saved.MaxUploadKBps, saved.MaxConcurrentTransfers], [2048, 3]);
+  assert.equal((await ipc.send('set_limits', { maxUploadKBps: 0, maxConcurrentTransfers: 4 })).ok, true);
 });

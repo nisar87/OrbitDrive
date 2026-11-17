@@ -14,7 +14,7 @@ using OrbitDrive.Protocol;
 namespace OrbitDrive.Agent;
 
 /// <summary>Streams one validated byte range from the already-open handle with a single pooled buffer.</summary>
-internal sealed class FileRangeContent(ValidatedRead read, CancellationToken cancellation) : HttpContent
+internal sealed class FileRangeContent(ValidatedRead read, TransferRateLimiter limiter, CancellationToken cancellation) : HttpContent
 {
     public const int BufferBytes = 64 * 1024;
 
@@ -34,6 +34,8 @@ internal sealed class FileRangeContent(ValidatedRead read, CancellationToken can
                 await stream.WriteAsync(buffer.AsMemory(0, count), linked.Token).ConfigureAwait(false); // awaits the relay: slow receivers throttle disk reads
                 position += count;
                 Interlocked.Add(ref read.BytesSent, count);
+                // The owner's speed limit, shared by all transfers. Nothing follows the last chunk, so no wait after it.
+                if (position < end) await limiter.WaitAsync(count, linked.Token).ConfigureAwait(false);
             }
         }
         finally { ArrayPool<byte>.Shared.Return(buffer); }
@@ -53,7 +55,8 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
     private readonly ConcurrentDictionary<string, TaskCompletionSource<Envelope>> _pending = new();
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly SemaphoreSlim _requestSlots = new(16, 16);
-    private readonly SemaphoreSlim _streamSlots = new(4, 4);
+    private readonly TransferRateLimiter _rate = new(() => state.MaxUploadKBps * 1024L, TimeProvider.System);
+    private int _sending;                                           // transfers running now; the limit is read each time so changes apply at once
     private ClientWebSocket? _socket;
     private volatile bool _paused;
 
@@ -270,10 +273,19 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
             case Actions.PrepareRead: return await _files.PrepareReadAsync(ProtocolJson.FromElement<PrepareReadRequest>(payload), cancellation);
             case Actions.OpenRead:
                 var open = ProtocolJson.FromElement<OpenReadRequest>(payload);
-                if (!await _streamSlots.WaitAsync(0, cancellation)) throw new ProtocolException(ErrorCode.LimitExceeded, "The PC is already sending the maximum number of files.");
+                // Take a transfer slot. A transfer that is just finishing frees its slot within moments, so wait briefly
+                // before refusing; a browser starting the next file as one ends must not be turned away.
+                var giveUp = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(2);
+                while (Interlocked.Increment(ref _sending) > state.MaxConcurrentTransfers)
+                {
+                    Interlocked.Decrement(ref _sending);
+                    if (DateTimeOffset.UtcNow >= giveUp)
+                        throw new ProtocolException(ErrorCode.LimitExceeded, $"The PC is already sending {state.MaxConcurrentTransfers} file{(state.MaxConcurrentTransfers == 1 ? "" : "s")} at once, the limit its owner set. Try again when one finishes.");
+                    await Task.Delay(50, cancellation);
+                }
                 ValidatedRead read;
                 try { read = _files.OpenRead(open.ReadToken, open.Offset, open.Length); }
-                catch { _streamSlots.Release(); throw; }
+                catch { Interlocked.Decrement(ref _sending); throw; }
                 _ = UplinkAsync(open, read, cancellation);
                 return new Ack { Ok = true };
             default: throw new ProtocolException(ErrorCode.UnknownAction, "Unknown action.");
@@ -291,7 +303,7 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(gateway, $"/v1/agent-streams/{Uri.EscapeDataString(open.StreamId)}"));
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", open.UplinkToken);
-            request.Content = new FileRangeContent(read, cancel.Token);
+            request.Content = new FileRangeContent(read, _rate, cancel.Token);
             request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel.Token);
             if (response.StatusCode != HttpStatusCode.NoContent) outcome = "interrupted";
@@ -301,7 +313,7 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
         {
             _streams.TryRemove(open.StreamId, out _);
             read.Dispose();
-            _streamSlots.Release();
+            Interlocked.Decrement(ref _sending);
             var sent = Interlocked.Read(ref read.BytesSent);
             lock (_transferGate) { transfer.Sent = sent; transfer.Outcome = outcome; transfer.Live = null; }
             emit("stream_finished", new { outcome, name = read.Name, bytes = sent.ToString(), length = read.Length.ToString() }); // bytes handed to the relay, not "saved on phone"
@@ -345,6 +357,5 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
         _http.Dispose();
         _sendLock.Dispose();
         _requestSlots.Dispose();
-        _streamSlots.Dispose();
     }
 }

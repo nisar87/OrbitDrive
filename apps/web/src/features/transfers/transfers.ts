@@ -36,6 +36,16 @@ const AUTO_RETRIES = 3;
 /** A connection that delivers nothing for this long is treated as lost (networks can die without closing anything). */
 const STALL_MS = 20_000;
 class Stalled extends Error {}
+/** The destination refused the bytes (disk or storage allowance full, permission withdrawn): retrying the network cannot help. */
+class WriteFailed extends Error {
+  constructor(readonly cause: unknown) { super('write failed'); }
+  get friendly(): string {
+    const name = this.cause instanceof DOMException ? this.cause.name : '';
+    if (name === 'QuotaExceededError') return 'There is not enough free space where you chose to save the file. Free some space, then choose Start again.';
+    if (name === 'NotAllowedError' || name === 'SecurityError') return 'The browser no longer allows writing to the place you chose. Choose Start again and pick the location again if asked.';
+    return 'The file could not be written where you chose to save it.';
+  }
+}
 function orStall<T>(work: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   return Promise.race([work, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Stalled()), STALL_MS); })]).finally(() => clearTimeout(timer));
@@ -157,7 +167,8 @@ async function run(item: Internal, offset: number): Promise<void> {
     for (;;) {
       const { done, value } = await orStall(reader.read());
       if (done) break;
-      await writable.write(value);                               // each chunk goes to disk before the next is read
+      try { await writable.write(value); }                       // each chunk goes to disk before the next is read
+      catch (cause) { throw new WriteFailed(cause); }
       received += value.length; windowBytes += value.length;
       item.received = received;                                  // exact count of bytes written: the resume point
       const now = performance.now();
@@ -177,8 +188,16 @@ async function run(item: Internal, offset: number): Promise<void> {
     if (writable) await writable.close().catch(() => undefined);
     if (item.state === 'cancelled' || item.generation !== generation || (abort.signal.aborted && !(e instanceof Stalled))) return;
     if (e instanceof Stalled) abort.abort();                     // give up on the silent connection before trying again
+    if (e instanceof WriteFailed) {
+      abort.abort();                                             // stop the PC sending bytes that cannot be stored
+      console.warn(`[OrbitDrive] could not write at byte ${item.received}: ${e.cause instanceof Error ? `${e.cause.name}: ${e.cause.message}` : String(e.cause)}`);
+      update(item, { state: 'failed', bytesPerSecond: null, message: e.friendly });
+      return;
+    }
     const fatal = e instanceof ApiError && e.code !== 'network' && ![502, 503, 504].includes(e.status);
     if (fatal) { update(item, { state: 'failed', bytesPerSecond: null, message: (e as ApiError).message }); return; }
+    // For troubleshooting: the technical reason goes to the browser console, never the file's name or contents.
+    console.warn(`[OrbitDrive] download interrupted at byte ${item.received}: ${e instanceof Stalled ? 'no data for 20 s' : e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);
     update(item, { state: 'interrupted', bytesPerSecond: null, message: 'The connection was lost. What was saved so far is kept.' });
     if (item.autoRetries < AUTO_RETRIES) {
       const attempt = ++item.autoRetries;
