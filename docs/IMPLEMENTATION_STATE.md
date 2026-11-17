@@ -2,9 +2,13 @@
 
 Updated: 2026-11-17 (session 1). Branch: `feature/orbitdrive-foundation`.
 
-**Last code-verified commit: `6eb6295`** (on `main`) — all seven workflows green on the feature branch, and on `main` the
-`relay-release` run 43995476025 passed test → publish (`relay-dev-0.1.2`) → **verify-deployment: the live relay
-https://139-185-60-75.sslip.io switched itself from 0.1.1 to 0.1.2 and reported it** with nobody logged in.
+**Last code-verified commit: `d21dffa`** (on `main`) — seven workflows green; `relay-release` run 44000402541 on `main`:
+test → publish `relay-dev-0.1.3` → verify-deployment (live relay reported 0.1.3) → **live-agent on windows-2025 and
+ubuntu-24.04: a real agent connected outbound over the internet to https://139-185-60-75.sslip.io, authenticated and
+obtained a pairing code (3/3 each)**.
+
+Owner instruction (2026-11-17): keep developing through every remaining phase without routine check-ins; commits to
+`main` are authorised (practice kept: land on the feature branch, fast-forward `main` only when all workflows are green).
 
 Relay host decision (owner, 2026-11-17): Oracle Cloud, tenancy `nisar87`, home region UAE East (Dubai, `me-dubai-1`),
 Free Tier (in trial). Target: `orbitdrive-relay`, VM.Standard.A1.Flex (Always Free-eligible) 1 OCPU / 6 GB, Canonical
@@ -81,15 +85,27 @@ web) works end to end in CI. It is a slice through M1–M2, not completion of th
 - Console screenshots (9 per run) exist as CI artifacts but have not been visually reviewed by anyone.
 - The local channel relies on the OS same-user pipe restriction; a second-Windows-user denial test has not been run.
 
-## Next steps (dependency order)
+## Next steps (dependency order) — what is still unfinished
 
-1. W1 live check: build the web app with the real `orbitdrive-dev` config, run a gateway with
-   `OrbitDrive__Firebase__ProjectId=orbitdrive-dev`, create a real account, confirm the verification email arrives and
-   the gateway accepts the real token. Needs `localhost` (or the chosen web origin) in Firebase authorized domains.
-2. W2 remainder: in-site QR scanner with manual fallback (camera test needs a fake video feed), per-IP rate limits.
-3. D1 leftovers: start at sign-in (opt-in), bounded crash restart, themes/high contrast, keyboard pass, tray test.
-4. W3/D3: durable gateway store (file-backed stand-in for Firestore), leases/heartbeats, fault-injection; decide ADR-1.
-5. D4/W4: Windows-style web shell + full Explorer; root volume binding. Then D5/W5 completion, D6/W6.
+Blocked on the owner (cannot be done from the build environment):
+- **Verified Firebase test account for CI**: create a user in `orbitdrive-dev`, verify its email, and add repo secrets
+  `ORBIT_TEST_EMAIL`, `ORBIT_TEST_PASSWORD`, `ORBIT_FIREBASE_WEB_API_KEY`. Unblocks claim → browse → transfer through the
+  live relay in `live-relay.test.mjs` (today it stops at pairing-code issuance) and the first real sign-in.
+- Windows 11 standard-user machine (Explorer modern menu, install, lifecycle, DPI), physical Android/iPhone, a
+  code-signing identity, a service-account key (Firestore, FCM, token revocation), review of the console screenshots.
+
+Not blocked, in order:
+1. W3/D3: durable gateway store (file-backed until Firestore), agent leases/heartbeats, fault-injection suite, decide ADR-1.
+2. W2 remainder: in-site QR scanner + manual fallback, per-IP rate limits, device rename.
+3. D1 remainder: start at sign-in, crash-restart policy, themes/high contrast, keyboard pass, tray test.
+4. D4/W4: Windows-style web shell (desktop, taskbar, windows), full Explorer (views, sort, selection, properties,
+   context menus, back/forward/up), root volume binding. Visual iteration against the rubric starts here.
+5. D5/W5 completion: interrupted-resume end to end, timestamp-restoring rewrite detection, quotas, managed save mode.
+6. D6/W6: native Explorer command + package identity, invitations, Inbox, FCM, PWA/service worker.
+7. D7/W7 previews; D8/W8 archives, search, favorites, multi-PC; D9/W9 uploads; D10 packaging/signing/updates;
+   W10 admin and owner controls; D11/W11 hardening, soak, accessibility, visual gate; D12/W12 release candidate.
+8. Relay: build-provenance attestation, off-host backup, self-updating host scripts, migrate to A1.Flex when capacity
+   exists, a real domain, production channel.
 
 ## Continue from here
 

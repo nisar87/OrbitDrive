@@ -1,7 +1,7 @@
 # Requirement matrix (live status)
 
 Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists for the implemented scope; hardware/device proof still required), COMPLETE, BLOCKED.
-**No requirement is COMPLETE.** Last code-verified commit: `8390f81` (runs in `phase-evidence.md`).
+**No requirement is COMPLETE.** Last code-verified commit: `d21dffa` (runs in `phase-evidence.md`).
 
 | ID | Status | Evidence / gap |
 |---|---|---|
@@ -16,7 +16,7 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R09 | IN_PROGRESS | Traversal/ADS/reserved/symlink/junction/ancestor-swap/hard-link denied on Windows CI. Volume identity, placeholder, race fuzzing outstanding |
 | R10 | IN_PROGRESS | No write path exists at all; every root reports readOnly. Upload enablement is D9/W9 |
 | R11 | IN_PROGRESS | Tray, close-to-tray, Quit with no orphan agent, single instance verified by UI Automation (desktop-ui 43961529507). Start-at-sign-in, standard-user run outstanding |
-| R12 | IN_PROGRESS | Agent is outbound-only by construction (no listener). Only loopback tested; no external-network or mobile-data trial |
+| R12 | IN_PROGRESS | Agent is outbound-only by construction. Real agents on GitHub's Windows and Linux runners connect to the live Oracle relay over the internet and obtain pairing codes (relay-release 44000402541). No browse/transfer through the live relay yet; no mobile-data trial |
 | R13 | IN_PROGRESS | Backoff+jitter reconnect; restart test. No fault-injection/idempotency suite yet |
 | R14 | IN_PROGRESS | Not-set-up/connecting/online/paused/offline states shown truthfully in console and web (desktop-ui, integration, web e2e). Lease/heartbeat expiry not built |
 | R15 | AUTOMATED_VERIFIED | Listing compared with the real folder on Windows + Linux, through the web UI in 3 engines (integration, web 43951327095). Awaiting real-device use |

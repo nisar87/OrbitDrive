@@ -104,6 +104,13 @@ removing another browser needs a second confirmation and then locks it out (403)
   for 15 polls, then 0.1.2 — a real pull-based, health-gated deployment with no inbound access.
 - Host output supplied by the owner: all five units active, deploy log `deployed 0.1.1`, 670 MB memory available.
 
+## Commit `d21dffa` — real agent against the live relay
+
+`relay-release` run 44000402541 on `main`: `relay-dev-0.1.3` published and verified on the relay; `live-agent` jobs on
+windows-2025 and ubuntu-24.04 passed 3/3: verified-HTTPS meta, refusal of unauthenticated/dev/unsigned identities in
+production, and a real agent connecting outbound, authenticating and receiving a pairing code. Claim, browse and transfer
+through the live relay are **not** covered (no verified Firebase test account yet).
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were
