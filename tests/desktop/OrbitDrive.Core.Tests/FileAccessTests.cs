@@ -288,6 +288,21 @@ public sealed class FileAccessTests : IDisposable
     }
 
     [Fact]
+    public void ASharedFolderChosenThroughALinkStillWorksButLinksInsideItAreNotFollowed()
+    {
+        var alias = Path.Join(_base, "alias-to-shared");
+        Directory.CreateSymbolicLink(alias, _root);
+        Directory.CreateSymbolicLink(Path.Join(_root, "escape"), _outside);
+        var roots = new List<SharedRoot> { new("viaLink", "Via link", alias) };
+        var service = new FileAccessService(() => roots, _tokens);
+        var page = service.ListDirectory(new DirectoryQuery { RootId = "viaLink", PageSize = 50 });
+        Assert.Equal(["sub", "a.txt"], page.Entries.Select(e => e.Name));
+        Assert.Equal(1, page.SkippedLinks);
+        var escape = _tokens.Seal(new TokenBody { Type = "e", RootId = "viaLink", Segments = ["escape"], IsDirectory = true });
+        Assert.Equal(ErrorCode.LinkNotAllowed, CodeOf(() => service.ListDirectory(new DirectoryQuery { RootId = "viaLink", EntryId = escape, PageSize = 50 })));
+    }
+
+    [Fact]
     public void FilesWithASecondHardLinkAreRefusedOnWindows()
     {
         if (!OperatingSystem.IsWindows()) return; // link counts are read from the Windows file handle; other hosts are development only

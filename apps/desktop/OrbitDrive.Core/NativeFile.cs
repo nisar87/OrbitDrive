@@ -78,6 +78,67 @@ public static class NativeFile
         return (info.NumberOfLinks, (info.FileAttributes & FileAttributeReparsePoint) != 0);
     }
 
+    [DllImport("libc", SetLastError = true, EntryPoint = "open")]
+    private static extern int OpenPosix([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags);
+
+    /// <summary>
+    /// Opens a directory and keeps it open so that what is enumerated is exactly what was validated.
+    /// Checking a path and then listing it by name again leaves a gap in which a folder can be swapped for a link;
+    /// here the listing goes through the opened handle. Windows: the open handle also stops the folder and its
+    /// parents from being renamed or replaced while it is held, and enumeration uses the handle's own final path.
+    /// Linux (development hosts): enumeration goes through the descriptor itself (/proc/self/fd/N).
+    /// </summary>
+    public sealed class PinnedDirectory : IDisposable
+    {
+        private readonly SafeFileHandle _handle;
+        public string FinalPath { get; }
+        public string EnumerationPath { get; }
+        public bool IsLink { get; }
+
+        internal PinnedDirectory(SafeFileHandle handle, string finalPath, string enumerationPath, bool isLink)
+        { _handle = handle; FinalPath = finalPath; EnumerationPath = enumerationPath; IsLink = isLink; }
+
+        public void Dispose() => _handle.Dispose();
+    }
+
+    /// <param name="followFinalLink">True only for the shared root itself, which the owner may have chosen through a link.</param>
+    public static PinnedDirectory OpenDirectory(string path, bool followFinalLink = false)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            const uint listDirectory = 0x1, shareReadWrite = 0x3, openReparsePoint = 0x00200000;
+            var handle = CreateFileW(path, listDirectory, shareReadWrite, IntPtr.Zero, OpenExisting, BackupSemantics | (followFinalLink ? 0 : openReparsePoint), IntPtr.Zero);
+            if (handle.IsInvalid) { var error = Marshal.GetLastWin32Error(); handle.Dispose(); throw new Win32Exception(error); }
+            try
+            {
+                if (!GetFileInformationByHandle(handle, out var info)) throw new Win32Exception(Marshal.GetLastWin32Error());
+                var final = GetFinalPath(handle);
+                return new PinnedDirectory(handle, final, final, (info.FileAttributes & FileAttributeReparsePoint) != 0);
+            }
+            catch { handle.Dispose(); throw; }
+        }
+        if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("Directory pinning is implemented for Windows and Linux.");
+        // O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC (flag values differ between x64 and arm64)
+        var arm = RuntimeInformation.ProcessArchitecture is Architecture.Arm64 or Architecture.Arm;
+        var flags = (arm ? 0x4000 : 0x10000) | (followFinalLink ? 0 : arm ? 0x8000 : 0x20000) | 0x80000;
+        var fd = OpenPosix(path, flags);
+        if (fd < 0)
+        {
+            var errno = Marshal.GetLastPInvokeError();
+            if (errno is 40 or 20) throw new IOException("The folder was replaced by a link.");      // ELOOP / ENOTDIR
+            if (errno == 13) throw new UnauthorizedAccessException();
+            throw new DirectoryNotFoundException("Directory is unavailable.");
+        }
+        var descriptor = new SafeFileHandle(new IntPtr(fd), ownsHandle: true);
+        try
+        {
+            var via = $"/proc/self/fd/{fd}";
+            var target = new FileInfo(via).LinkTarget ?? throw new IOException("Unable to resolve the opened folder.");
+            return new PinnedDirectory(descriptor, target, via, false);
+        }
+        catch { descriptor.Dispose(); throw; }
+    }
+
     /// <summary>
     /// Identity of the volume that currently holds a directory, or null when it cannot be read (missing folder, no
     /// access). Windows: the volume serial number of the opened directory handle. Other systems (development hosts):

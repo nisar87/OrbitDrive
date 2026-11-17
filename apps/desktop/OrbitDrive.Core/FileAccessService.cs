@@ -62,15 +62,19 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         }
         EnsureApprovedVolume(root);
         var path = PathPolicy.Resolve(root, segments, expectDirectory: true);
-        if (segments.Length > 0)
-        {
-            string finalPath;
-            try { finalPath = NativeFile.GetFinalDirectoryPath(path); }
-            catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception)
-            { throw new ProtocolException(ErrorCode.NotFound, "The item no longer exists."); }
-            if (!NativeFile.IsUnder(finalPath, RootFinalPath(root)))
-                throw new ProtocolException(ErrorCode.LinkNotAllowed, "Links and junctions are not followed.");
-        }
+        // Open the folder, prove the OPENED folder is inside the shared root, and list through that same handle.
+        // (Validating the path and then listing it by name again would let a folder be swapped for a link in between.)
+        NativeFile.PinnedDirectory pinned;
+        try { pinned = NativeFile.OpenDirectory(path, followFinalLink: segments.Length == 0); }
+        catch (UnauthorizedAccessException) { throw new ProtocolException(ErrorCode.AccessDeniedLocal, "Windows denied access to this folder."); }
+        catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception)
+        { throw new ProtocolException(segments.Length == 0 ? ErrorCode.Unavailable : ErrorCode.NotFound, segments.Length == 0 ? "The shared folder is currently unavailable." : "The item no longer exists."); }
+        using var held = pinned;
+        var rootFinal = RootFinalPath(root);
+        var inside = segments.Length == 0
+            ? string.Equals(pinned.FinalPath.TrimEnd(Path.DirectorySeparatorChar), rootFinal.TrimEnd(Path.DirectorySeparatorChar), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
+            : !pinned.IsLink && NativeFile.IsUnder(pinned.FinalPath, rootFinal);
+        if (!inside) throw new ProtocolException(ErrorCode.LinkNotAllowed, "Links and junctions are not followed.");
 
         var offset = 0;
         if (query.Cursor is not null)
@@ -85,7 +89,7 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         var items = new List<FileSystemInfo>();
         try
         {
-            foreach (var info in new DirectoryInfo(path).EnumerateFileSystemInfos())
+            foreach (var info in new DirectoryInfo(pinned.EnumerationPath).EnumerateFileSystemInfos())
             {
                 if (info.Attributes.HasFlag(FileAttributes.ReparsePoint) || !PathPolicy.IsSafeSegment(info.Name)) { skipped++; continue; }
                 if (info.Attributes.HasFlag(FileAttributes.System)) continue;
@@ -95,6 +99,7 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         }
         catch (UnauthorizedAccessException) { throw new ProtocolException(ErrorCode.AccessDeniedLocal, "Windows denied access to this folder."); }
         catch (DirectoryNotFoundException) { throw new ProtocolException(ErrorCode.NotFound, "The item no longer exists."); }
+        catch (IOException) { throw new ProtocolException(ErrorCode.Unavailable, "The folder could not be read right now."); }
 
         items.Sort((a, b) =>
         {
@@ -155,7 +160,7 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
                 throw new ProtocolException(ErrorCode.LinkNotAllowed, "Links and junctions are not followed.");
             if (links > 1) throw new ProtocolException(ErrorCode.LinkNotAllowed, "Files with multiple hard links are not shared.");
             // The opened file itself must be on the approved volume (a mount point inside the folder is another disk).
-            if (root.VolumeId is not null && NativeFile.GetVolumeIdentity(handle) is { } volume && volume != root.VolumeId)
+            if (root.VolumeId is not null && volumeIdentity is null && NativeFile.GetVolumeIdentity(handle) is { } volume && volume != root.VolumeId)
                 throw new ProtocolException(ErrorCode.Unavailable, DifferentDisk);
             return handle;
         }
