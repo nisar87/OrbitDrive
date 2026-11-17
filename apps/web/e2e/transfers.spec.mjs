@@ -70,7 +70,18 @@ async function installPicker(page, delayMs) {
     };
   }, delayMs);
 }
-const canWriteFiles = (page) => page.evaluate(() => typeof FileSystemFileHandle !== 'undefined' && 'createWritable' in FileSystemFileHandle.prototype && !!navigator.storage?.getDirectory);
+// Really tries to create and write a file: some engines expose the API but refuse it (for example in private sessions).
+const canWriteFiles = (page) => page.evaluate(async () => {
+  try {
+    const directory = await navigator.storage.getDirectory();
+    const handle = await directory.getFileHandle('orbit-probe.bin', { create: true });
+    const writable = await handle.createWritable();
+    await writable.write(new Uint8Array([1]));
+    await writable.close();
+    await directory.removeEntry('orbit-probe.bin');
+    return true;
+  } catch { return false; }
+});
 
 /** SHA-256 and size of a file the page saved, hashed in Node chunk by chunk (the page never holds the whole file). */
 async function savedFile(page, name) {
