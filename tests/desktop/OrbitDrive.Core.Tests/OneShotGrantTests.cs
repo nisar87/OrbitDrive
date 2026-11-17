@@ -65,6 +65,7 @@ public sealed class OneShotGrantTests : IDisposable
         var path = File_("c.txt", "AAAA");
         var offer = _service.IssueOneShot(path, TimeSpan.FromHours(1));
         var stamp = File.GetLastWriteTimeUtc(path);
+        await Task.Delay(100);                                                            // NTFS stamps files with a coarse clock (up to ~16 ms); a rewrite inside the same tick is indistinguishable
         File.WriteAllText(path, "BBBB");                                                  // same size
         File.SetLastWriteTimeUtc(path, stamp);                                            // same modified time
         var thrown = await Assert.ThrowsAsync<ProtocolException>(() => _service.PrepareReadAsync(new PrepareReadRequest { EntryId = offer.Grant }, CancellationToken.None));
