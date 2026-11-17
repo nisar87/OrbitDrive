@@ -153,6 +153,24 @@ host), and the re-run did not restart an already-current gateway (fixed in `3cdd
   passed on both runners (new agent with heartbeats against the new relay over the internet).
 - **Not evidenced:** sleep/resume, lid close or real network switching on a Windows PC; behaviour behind mobile-carrier NAT.
 
+## Commit `c9daac8` — pairing remainder (W2): scanner, attempt limits, rename
+
+- Feature branch and `main`: all seven workflows green (web 44079707058 / 44081023231, integration 44079706588 /
+  44081023209, gateway 44079706674, contracts 44079706422, desktop 44079706361, desktop-ui 44079706389, security
+  44079706371). `relay-release` 44081023268: `relay-dev-0.1.7` deployed and verified; live-agent jobs passed.
+- `integration` (windows-2025 99/99; ubuntu-24.04 98 + 1 Windows-only skip) ran `pairing-limits.test.mjs`: a guessed
+  code dies after 5 wrong secrets and the address is locked out at 10 attempts/min (429, `Retry-After` 1-60 s) even for
+  the right code, another account or no account from that address; one account hopping addresses is locked out; forged
+  `X-Forwarded-For` does not help with or without a trusted proxy; polls bounded per account; rename validated,
+  isolated between accounts, shown on the PC and durable across a relay restart.
+- `web` Playwright: 26 passed, 9 skipped. The scanner tests ran on desktop-chromium and mobile-chromium-emulated
+  only, with Chromium's fake camera playing a video of the QR drawn by the real PC encoder for a live code. **Skipped
+  and therefore not evidence:** all three scanner tests on Firefox and WebKit (desktop and emulated iPhone).
+- Screenshots reviewed locally in Chrome (rename form, wrong-site scan message, camera denied) — emulated viewports.
+- Bug found by the new tests under load and fixed: the agent announced `connected` before its connection was usable.
+- **Not evidenced:** scanning with a physical phone camera; Safari/Firefox scanner behaviour; per-address limiting on
+  the live relay (needs `OrbitDrive__TrustedProxies`, set by re-running the bootstrap from this commit).
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were
