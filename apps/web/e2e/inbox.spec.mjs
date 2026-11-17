@@ -132,11 +132,18 @@ test('a changed file is reported as changed, not delivered; notifications can be
   await expect(card).toHaveAttribute('data-state', 'cancelled');
   await expect(card).toContainText('Ask for it to be sent again');
 
-  // Permission is requested only from this click, and a refusal leaves everything working.
-  await page.context().clearPermissions();
-  await page.evaluate(() => { Notification.requestPermission = async () => 'denied'; });
-  await inboxWindow(page).getByRole('button', { name: 'Notify me about new files' }).click();
-  await expect(inboxWindow(page).getByRole('status').filter({ hasText: /blocked|cannot show/ })).toBeVisible();
+  // Permission is requested only from this click, and a refusal leaves everything working. Browsers without the
+  // Notification API at all (an iPhone in a normal tab) get a plain explanation instead of a button.
+  const supported = await page.evaluate(() => typeof Notification !== 'undefined');
+  if (supported) {
+    await page.context().clearPermissions();
+    await page.evaluate(() => { Notification.requestPermission = async () => 'denied'; });
+    await inboxWindow(page).getByRole('button', { name: 'Notify me about new files' }).click();
+    await expect(inboxWindow(page).getByRole('status').filter({ hasText: /blocked|cannot show/ })).toBeVisible();
+  } else {
+    await expect(inboxWindow(page).getByRole('button', { name: /notif/i })).toHaveCount(0);
+    await expect(inboxWindow(page)).toContainText('This browser cannot show notifications');
+  }
   await sendFile(receiver, 'after-denied.txt', 'x');
   await expect(inboxWindow(page).getByTestId('invitation').filter({ hasText: 'after-denied.txt' })).toBeVisible({ timeout: 15_000 });
 });

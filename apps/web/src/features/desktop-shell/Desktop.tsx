@@ -31,7 +31,9 @@ function useCompact(): boolean {
 
 function defaultLayout(index: number): WindowLayout {
   const w = Math.min(1100, Math.max(MIN_W, window.innerWidth - 120)), h = Math.min(720, Math.max(MIN_H, window.innerHeight - TASKBAR - 80));
-  return { x: Math.max(8, (window.innerWidth - w) / 2 + index * 28), y: Math.max(8, (window.innerHeight - TASKBAR - h) / 2 + index * 28), w, h, maximized: index === 0 && window.innerWidth < 1100 };
+  // The cascade never pushes a new window past the edge of the desktop, however many apps there are.
+  const x = Math.min((window.innerWidth - w) / 2 + index * 28, window.innerWidth - w - 8), y = Math.min((window.innerHeight - TASKBAR - h) / 2 + index * 28, window.innerHeight - TASKBAR - h - 8);
+  return { x: Math.max(8, x), y: Math.max(8, y), w, h, maximized: index === 0 && window.innerWidth < 1100 };
 }
 
 /** Keeps a window reachable: its title bar and 200 px of width (the buttons plus room to grab it) stay on the desktop. */
