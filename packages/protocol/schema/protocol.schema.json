@@ -8,14 +8,14 @@
     "PairingState": ["issued", "claimed", "approved", "denied", "expired"],
     "TransferState": ["offered", "accepted", "preparing", "transferring", "interrupted", "cancelled", "expired", "revoked", "sent_to_browser", "confirmed_saved"]
   },
-  "actions": ["challenge", "hello", "create_pairing", "confirm_pairing", "pairing_claimed", "list_roots", "list_directory", "prepare_read", "open_read", "cancel_stream", "list_devices", "revoke_device"],
+  "actions": ["challenge", "hello", "create_pairing", "confirm_pairing", "pairing_claimed", "list_roots", "list_directory", "prepare_read", "open_read", "cancel_stream", "list_devices", "revoke_device", "heartbeat"],
   "types": {
     "ErrorInfo": { "code": "ErrorCode", "message": "string" },
     "ErrorResponse": { "error": "ErrorInfo" },
     "Envelope": { "v": "int32", "id": "string", "kind": "EnvelopeKind", "action": "string?", "deadlineUnixMs": "int64?", "payload": "json?", "error": "ErrorInfo?" },
     "AgentChallenge": { "nonce": "string", "minProtocolVersion": "int32", "maxProtocolVersion": "int32" },
     "AgentHello": { "protocolVersion": "int32", "pcId": "string", "publicKeySpki": "string", "signature": "string", "name": "string", "agentVersion": "string", "capabilities": "string[]" },
-    "AgentWelcome": { "pcId": "string", "generation": "int64", "protocolVersion": "int32", "ownerBound": "bool" },
+    "AgentWelcome": { "pcId": "string", "generation": "int64", "protocolVersion": "int32", "ownerBound": "bool", "heartbeatSeconds": "int32?", "leaseSeconds": "int32?" },
     "CreatePairingResult": { "pairingId": "string", "secret": "string", "expiresAtUnixMs": "int64" },
     "PairingClaimedEvent": { "pairingId": "string", "accountLabel": "string", "browserName": "string", "confirmationCode": "string" },
     "ConfirmPairingRequest": { "pairingId": "string", "approve": "bool" },

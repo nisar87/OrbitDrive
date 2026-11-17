@@ -73,6 +73,12 @@ public sealed class AgentHub(Store store, GatewayOptions options, ILogger<AgentH
 
     public bool IsOnline(string pcId) => _connections.ContainsKey(pcId);
 
+    /// <summary>Service is stopping: cut every control connection now so agents reconnect at once instead of waiting out a dead socket.</summary>
+    public void Shutdown()
+    {
+        foreach (var connection in _connections.Values) { connection.FailAll(); connection.Abort(); }
+    }
+
     public AgentConnection Get(string pcId) =>
         _connections.TryGetValue(pcId, out var connection) ? connection : throw new ProtocolException(ErrorCode.PcOffline, "The PC is offline. It must be on, awake and running OrbitDrive.");
 
@@ -158,9 +164,28 @@ public sealed class AgentHub(Store store, GatewayOptions options, ILogger<AgentH
         logger.LogInformation("Agent connected generation {Generation}", connection.Generation);
         try
         {
-            await connection.SendAsync(Reply(first, new AgentWelcome { PcId = agent.PcId, Generation = connection.Generation, ProtocolVersion = agent.ProtocolVersion, OwnerBound = pc.OwnerUid is not null }), cancellation);
-            while (await ReceiveAsync(socket, cancellation) is { } envelope)
+            // Lease: an agent that announces heartbeats must be heard from within the lease, or it is offline. A frozen PC,
+            // a pulled cable or a half-open TCP connection would otherwise look "online" until the OS gives up.
+            var leased = agent.Capabilities.Contains("heartbeat");
+            var lease = TimeSpan.FromSeconds(options.AgentLeaseSeconds);
+            await connection.SendAsync(Reply(first, new AgentWelcome
             {
+                PcId = agent.PcId, Generation = connection.Generation, ProtocolVersion = agent.ProtocolVersion, OwnerBound = pc.OwnerUid is not null,
+                HeartbeatSeconds = leased ? options.AgentHeartbeatSeconds : null, LeaseSeconds = leased ? options.AgentLeaseSeconds : null,
+            }), cancellation);
+            using var silence = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            while (true)
+            {
+                if (leased) silence.CancelAfter(lease);
+                Envelope? envelope;
+                try { envelope = await ReceiveAsync(socket, silence.Token); }
+                catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+                {
+                    logger.LogWarning("Agent lease expired generation {Generation}", connection.Generation);
+                    connection.Abort();
+                    break;
+                }
+                if (envelope is null) break;
                 if (!_connections.TryGetValue(agent.PcId, out var current) || current != connection) break; // superseded
                 store.Touch(agent.PcId);
                 if (envelope.V != ProtocolInfo.Version) continue;
@@ -186,6 +211,8 @@ public sealed class AgentHub(Store store, GatewayOptions options, ILogger<AgentH
     {
         switch (envelope.Action)
         {
+            case Actions.Heartbeat:
+                return new Ack { Ok = true };
             case Actions.CreatePairing:
                 var (id, secret, expires) = store.CreatePairing(connection.PcId);
                 return new CreatePairingResult { PairingId = id, Secret = secret, ExpiresAtUnixMs = expires.ToUnixTimeMilliseconds() };

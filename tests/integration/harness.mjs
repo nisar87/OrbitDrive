@@ -64,8 +64,45 @@ export async function startGateway(overrides = {}, fixedPort = 0) {
   throw new Error(`gateway did not start:\n${gateway.log}`);
 }
 
+/** Hard kill (no graceful shutdown), as a crash or power loss would look. */
+export async function kill(processLike) {
+  const child = processLike.child;
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  child.kill('SIGKILL');
+  await Promise.race([once(child, 'exit'), sleep(5000)]);
+}
+
+/**
+ * Fault-injecting TCP proxy in front of a gateway. `blackhole()` silently stops forwarding in both directions without
+ * closing anything (a pulled cable / dead NAT mapping / half-open connection); `heal()` drops the dead connections and
+ * forwards again.
+ */
+export async function startProxy(gateway) {
+  const { connect } = await import('node:net');
+  const target = Number(new URL(gateway.url).port);
+  const pairs = new Set();
+  let dark = false;
+  const server = createServer((client) => {
+    const upstream = connect(target, '127.0.0.1');
+    const pair = { client, upstream };
+    pairs.add(pair);
+    const forward = (from, to) => from.on('data', (chunk) => { if (!dark) to.write(chunk); });
+    forward(client, upstream); forward(upstream, client);
+    const close = () => { pairs.delete(pair); client.destroy(); upstream.destroy(); };
+    for (const socket of [client, upstream]) { socket.on('error', close); socket.on('close', () => { if (!dark) close(); }); }
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  return {
+    url: `http://127.0.0.1:${server.address().port}`,
+    blackhole() { dark = true; },
+    heal() { for (const pair of pairs) { pair.client.destroy(); pair.upstream.destroy(); } pairs.clear(); dark = false; },
+    stop() { this.heal(); server.close(); },
+  };
+}
+
 async function stop(child) {
-  if (child.exitCode !== null) return;
+  if (child.exitCode !== null || child.signalCode !== null) return;
   child.kill();
   await Promise.race([once(child, 'exit'), sleep(5000)]);
 }

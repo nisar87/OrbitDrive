@@ -79,10 +79,22 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
                 socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
                 var builder = new UriBuilder(gateway) { Scheme = gateway.Scheme == "https" ? "wss" : "ws", Path = "/v1/agent-control" };
                 await socket.ConnectAsync(builder.Uri, cancellation);
-                await HandshakeAsync(socket, cancellation);
+                var welcome = await HandshakeAsync(socket, cancellation);
                 _socket = socket;
                 attempt = 0;
-                await ReceiveLoopAsync(socket, cancellation);
+                using var connection = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+                try
+                {
+                    if (welcome.HeartbeatSeconds is > 0 and var beat) _ = HeartbeatAsync(socket, TimeSpan.FromSeconds(beat), connection.Token);
+                    await ReceiveLoopAsync(socket, welcome.LeaseSeconds is > 0 and var lease ? TimeSpan.FromSeconds(lease) : null, cancellation);
+                }
+                finally { connection.Cancel(); }
+            }
+            catch (TimeoutException)
+            {
+                // Nothing at all from the service for a whole lease (it answers every heartbeat): the path is dead even if
+                // the socket still looks open. Drop it and reconnect.
+                emit("disconnected", new { reason = "service_silent" });
             }
             catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { break; }
             catch (ProtocolException e) when (e.Code == ErrorCode.UnsupportedVersion)
@@ -105,7 +117,20 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
         }
     }
 
-    private async Task HandshakeAsync(ClientWebSocket socket, CancellationToken cancellation)
+    private async Task HeartbeatAsync(ClientWebSocket socket, TimeSpan interval, CancellationToken cancellation)
+    {
+        try
+        {
+            for (var n = 0; ; n++)
+            {
+                await Task.Delay(interval, cancellation);
+                await SendAsync(socket, new Envelope { V = ProtocolInfo.Version, Id = $"hb-{n}", Kind = EnvelopeKind.Req, Action = Actions.Heartbeat, Payload = ProtocolJson.ToElement(new Ack { Ok = true }) }, cancellation);
+            }
+        }
+        catch (Exception e) when (e is OperationCanceledException or WebSocketException or ObjectDisposedException or InvalidOperationException) { }
+    }
+
+    private async Task<AgentWelcome> HandshakeAsync(ClientWebSocket socket, CancellationToken cancellation)
     {
         var challengeEnvelope = await ReceiveAsync(socket, cancellation) ?? throw new IOException("Gateway closed during handshake.");
         if (challengeEnvelope.Action != Actions.Challenge || challengeEnvelope.Payload is null) throw new ProtocolException(ErrorCode.Internal, "Unexpected handshake.");
@@ -119,13 +144,14 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
             Payload = ProtocolJson.ToElement(new AgentHello
             {
                 ProtocolVersion = ProtocolInfo.Version, PcId = state.PcId, PublicKeySpki = state.PublicKeySpki, Signature = Base64Url.EncodeToString(signature),
-                Name = pcName, AgentVersion = AgentVersion, Capabilities = ["browse", "range-read"],
+                Name = pcName, AgentVersion = AgentVersion, Capabilities = ["browse", "range-read", "heartbeat"],
             }),
         }, cancellation);
         var welcome = await ReceiveAsync(socket, cancellation) ?? throw new IOException("Gateway closed during handshake.");
         if (welcome.Error is not null) throw new ProtocolException(welcome.Error.Code, welcome.Error.Message);
         var info = ProtocolJson.FromElement<AgentWelcome>(welcome.Payload ?? throw new JsonException());
         emit("connected", new { pcId = info.PcId, generation = info.Generation.ToString(), ownerBound = info.OwnerBound });
+        return info;
     }
 
     private static async Task<Envelope?> ReceiveAsync(ClientWebSocket socket, CancellationToken cancellation)
@@ -150,10 +176,16 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
         finally { _sendLock.Release(); }
     }
 
-    private async Task ReceiveLoopAsync(ClientWebSocket socket, CancellationToken cancellation)
+    private async Task ReceiveLoopAsync(ClientWebSocket socket, TimeSpan? lease, CancellationToken cancellation)
     {
-        while (await ReceiveAsync(socket, cancellation) is { } envelope)
+        using var silence = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        while (true)
         {
+            if (lease is { } limit) silence.CancelAfter(limit);
+            Envelope? envelope;
+            try { envelope = await ReceiveAsync(socket, silence.Token); }
+            catch (OperationCanceledException) when (!cancellation.IsCancellationRequested) { socket.Abort(); throw new TimeoutException(); }
+            if (envelope is null) return;
             if (envelope.V != ProtocolInfo.Version) continue;
             switch (envelope.Kind)
             {

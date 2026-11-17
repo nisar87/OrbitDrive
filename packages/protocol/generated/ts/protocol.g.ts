@@ -5,7 +5,7 @@ export type Int64String = string;
 
 export const PROTOCOL_VERSION = 1;
 export const MIN_PROTOCOL_VERSION = 1;
-export const ACTIONS = ["challenge","hello","create_pairing","confirm_pairing","pairing_claimed","list_roots","list_directory","prepare_read","open_read","cancel_stream","list_devices","revoke_device"] as const;
+export const ACTIONS = ["challenge","hello","create_pairing","confirm_pairing","pairing_claimed","list_roots","list_directory","prepare_read","open_read","cancel_stream","list_devices","revoke_device","heartbeat"] as const;
 
 export type EnvelopeKind = 'req' | 'res' | 'evt';
 
@@ -57,6 +57,8 @@ export interface AgentWelcome {
   generation: Int64String;
   protocolVersion: number;
   ownerBound: boolean;
+  heartbeatSeconds?: number | null;
+  leaseSeconds?: number | null;
 }
 
 export interface CreatePairingResult {
@@ -349,7 +351,9 @@ export const SCHEMA = {
       "pcId": "string",
       "generation": "int64",
       "protocolVersion": "int32",
-      "ownerBound": "bool"
+      "ownerBound": "bool",
+      "heartbeatSeconds": "int32?",
+      "leaseSeconds": "int32?"
     },
     "CreatePairingResult": {
       "pairingId": "string",

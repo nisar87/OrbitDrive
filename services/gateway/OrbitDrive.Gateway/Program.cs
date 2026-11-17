@@ -43,6 +43,7 @@ builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy => policy
 var app = builder.Build();
 var store = app.Services.GetRequiredService<Store>();
 var hub = app.Services.GetRequiredService<AgentHub>();
+app.Lifetime.ApplicationStopping.Register(hub.Shutdown);
 var streams = app.Services.GetRequiredService<StreamRegistry>();
 var verifier = app.Services.GetRequiredService<IIdentityVerifier>();
 var agentTimeout = TimeSpan.FromSeconds(options.AgentRequestTimeoutSeconds);

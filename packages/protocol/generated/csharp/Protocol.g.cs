@@ -24,7 +24,8 @@ public static class Actions
     public const string CancelStream = "cancel_stream";
     public const string ListDevices = "list_devices";
     public const string RevokeDevice = "revoke_device";
-    public static readonly IReadOnlySet<string> All = new HashSet<string> { "challenge", "hello", "create_pairing", "confirm_pairing", "pairing_claimed", "list_roots", "list_directory", "prepare_read", "open_read", "cancel_stream", "list_devices", "revoke_device" };
+    public const string Heartbeat = "heartbeat";
+    public static readonly IReadOnlySet<string> All = new HashSet<string> { "challenge", "hello", "create_pairing", "confirm_pairing", "pairing_claimed", "list_roots", "list_directory", "prepare_read", "open_read", "cancel_stream", "list_devices", "revoke_device", "heartbeat" };
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<EnvelopeKind>))]
@@ -135,6 +136,8 @@ public sealed record AgentWelcome
     [JsonPropertyName("generation")] [JsonConverter(typeof(Int64StringConverter))] public required long Generation { get; init; }
     [JsonPropertyName("protocolVersion")] public required int ProtocolVersion { get; init; }
     [JsonPropertyName("ownerBound")] public required bool OwnerBound { get; init; }
+    [JsonPropertyName("heartbeatSeconds")] public int? HeartbeatSeconds { get; init; }
+    [JsonPropertyName("leaseSeconds")] public int? LeaseSeconds { get; init; }
 }
 
 public sealed record CreatePairingResult

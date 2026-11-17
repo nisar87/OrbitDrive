@@ -17,8 +17,8 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R10 | IN_PROGRESS | No write path exists at all; every root reports readOnly. Upload enablement is D9/W9 |
 | R11 | IN_PROGRESS | Tray, close-to-tray, Quit with no orphan agent, single instance verified by UI Automation (desktop-ui 43961529507). Start-at-sign-in, standard-user run outstanding |
 | R12 | IN_PROGRESS | Agent is outbound-only by construction. Real agents on GitHub's Windows and Linux runners connect to the live Oracle relay over the internet and obtain pairing codes (relay-release 44000402541). No browse/transfer through the live relay yet; no mobile-data trial |
-| R13 | IN_PROGRESS | Backoff+jitter reconnect; restart test. No fault-injection/idempotency suite yet |
-| R14 | IN_PROGRESS | Not-set-up/connecting/online/paused/offline states shown truthfully in console and web (desktop-ui, integration, web e2e). Lease/heartbeat expiry not built |
+| R13 | IN_PROGRESS | Backoff+jitter reconnect; gateway-restart tests; fault-injection suite (`faults.test.mjs`: silent network loss, agent crash, relay crash mid-download with byte-exact ranged resume, graceful shutdown). Idempotency keys for retried mutations and bounded browser-side retry not built |
+| R14 | IN_PROGRESS | Not-set-up/connecting/online/paused/offline states shown truthfully in console and web (desktop-ui, integration, web e2e). Lease/heartbeat expiry: a silent or frozen agent goes offline within the lease and requests fail fast with `pc_offline` (faults suite). Sleep/lock states on real Windows not evidenced |
 | R15 | AUTOMATED_VERIFIED | Listing compared with the real folder on Windows + Linux, through the web UI in 3 engines (integration, web 43951327095). Awaiting real-device use |
 | R16 | IN_PROGRESS | Details view, click to open/download. No sort/selection/context menu/icon view yet |
 | R17 | IN_PROGRESS | Breadcrumbs, Unicode names, real size/mtime tested. Back/forward/up, properties panel outstanding |

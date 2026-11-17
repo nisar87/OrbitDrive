@@ -30,6 +30,9 @@ public sealed class GatewayOptions
     public int PrepareTimeoutSeconds { get; set; } = 900;
     public int MaxConcurrentStreamsPerOwner { get; set; } = 4;
     public int MaxControlMessageBytes { get; set; } = 262144;
+    /// <summary>How often a connected PC must prove it is alive, and how long silence is tolerated before it is treated as offline.</summary>
+    public int AgentHeartbeatSeconds { get; set; } = 10;
+    public int AgentLeaseSeconds { get; set; } = 30;
 
     /// <summary>Fails closed: production never starts with development identities or without a real verifier.</summary>
     public void Validate(IHostEnvironment environment)
@@ -45,6 +48,8 @@ public sealed class GatewayOptions
             if (AllowedWebOrigins.Length == 0 || AllowedWebOrigins.Any(o => !o.StartsWith("https://", StringComparison.Ordinal)))
                 throw new InvalidOperationException("Production requires explicit https web origins.");
         }
+        if (AgentHeartbeatSeconds is < 1 or > 300 || AgentLeaseSeconds < AgentHeartbeatSeconds * 2 || AgentLeaseSeconds > 900)
+            throw new InvalidOperationException("AgentLeaseSeconds must be at least twice AgentHeartbeatSeconds (1-300 s) and at most 900 s.");
         if (DevIdentity.Enabled && firebase) throw new InvalidOperationException("Configure either development identities or Firebase, not both.");
         if (DevIdentity.Enabled && DevIdentity.Secret.Length < 32)
             throw new InvalidOperationException("OrbitDrive:DevIdentity:Secret must be at least 32 characters.");

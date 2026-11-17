@@ -84,6 +84,22 @@ public class IdentityAndConfigurationTests
         Assert.Equal(ErrorCode.Unauthenticated, Assert.Throws<ProtocolException>(() => verifier.Verify(token)).Code);
     }
 
+    [Theory]
+    [InlineData(10, 30, true)]
+    [InlineData(1, 2, true)]
+    [InlineData(0, 30, false)]     // no heartbeat at all
+    [InlineData(10, 19, false)]    // one late heartbeat would drop a healthy PC
+    [InlineData(301, 900, false)]
+    [InlineData(300, 901, false)]  // a dead PC would look online for too long
+    public void LeaseSettingsMustTolerateOneLateHeartbeatAndStayBounded(int heartbeat, int lease, bool valid)
+    {
+        var options = Dev();
+        options.AgentHeartbeatSeconds = heartbeat; options.AgentLeaseSeconds = lease;
+        var development = new FakeEnvironment("Development");
+        if (valid) options.Validate(development);
+        else Assert.Contains("AgentLeaseSeconds", Assert.Throws<InvalidOperationException>(() => options.Validate(development)).Message);
+    }
+
     [Fact]
     public void ProductionNeverAcceptsDevelopmentIdentitiesOrWildcardOrigins()
     {
