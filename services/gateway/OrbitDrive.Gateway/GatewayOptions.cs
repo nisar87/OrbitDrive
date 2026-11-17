@@ -35,6 +35,8 @@ public sealed class GatewayOptions
     public int AgentRequestTimeoutSeconds { get; set; } = 15;
     public int PrepareTimeoutSeconds { get; set; } = 900;
     public int MaxConcurrentStreamsPerOwner { get; set; } = 4;
+    /// <summary>Unexpired download sessions one browser may hold (each is a prepared file on a PC).</summary>
+    public int MaxDownloadSessionsPerDevice { get; set; } = 64;
     public int MaxControlMessageBytes { get; set; } = 262144;
     /// <summary>How often a connected PC must prove it is alive, and how long silence is tolerated before it is treated as offline.</summary>
     public int AgentHeartbeatSeconds { get; set; } = 10;

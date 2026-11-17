@@ -65,6 +65,16 @@ public enum EntryKind
     [JsonStringEnumMemberName("directory")] Directory,
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter<DownloadState>))]
+public enum DownloadState
+{
+    [JsonStringEnumMemberName("prepared")] Prepared,
+    [JsonStringEnumMemberName("sending")] Sending,
+    [JsonStringEnumMemberName("interrupted")] Interrupted,
+    [JsonStringEnumMemberName("sent_to_browser")] SentToBrowser,
+    [JsonStringEnumMemberName("cancelled")] Cancelled,
+}
+
 [JsonConverter(typeof(JsonStringEnumConverter<PairingState>))]
 public enum PairingState
 {
@@ -276,6 +286,26 @@ public sealed record DownloadSession
     [JsonPropertyName("size")] [JsonConverter(typeof(Int64StringConverter))] public required long Size { get; init; }
     [JsonPropertyName("revision")] public required string Revision { get; init; }
     [JsonPropertyName("expiresAtUnixMs")] [JsonConverter(typeof(Int64StringConverter))] public required long ExpiresAtUnixMs { get; init; }
+    [JsonPropertyName("sessionId")] public string? SessionId { get; init; }
+}
+
+public sealed record DownloadSessionSummary
+{
+    [JsonPropertyName("sessionId")] public required string SessionId { get; init; }
+    [JsonPropertyName("pcId")] public required string PcId { get; init; }
+    [JsonPropertyName("name")] public required string Name { get; init; }
+    [JsonPropertyName("size")] [JsonConverter(typeof(Int64StringConverter))] public required long Size { get; init; }
+    [JsonPropertyName("revision")] public required string Revision { get; init; }
+    [JsonPropertyName("state")] public required DownloadState State { get; init; }
+    [JsonPropertyName("bytesSentToBrowser")] [JsonConverter(typeof(Int64StringConverter))] public required long BytesSentToBrowser { get; init; }
+    [JsonPropertyName("bytesCovered")] [JsonConverter(typeof(Int64StringConverter))] public required long BytesCovered { get; init; }
+    [JsonPropertyName("createdAtUnixMs")] [JsonConverter(typeof(Int64StringConverter))] public required long CreatedAtUnixMs { get; init; }
+    [JsonPropertyName("expiresAtUnixMs")] [JsonConverter(typeof(Int64StringConverter))] public required long ExpiresAtUnixMs { get; init; }
+}
+
+public sealed record DownloadSessionList
+{
+    [JsonPropertyName("sessions")] public required IReadOnlyList<DownloadSessionSummary> Sessions { get; init; }
 }
 
 public sealed record OpenReadRequest

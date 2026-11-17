@@ -84,7 +84,7 @@ public sealed class StreamRegistry(GatewayOptions options)
     }
 
     /// <summary>Forwards exactly <paramref name="length"/> bytes through one pooled buffer; each write awaits the receiver (backpressure).</summary>
-    public static async Task RelayAsync(Stream source, Stream destination, long length, CancellationToken cancellation)
+    public static async Task RelayAsync(Stream source, Stream destination, long length, CancellationToken cancellation, Action<long>? written = null)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(RelayBufferBytes);
         try
@@ -96,6 +96,7 @@ public sealed class StreamRegistry(GatewayOptions options)
                 if (read == 0) throw new IOException("The PC stopped sending before the transfer finished.");
                 await destination.WriteAsync(buffer.AsMemory(0, read), cancellation);
                 remaining -= read;
+                written?.Invoke(read);
             }
         }
         finally { ArrayPool<byte>.Shared.Return(buffer); }

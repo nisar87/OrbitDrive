@@ -70,9 +70,43 @@ public static class NativeFile
         finally { Free(ptr); }
     }
 
-    /// <summary>Number of hard links to the opened file; 1 when the platform check is unavailable (non-Windows dev hosts).</summary>
+    [DllImport("libc", SetLastError = true, EntryPoint = "statx")]
+    private static extern int StatX(int directoryFd, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags, uint mask, byte[] buffer);
+
+    /// <summary>Linux statx on an open descriptor (the structure is the same on every architecture). Null when unavailable.</summary>
+    private static byte[]? StatXOf(SafeFileHandle handle)
+    {
+        const int atEmptyPath = 0x1000; const uint nlinkAndCtime = 0x4 | 0x80;
+        var buffer = new byte[256];
+        try { return StatX((int)handle.DangerousGetHandle(), "", atEmptyPath, nlinkAndCtime, buffer) == 0 ? buffer : null; }
+        catch (EntryPointNotFoundException) { return null; }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FileBasicInfo { public long CreationTime, LastAccessTime, LastWriteTime, ChangeTime; public uint FileAttributes; }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandleEx(SafeFileHandle hFile, int infoClass, out FileBasicInfo info, uint size);
+
+    /// <summary>
+    /// The filesystem's own "last changed" stamp for an open file (NTFS ChangeTime / Unix ctime). Unlike the modified
+    /// time, programs cannot set it back with the ordinary APIs, so a rewrite that restores the old size and date is
+    /// still noticed. 0 when the platform cannot provide it.
+    /// </summary>
+    public static long GetChangeStamp(SafeFileHandle handle)
+    {
+        if (OperatingSystem.IsWindows())
+            return GetFileInformationByHandleEx(handle, 0, out var info, (uint)Marshal.SizeOf<FileBasicInfo>()) ? info.ChangeTime : 0;
+        if (OperatingSystem.IsLinux() && StatXOf(handle) is { } stat)
+            return BitConverter.ToInt64(stat, 0x60) * 1_000_000_000 + BitConverter.ToUInt32(stat, 0x68);
+        return 0;
+    }
+
+    /// <summary>Number of hard links to the opened file (Windows handle information, Linux statx); 1 where neither is available.</summary>
     public static (uint Links, bool IsReparse) GetLinkInfo(SafeFileHandle handle)
     {
+        if (OperatingSystem.IsLinux()) return (StatXOf(handle) is { } stat ? BitConverter.ToUInt32(stat, 16) : 1, false);
         if (!OperatingSystem.IsWindows()) return (1, false);
         if (!GetFileInformationByHandle(handle, out var info)) throw new Win32Exception(Marshal.GetLastWin32Error());
         return (info.NumberOfLinks, (info.FileAttributes & FileAttributeReparsePoint) != 0);

@@ -303,20 +303,43 @@ public sealed class FileAccessTests : IDisposable
     }
 
     [Fact]
-    public void FilesWithASecondHardLinkAreRefusedOnWindows()
+    public void FilesWithASecondHardLinkAreRefused()
     {
-        if (!OperatingSystem.IsWindows()) return; // link counts are read from the Windows file handle; other hosts are development only
         var original = Path.Join(_outside, "ledger.txt");
         File.WriteAllText(original, "private ledger");
         var alias = Path.Join(_root, "innocent.txt");
-        using (var mklink = Process.Start(new ProcessStartInfo("cmd.exe", $"/c mklink /H \"{alias}\" \"{original}\"") { UseShellExecute = false, CreateNoWindow = true })!)
+        var command = OperatingSystem.IsWindows()
+            ? new ProcessStartInfo("cmd.exe", $"/c mklink /H \"{alias}\" \"{original}\"")
+            : new ProcessStartInfo("ln") { ArgumentList = { original, alias } };
+        command.UseShellExecute = false; command.CreateNoWindow = true;
+        using (var link = Process.Start(command)!)
         {
-            mklink.WaitForExit();
-            Assert.Equal(0, mklink.ExitCode);
+            link.WaitForExit();
+            Assert.Equal(0, link.ExitCode);
         }
         Assert.Equal("private ledger", File.ReadAllText(alias));       // the alias really exposes the outside file's bytes
         Assert.Contains("innocent.txt", List().Entries.Select(e => e.Name));
         Assert.Equal(ErrorCode.LinkNotAllowed, CodeOf(() => _service.PrepareReadAsync(new PrepareReadRequest { EntryId = Entry(false, "innocent.txt") }, default).GetAwaiter().GetResult()));
+        // An ordinary single-link file next to it is still served.
+        Assert.Equal(5, _service.PrepareReadAsync(new PrepareReadRequest { EntryId = Entry(false, "a.txt") }, default).GetAwaiter().GetResult().Size);
+    }
+
+    [Fact]
+    public async Task ARewriteThatRestoresSizeAndDateIsStillDetected()
+    {
+        var path = Path.Join(_root, "a.txt");
+        var prepared = await _service.PrepareReadAsync(new PrepareReadRequest { EntryId = Entry(false, "a.txt") }, default);
+        using (_service.OpenRead(prepared.ReadToken, 0, prepared.Size)) { }                  // unchanged: fine
+        var stamp = File.GetLastWriteTimeUtc(path);
+        await Task.Delay(50);
+        File.WriteAllText(path, "ALPHA");                                                   // same length, different bytes
+        File.SetLastWriteTimeUtc(path, stamp);                                              // ...and the old date put back
+        Assert.Equal(prepared.Size, new FileInfo(path).Length);
+        Assert.Equal(stamp, File.GetLastWriteTimeUtc(path));
+        Assert.Equal(ErrorCode.RevisionChanged, CodeOf(() => _service.OpenRead(prepared.ReadToken, 0, prepared.Size)));
+        // Preparing again yields a different revision, so a resume can never splice the two contents.
+        var again = await _service.PrepareReadAsync(new PrepareReadRequest { EntryId = Entry(false, "a.txt") }, default);
+        Assert.NotEqual(prepared.Revision, again.Revision);
     }
 
     [Fact]

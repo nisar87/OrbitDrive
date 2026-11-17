@@ -49,6 +49,60 @@ public sealed class DownloadSessionRecord
     public required string ReadToken { get; init; }
     public required DateTimeOffset ExpiresAt { get; init; }
     public CancellationTokenSource Revoked { get; } = new();
+
+    // What the relay itself observed. It knows what it wrote towards the browser; it cannot know what was saved.
+    public string Id { get; } = Secrets.Token(12);
+    public DateTimeOffset CreatedAt { get; init; }
+    public bool Cancelled { get; set; }
+    private readonly Lock _progress = new();
+    private readonly List<(long Start, long End)> _covered = [];   // merged byte ranges fully written to a browser
+    private long _bytesSent;
+    private int _active;
+
+    public void StreamStarted() { lock (_progress) _active++; }
+
+    /// <summary>Records bytes [start, start+written) as written to the browser; ranges are merged and bounded.</summary>
+    public void StreamEnded(long start, long written)
+    {
+        lock (_progress)
+        {
+            _active--;
+            _bytesSent += written;
+            if (written <= 0) return;
+            _covered.Add((start, start + written));
+            _covered.Sort();
+            var merged = new List<(long Start, long End)>();
+            foreach (var range in _covered)
+            {
+                if (merged.Count > 0 && range.Start <= merged[^1].End) merged[^1] = (merged[^1].Start, Math.Max(merged[^1].End, range.End));
+                else merged.Add(range);
+            }
+            _covered.Clear();
+            _covered.AddRange(merged.Count > 64 ? merged.OrderByDescending(r => r.End - r.Start).Take(64).OrderBy(r => r.Start) : merged);
+        }
+    }
+
+    public DownloadSessionSummary Summarize()
+    {
+        lock (_progress)
+        {
+            var covered = _covered.Sum(r => r.End - r.Start);
+            var state = Cancelled ? DownloadState.Cancelled
+                : _active > 0 ? DownloadState.Sending
+                : (covered >= Size && (Size > 0 || _bytesSent == 0 && _completedEmpty)) ? DownloadState.SentToBrowser
+                : _bytesSent > 0 ? DownloadState.Interrupted
+                : DownloadState.Prepared;
+            return new DownloadSessionSummary
+            {
+                SessionId = Id, PcId = PcId, Name = Name, Size = Size, Revision = Revision, State = state, BytesSentToBrowser = _bytesSent, BytesCovered = covered,
+                CreatedAtUnixMs = CreatedAt.ToUnixTimeMilliseconds(), ExpiresAtUnixMs = ExpiresAt.ToUnixTimeMilliseconds(),
+            };
+        }
+    }
+
+    private bool _completedEmpty;
+    /// <summary>A zero-byte file has nothing to cover; a completed empty response is what "sent" means for it.</summary>
+    public void EmptyFileDelivered() { lock (_progress) _completedEmpty = true; }
 }
 
 public static class Secrets
@@ -296,12 +350,33 @@ public sealed class Store
         }
     }
 
+    /// <summary>This browser's download sessions as the relay saw them, newest first.</summary>
+    public List<DownloadSessionSummary> ListDownloads(string deviceId)
+    {
+        lock (_gate)
+            return [.. _downloads.Values.Where(d => d.BrowserDeviceId == deviceId && d.ExpiresAt > time.GetUtcNow()).OrderByDescending(d => d.CreatedAt).Select(d => d.Summarize())];
+    }
+
+    /// <summary>Cancels one of this browser's download sessions: its link stops working and running streams end.</summary>
+    public void CancelDownload(string deviceId, string sessionId)
+    {
+        lock (_gate)
+        {
+            var session = _downloads.Values.FirstOrDefault(d => d.Id == sessionId && d.BrowserDeviceId == deviceId)
+                ?? throw new ProtocolException(ErrorCode.NotFound, "That download is not in this browser's list.");
+            session.Cancelled = true;
+            session.Revoked.Cancel();
+        }
+    }
+
     public string AddDownload(DownloadSessionRecord session)
     {
         var capability = Secrets.Token();
         lock (_gate)
         {
             foreach (var key in _downloads.Where(d => d.Value.ExpiresAt <= time.GetUtcNow()).Select(d => d.Key).ToList()) _downloads.Remove(key);
+            if (_downloads.Values.Count(d => d.BrowserDeviceId == session.BrowserDeviceId) >= options.MaxDownloadSessionsPerDevice)
+                throw new ProtocolException(ErrorCode.LimitExceeded, "This browser has too many downloads waiting. Cancel some in Transfers or wait for them to expire.");
             _downloads[Secrets.HashHex(capability)] = session;
         }
         return capability;

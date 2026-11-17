@@ -213,12 +213,23 @@ app.MapPost("/v1/download-sessions", async (HttpContext context) =>
     if (prepared.Size < 0 || !prepared.Revision.StartsWith("sha256-", StringComparison.Ordinal) || prepared.Revision.Length != 71 || prepared.Name.Length is 0 or > 255)
         throw new ProtocolException(ErrorCode.Internal, "The PC sent an answer this service does not understand.");
     var expires = DateTimeOffset.UtcNow.AddSeconds(options.DownloadSessionTtlSeconds);
-    var capability = store.AddDownload(new DownloadSessionRecord
+    var record = new DownloadSessionRecord
     {
         OwnerUid = device.OwnerUid, BrowserDeviceId = device.Id, PcId = request.PcId, Name = prepared.Name, Size = prepared.Size,
-        Revision = prepared.Revision, ReadToken = prepared.ReadToken, ExpiresAt = expires,
-    });
-    await WriteJson(context, new DownloadSession { Capability = capability, UrlPath = $"/v1/downloads/{capability}", Name = prepared.Name, Size = prepared.Size, Revision = prepared.Revision, ExpiresAtUnixMs = expires.ToUnixTimeMilliseconds() }, 201);
+        Revision = prepared.Revision, ReadToken = prepared.ReadToken, ExpiresAt = expires, CreatedAt = DateTimeOffset.UtcNow,
+    };
+    var capability = store.AddDownload(record);
+    await WriteJson(context, new DownloadSession { SessionId = record.Id, Capability = capability, UrlPath = $"/v1/downloads/{capability}", Name = prepared.Name, Size = prepared.Size, Revision = prepared.Revision, ExpiresAtUnixMs = expires.ToUnixTimeMilliseconds() }, 201);
+});
+
+// What the relay observed for this browser's downloads (never the capability itself), and cancelling one.
+app.MapGet("/v1/download-sessions", (HttpContext context) =>
+    WriteJson(context, new DownloadSessionList { Sessions = store.ListDownloads(AuthorizeBrowser(context).Id) }));
+
+app.MapDelete("/v1/download-sessions/{sessionId}", (HttpContext context, string sessionId) =>
+{
+    store.CancelDownload(AuthorizeBrowser(context).Id, sessionId);
+    return WriteJson(context, new Ack { Ok = true });
 });
 
 // Bearer download capability: scoped to one file revision and one device grant, reusable for HEAD/ranges until expiry or revocation.
@@ -255,6 +266,8 @@ app.MapMethods("/v1/downloads/{capability}", ["GET", "HEAD"], async (HttpContext
     var (stream, uplinkToken) = streams.Create(session.OwnerUid);
     using var cancel = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, session.Revoked.Token);
     var success = false;
+    long relayed = 0;
+    session.StreamStarted();
     try
     {
         var agent = hub.Get(session.PcId);
@@ -264,9 +277,10 @@ app.MapMethods("/v1/downloads/{capability}", ["GET", "HEAD"], async (HttpContext
         catch (TimeoutException) { throw new ProtocolException(ErrorCode.Timeout, "The PC did not start sending in time."); }
         context.Features.Get<IHttpMinResponseDataRateFeature>()?.MinDataRate = null; // slow phones are throttled, not dropped
         WriteHeaders();
-        await StreamRegistry.RelayAsync(uplink.Request.Body, response.Body, selected.Length, cancel.Token);
+        await StreamRegistry.RelayAsync(uplink.Request.Body, response.Body, selected.Length, cancel.Token, count => relayed += count);
         await response.Body.FlushAsync(cancel.Token);
         success = true;
+        if (session.Size == 0) session.EmptyFileDelivered();
     }
     catch (Exception e) when (response.HasStarted && e is not ProtocolException)
     {
@@ -278,6 +292,7 @@ app.MapMethods("/v1/downloads/{capability}", ["GET", "HEAD"], async (HttpContext
     }
     finally
     {
+        session.StreamEnded(selected.Start, relayed);
         streams.Remove(stream, success);
         if (!success && hub.IsOnline(session.PcId))
             _ = hub.Get(session.PcId).RequestAsync<Ack>(Actions.CancelStream, new CancelStreamRequest { StreamId = stream.Id }, TimeSpan.FromSeconds(5), CancellationToken.None)

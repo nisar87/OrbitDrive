@@ -69,6 +69,8 @@ public sealed class MainWindow : Window
     private readonly TextBlock _devicesEmpty = MakeText("DevicesEmpty", "No phone or browser is paired with this PC.", 13, FontWeights.Normal, Muted);
     private List<string> _rootIds = [];
     private List<bool> _rootHidden = [];
+    private readonly ListBox _transferList = new() { MinHeight = 0, Margin = new Thickness(0, 4, 0, 8) };
+    private string _transfersShown = "";
     private string _rootsShown = "";
     private readonly CheckBox _newRootHidden = new() { Content = "Also show hidden files and folders from this folder", Margin = new Thickness(0, 0, 0, 6) };
     private List<string> _deviceIds = [];
@@ -329,7 +331,10 @@ public sealed class MainWindow : Window
             Card("Pair a new device", pair, _pairQr, _pairCode, _pairLink, _pairHelp, _deviceError),
             Card("Paired devices", _devicesEmpty, _devices, revoke));
 
-        Page("Transfers", Card(null, _transfers,
+        AutomationProperties.SetAutomationId(_transferList, "TransfersList");
+        AutomationProperties.SetName(_transferList, "Recent transfers");
+        ScrollViewer.SetHorizontalScrollBarVisibility(_transferList, ScrollBarVisibility.Disabled);
+        Page("Transfers", Card(null, _transfers, _transferList,
             MakeText("TransfersHint", "OrbitDrive can see what it has sent to the relay. It cannot see whether a browser finished saving a file.", 13, FontWeights.Normal, Muted)));
         Page("Activity", Card("This session", _activity));
 
@@ -482,6 +487,14 @@ public sealed class MainWindow : Window
         return RunAsync(_stateDetail, client => client.SendAsync(_paused ? "resume" : "pause"));
     }
 
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["bytes", "KB", "MB", "GB", "TB"];
+        double value = bytes; var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1) { value /= 1024; unit++; }
+        return unit == 0 ? $"{bytes} bytes" : $"{value:0.#} {units[unit]}";
+    }
+
     private void SetDot(byte r, byte g, byte b) => _stateDot.Fill = new SolidColorBrush(Color.FromRgb(r, g, b));
 
     private async Task RefreshAsync()
@@ -594,7 +607,31 @@ public sealed class MainWindow : Window
         _approvalPanel.Visibility = approval is null ? Visibility.Collapsed : Visibility.Visible;
         _approvalText.Text = approval is null ? "" : $"Account: {approval["accountLabel"]}\nBrowser: {approval["browserName"]}\nCode: {approval["confirmationCode"]}\n\nApprove only if this is you and the same code is shown in your browser.";
 
-        _transfers.Text = (int)status["activeStreams"]! == 0 ? "No transfers are running." : $"{status["activeStreams"]} file(s) are being sent to the relay right now.";
+        var recent = status["transfers"] as JsonArray ?? [];
+        var recentCount = recent.Count;
+        _transfers.Text = (int)status["activeStreams"]! == 0 ? (recentCount == 0 ? "No transfers yet." : "No transfers are running. Recent ones are listed below.") : $"{status["activeStreams"]} file(s) are being sent to the relay right now.";
+        var recentText = recent.ToJsonString();
+        if (recentText != _transfersShown)
+        {
+            _transfersShown = recentText;
+            _transferList.Items.Clear();
+            foreach (var transfer in recent)
+            {
+                long sent = long.Parse(transfer!["sent"]!.GetValue<string>()), length = long.Parse(transfer["length"]!.GetValue<string>()), offset = long.Parse(transfer["offset"]!.GetValue<string>());
+                var what = transfer["outcome"]!.GetValue<string>() switch
+                {
+                    "sending" => "being sent to the relay",
+                    "sent_to_relay" => "sent to the relay",
+                    "cancelled" => "stopped (cancelled, paused or access removed)",
+                    _ => "interrupted",
+                };
+                var part = offset == 0 ? "" : $" (continued from {FormatBytes(offset)})";
+                var line = $"{transfer["name"]}  —  {FormatBytes(sent)} of {FormatBytes(length)} {what}{part}  ·  {DateTimeOffset.FromUnixTimeMilliseconds(transfer["startedUnixMs"]!.GetValue<long>()).ToLocalTime():HH:mm:ss}";
+                var item = new ListBoxItem { Content = new TextBlock { Text = line, TextWrapping = TextWrapping.Wrap } };
+                AutomationProperties.SetName(item, line);
+                _transferList.Items.Add(item);
+            }
+        }
         if (!_gateway.IsKeyboardFocused && _gateway.Text.Length == 0) _gateway.Text = status["gateway"]?.GetValue<string>() ?? "";
         _diagnostics.Text = $"PC id: {status["pcId"]}\nAgent version: {status["agentVersion"]}\nRelay: {status["gateway"] ?? "(not set)"}\nState folder: {_stateDirectory}\n" +
                             $"{RuntimeInformation.OSDescription} · {RuntimeInformation.ProcessArchitecture} · {RuntimeInformation.FrameworkDescription}\nRunning elevated: {Environment.IsPrivilegedProcess}\n" +

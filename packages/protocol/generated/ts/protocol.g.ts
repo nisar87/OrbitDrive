@@ -13,6 +13,8 @@ export type ErrorCode = 'unauthenticated' | 'forbidden' | 'not_found' | 'invalid
 
 export type EntryKind = 'file' | 'directory';
 
+export type DownloadState = 'prepared' | 'sending' | 'interrupted' | 'sent_to_browser' | 'cancelled';
+
 export type PairingState = 'issued' | 'claimed' | 'approved' | 'denied' | 'expired';
 
 export type TransferState = 'offered' | 'accepted' | 'preparing' | 'transferring' | 'interrupted' | 'cancelled' | 'expired' | 'revoked' | 'sent_to_browser' | 'confirmed_saved';
@@ -178,6 +180,24 @@ export interface DownloadSession {
   size: Int64String;
   revision: string;
   expiresAtUnixMs: Int64String;
+  sessionId?: string | null;
+}
+
+export interface DownloadSessionSummary {
+  sessionId: string;
+  pcId: string;
+  name: string;
+  size: Int64String;
+  revision: string;
+  state: DownloadState;
+  bytesSentToBrowser: Int64String;
+  bytesCovered: Int64String;
+  createdAtUnixMs: Int64String;
+  expiresAtUnixMs: Int64String;
+}
+
+export interface DownloadSessionList {
+  sessions: DownloadSessionSummary[];
 }
 
 export interface OpenReadRequest {
@@ -259,6 +279,8 @@ export interface ProtocolTypeMap {
   PrepareReadRequest: PrepareReadRequest;
   PrepareReadResult: PrepareReadResult;
   DownloadSession: DownloadSession;
+  DownloadSessionSummary: DownloadSessionSummary;
+  DownloadSessionList: DownloadSessionList;
   OpenReadRequest: OpenReadRequest;
   CancelStreamRequest: CancelStreamRequest;
   BrowserDeviceSummary: BrowserDeviceSummary;
@@ -300,6 +322,13 @@ export const SCHEMA = {
     "EntryKind": [
       "file",
       "directory"
+    ],
+    "DownloadState": [
+      "prepared",
+      "sending",
+      "interrupted",
+      "sent_to_browser",
+      "cancelled"
     ],
     "PairingState": [
       "issued",
@@ -458,7 +487,23 @@ export const SCHEMA = {
       "name": "string",
       "size": "int64",
       "revision": "string",
+      "expiresAtUnixMs": "int64",
+      "sessionId": "string?"
+    },
+    "DownloadSessionSummary": {
+      "sessionId": "string",
+      "pcId": "string",
+      "name": "string",
+      "size": "int64",
+      "revision": "string",
+      "state": "DownloadState",
+      "bytesSentToBrowser": "int64",
+      "bytesCovered": "int64",
+      "createdAtUnixMs": "int64",
       "expiresAtUnixMs": "int64"
+    },
+    "DownloadSessionList": {
+      "sessions": "DownloadSessionSummary[]"
     },
     "OpenReadRequest": {
       "readToken": "string",

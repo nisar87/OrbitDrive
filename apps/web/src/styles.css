@@ -248,3 +248,15 @@ dialog.properties form { display: flex; justify-content: flex-end; margin-top: 1
 .entries tr.hidden-item .icon { opacity: 0.55; }
 .entries tr.hidden-item .row-button bdi { font-style: italic; }
 .more-rows { height: 48px; }
+
+/* ---- Transfers ---- */
+.transfer-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.transfer-list li { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.transfer-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.transfer-head strong { overflow-wrap: anywhere; }
+.badge { font-size: 0.75rem; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.transfer-text { margin: 6px 0; font-size: 0.9rem; color: var(--muted); }
+.transfer-text.problem { color: var(--danger); }
+.transfer-list progress { width: 100%; height: 6px; accent-color: var(--accent); }
+.transfer-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.transfer-actions button { min-height: 36px; padding: 4px 14px; }

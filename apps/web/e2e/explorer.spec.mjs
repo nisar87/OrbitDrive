@@ -170,12 +170,14 @@ test('selection, keyboard, context menu and properties', async ({ page }, info) 
     await target.dispatchEvent('pointerup', { pointerType: 'touch', bubbles: true });
   }
   const menu = page.getByRole('menu', { name: 'Actions' });
-  await expect(menu.getByRole('menuitem')).toHaveText(['Download', 'Properties']);
+  // "Save to a file…" is offered only where the browser can write a file the reader chooses.
+  const canSave = await page.evaluate(() => typeof window.showSaveFilePicker === 'function');
+  await expect(menu.getByRole('menuitem')).toHaveText(canSave ? ['Download', 'Save to a file…', 'Properties'] : ['Download', 'Properties']);
   await page.screenshot({ path: join(shots, `${info.project.name}-22-context-menu.png`) });
   const box = await menu.boundingBox();
   const viewport = page.viewportSize();
   expect(box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height, 'the menu is fully on screen').toBe(true);
-  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('End');
   await expect(menu.getByRole('menuitem', { name: 'Properties' })).toBeFocused();
   await page.keyboard.press('Enter');
   const dialog = page.getByRole('dialog', { name: 'data.bin' });
@@ -217,7 +219,7 @@ test('desktop shell: windows, taskbar, launcher, account menu, theme', async ({ 
 
   // Launcher lists only apps that exist; Escape closes it and focus returns to where it was.
   await start.click();
-  await expect(page.getByRole('menu', { name: 'Apps' }).getByRole('menuitem')).toHaveText(['File Explorer', 'Devices', 'Settings']);
+  await expect(page.getByRole('menu', { name: 'Apps' }).getByRole('menuitem')).toHaveText(['File Explorer', 'Transfers', 'Devices', 'Settings']);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('menu', { name: 'Apps' })).toHaveCount(0);
   await expect(start).toBeFocused();

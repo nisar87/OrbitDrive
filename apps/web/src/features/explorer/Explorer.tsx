@@ -1,13 +1,14 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { api, ApiError, GATEWAY_URL, type Session } from '../../api';
-import type { Breadcrumb, DownloadSession, FileEntry, PcSummary, RootSummary } from '../../protocol';
+import { api, ApiError, type Session } from '../../api';
+import type { Breadcrumb, FileEntry, PcSummary, RootSummary } from '../../protocol';
+import { transfers } from '../transfers/transfers';
 import { formatBytes, formatTime } from '../../format';
 import type { Prefs, SortKey, ViewMode } from '../../prefs';
 import { emptySelection, filterEntries, pruneSelection, select, sortEntries, totalSize, typeLabel, type Selection } from './model';
 
 interface Location { pc: PcSummary; root: RootSummary; entryId: string | null }
-type Transfer = { name: string; phase: 'preparing' } | { name: string; phase: 'handed'; session: DownloadSession } | { name: string; phase: 'failed'; message: string };
+type Transfer = { name: string; phase: 'preparing' } | { name: string; phase: 'handed'; size: string } | { name: string; phase: 'saving' } | { name: string; phase: 'failed'; message: string };
 interface Menu { x: number; y: number; entryId: string }
 const PAGE = 200, LOAD_ALL_LIMIT = 20_000, RENDER_STEP = 600;
 const SORTS: { key: SortKey; label: string }[] = [{ key: 'name', label: 'Name' }, { key: 'modified', label: 'Date modified' }, { key: 'type', label: 'Type' }, { key: 'size', label: 'Size' }];
@@ -34,9 +35,9 @@ const Icon = ({ name }: { name: 'back' | 'forward' | 'up' | 'refresh' | 'tree' }
   </svg>
 );
 
-interface Props { session: Session; prefs: Prefs; onPrefs: (next: Prefs) => void; onAuthLost: (error: unknown) => void; dataVersion: number }
+interface Props { session: Session; prefs: Prefs; onPrefs: (next: Prefs) => void; onAuthLost: (error: unknown) => void; dataVersion: number; onOpenApp: (id: string) => void }
 
-export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion }: Props) {
+export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onOpenApp }: Props) {
   const [pcs, setPcs] = useState<PcSummary[] | null>(null);
   const [roots, setRoots] = useState<Record<string, RootSummary[] | string>>({});
   const [location, setLocation] = useState<Location | null>(null);
@@ -183,19 +184,20 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion }: P
     if (!location) return;
     setTransfer({ name: entry.name, phase: 'preparing' });
     try {
-      const prepared = await api.prepareDownload(session, location.pc.pcId, entry.entryId);
-      setTransfer({ name: entry.name, phase: 'handed', session: prepared });
       // Native browser download: the relay streams with Content-Disposition; nothing is buffered in page memory.
-      const anchor = document.createElement('a');
-      anchor.href = GATEWAY_URL + prepared.urlPath;
-      anchor.rel = 'noreferrer';
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
+      const started = await transfers.toBrowser(session, location.pc.pcId, entry);
+      setTransfer({ name: entry.name, phase: 'handed', size: (started.size ?? 0n).toString() });
     } catch (e) {
       onAuthLost(e);
       setTransfer({ name: entry.name, phase: 'failed', message: e instanceof ApiError ? e.message : 'Download could not start.' });
     }
+  }
+
+  /** The reader chooses where to save and OrbitDrive writes the file itself (real progress, resumable). */
+  async function saveToFile(entry: FileEntry) {
+    if (!location) return;
+    const started = await transfers.toFile(session, location.pc.pcId, entry);
+    if (started) { setTransfer({ name: entry.name, phase: 'saving' }); onOpenApp('transfers'); }
   }
 
   const activate = (entry: FileEntry) => { if (!location) return; if (entry.kind === 'directory') void navigate({ ...location, entryId: entry.entryId }); else void download(entry); };
@@ -392,7 +394,8 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion }: P
           {transfer && (
             <p role="status" className={transfer.phase === 'failed' ? 'notice error' : 'notice'} data-testid="transfer-status">
               {transfer.phase === 'preparing' && <>Checking <strong><bdi>{transfer.name}</bdi></strong> on the PC…</>}
-              {transfer.phase === 'handed' && <><strong><bdi>{transfer.name}</bdi></strong> ({formatBytes(transfer.session.size)}) was handed to your browser. Check your browser&apos;s downloads — OrbitDrive cannot see when the file has finished saving.</>}
+              {transfer.phase === 'saving' && <>Saving <strong><bdi>{transfer.name}</bdi></strong> to the place you chose. Progress is shown in Transfers.</>}
+              {transfer.phase === 'handed' && <><strong><bdi>{transfer.name}</bdi></strong> ({formatBytes(transfer.size)}) was handed to your browser. Check your browser&apos;s downloads — OrbitDrive cannot see when the file has finished saving.</>}
               {transfer.phase === 'failed' && <><strong><bdi>{transfer.name}</bdi></strong>: {transfer.message}</>}
             </p>
           )}
@@ -474,6 +477,7 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion }: P
       {menu && menuEntry && (
         <ContextMenu x={menu.x} y={menu.y} onClose={() => { setMenu(null); focusRow(menu.entryId); }}>
           {selected.length <= 1 && <button type="button" role="menuitem" onClick={() => { setMenu(null); activate(menuEntry); }}>{menuEntry.kind === 'directory' ? 'Open' : 'Download'}</button>}
+          {selected.length <= 1 && menuEntry.kind === 'file' && transfers.canSaveToFile() && <button type="button" role="menuitem" onClick={() => { setMenu(null); void saveToFile(menuEntry); }}>Save to a file…</button>}
           <button type="button" role="menuitem" onClick={() => { setMenu(null); setProperties(selected.length > 1 ? selected : [menuEntry]); }}>{selected.length > 1 ? `Properties of ${selected.length} items` : 'Properties'}</button>
         </ContextMenu>
       )}
@@ -551,6 +555,8 @@ function ContextMenu({ x, y, onClose, children }: { x: number; y: number; onClos
     if (event.key === 'Escape' || event.key === 'Tab') { event.preventDefault(); onClose(); }
     else if (event.key === 'ArrowDown') { event.preventDefault(); items[(index + 1) % items.length]?.focus(); }
     else if (event.key === 'ArrowUp') { event.preventDefault(); items[(index - 1 + items.length) % items.length]?.focus(); }
+    else if (event.key === 'Home') { event.preventDefault(); items[0]?.focus(); }
+    else if (event.key === 'End') { event.preventDefault(); items[items.length - 1]?.focus(); }
   };
   // Rendered at the page root: inside a window it would be clipped by the window's rounded, blurred frame.
   return createPortal(<div ref={ref} className="flyout context" role="menu" aria-label="Actions" style={{ left: Math.max(8, x), top: Math.max(8, y) }} onKeyDown={onKeyDown}>{children}</div>, document.body);

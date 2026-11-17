@@ -7,6 +7,7 @@ using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using OrbitDrive.Core;
 using OrbitDrive.Protocol;
 
@@ -32,6 +33,7 @@ internal sealed class FileRangeContent(ValidatedRead read, CancellationToken can
                 if (count == 0) throw new IOException("Source file ended unexpectedly.");
                 await stream.WriteAsync(buffer.AsMemory(0, count), linked.Token).ConfigureAwait(false); // awaits the relay: slow receivers throttle disk reads
                 position += count;
+                Interlocked.Add(ref read.BytesSent, count);
             }
         }
         finally { ArrayPool<byte>.Shared.Return(buffer); }
@@ -57,6 +59,27 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
 
     public string? PendingPairingId { get; private set; }
     public int ActiveStreams => _streams.Count;
+
+    /// <summary>One byte-range sent (or being sent) to the relay. A resumed download appears as several ranges.</summary>
+    public sealed record Transfer(string Name, long Offset, long Length, DateTimeOffset Started)
+    {
+        public ValidatedRead? Live { get; set; }
+        public long Sent { get; set; }
+        public string Outcome { get; set; } = "sending";
+    }
+    private readonly List<Transfer> _transfers = [];
+    private readonly Lock _transferGate = new();
+
+    /// <summary>The most recent transfers, newest first (bounded; names only, never contents).</summary>
+    public JsonArray RecentTransfers()
+    {
+        lock (_transferGate)
+            return new JsonArray([.. _transfers.AsEnumerable().Reverse().Select(t => (JsonNode)new JsonObject
+            {
+                ["name"] = t.Name, ["offset"] = t.Offset.ToString(), ["length"] = t.Length.ToString(),
+                ["sent"] = (t.Live is { } live ? Interlocked.Read(ref live.BytesSent) : t.Sent).ToString(), ["outcome"] = t.Outcome, ["startedUnixMs"] = t.Started.ToUnixTimeMilliseconds(),
+            })]);
+    }
 
     public bool Paused
     {
@@ -262,6 +285,8 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
         using var cancel = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         _streams[open.StreamId] = cancel;
         var outcome = "sent_to_relay";
+        var transfer = new Transfer(read.Name, read.Offset, read.Length, DateTimeOffset.UtcNow) { Live = read };
+        lock (_transferGate) { _transfers.Add(transfer); if (_transfers.Count > 50) _transfers.RemoveAt(0); }
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(gateway, $"/v1/agent-streams/{Uri.EscapeDataString(open.StreamId)}"));
@@ -277,7 +302,9 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
             _streams.TryRemove(open.StreamId, out _);
             read.Dispose();
             _streamSlots.Release();
-            emit("stream_finished", new { outcome, bytes = read.Length.ToString() }); // bytes handed to the relay, not "saved on phone"
+            var sent = Interlocked.Read(ref read.BytesSent);
+            lock (_transferGate) { transfer.Sent = sent; transfer.Outcome = outcome; transfer.Live = null; }
+            emit("stream_finished", new { outcome, name = read.Name, bytes = sent.ToString(), length = read.Length.ToString() }); // bytes handed to the relay, not "saved on phone"
         }
     }
 

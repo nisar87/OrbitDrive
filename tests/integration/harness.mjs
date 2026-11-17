@@ -80,24 +80,36 @@ export async function kill(processLike) {
  * closing anything (a pulled cable / dead NAT mapping / half-open connection); `heal()` drops the dead connections and
  * forwards again.
  */
-export async function startProxy(gateway) {
+export async function startProxy(gateway, listenPort = 0) {
   const { connect } = await import('node:net');
   const target = Number(new URL(gateway.url).port);
   const pairs = new Set();
   let dark = false;
+  let downstreamRate = 0;                                         // bytes per second towards the client; 0 = unlimited
   const server = createServer((client) => {
     const upstream = connect(target, '127.0.0.1');
     const pair = { client, upstream };
     pairs.add(pair);
-    const forward = (from, to) => from.on('data', (chunk) => { if (!dark) to.write(chunk); });
-    forward(client, upstream); forward(upstream, client);
+    const forward = (from, to, limited) => from.on('data', (chunk) => {
+      if (dark) return;
+      to.write(chunk);
+      if (limited && downstreamRate > 0) {                        // a slow link: hold the sender back in proportion to what was sent
+        from.pause();
+        setTimeout(() => from.resume(), Math.ceil((chunk.length / downstreamRate) * 1000));
+      }
+    });
+    forward(client, upstream, false); forward(upstream, client, true);
     const close = () => { pairs.delete(pair); client.destroy(); upstream.destroy(); };
     for (const socket of [client, upstream]) { socket.on('error', close); socket.on('close', () => { if (!dark) close(); }); }
   });
-  server.listen(0, '127.0.0.1');
+  server.listen(listenPort, '127.0.0.1');
   await once(server, 'listening');
   return {
     url: `http://127.0.0.1:${server.address().port}`,
+    /** Limits download speed towards the client (bytes per second; 0 removes the limit). */
+    throttle(bytesPerSecond) { downstreamRate = bytesPerSecond; },
+    /** Drops every open connection at once (a network drop); new connections work. */
+    cut() { for (const pair of pairs) { pair.client.destroy(); pair.upstream.destroy(); } pairs.clear(); },
     blackhole() { dark = true; },
     heal() { for (const pair of pairs) { pair.client.destroy(); pair.upstream.destroy(); } pairs.clear(); dark = false; },
     stop() { this.heal(); server.close(); },

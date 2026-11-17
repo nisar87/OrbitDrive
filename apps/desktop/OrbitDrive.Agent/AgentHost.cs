@@ -89,6 +89,7 @@ internal sealed class AgentHost : IDisposable
                 ["gateway"] = _state.Gateway,
                 ["agentVersion"] = ControlClient.AgentVersion,
                 ["activeStreams"] = _client?.ActiveStreams ?? 0,
+                ["transfers"] = _client?.RecentTransfers() ?? [],
                 ["roots"] = new JsonArray([.. _state.Roots.Select(r => (JsonNode)new JsonObject { ["rootId"] = r.RootId, ["name"] = r.Name, ["path"] = r.Path, ["available"] = _files.IsAvailable(r), ["readOnly"] = true, ["showHidden"] = r.ShowHidden })]),
                 ["activePairing"] = _activePairing?.DeepClone(),
                 ["pendingApproval"] = _pendingApproval?.DeepClone(),

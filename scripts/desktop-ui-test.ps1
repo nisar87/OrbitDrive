@@ -155,6 +155,18 @@ try {
     Check ($roots.Count -eq 1 -and $roots[0].name -eq 'Holiday Photos' -and $roots[0].readOnly) 'the browser sees exactly the folder shared in the console'
     $page = (Api 'Post' "/v1/pcs/$pcId/directory-queries" @{ rootId = $roots[0].rootId; pageSize = 50 } $device).body
     Check (@($page.entries | Where-Object { $_.name -eq 'itinerary.txt' }).Count -eq 1) 'the real file inside it is listed'
+    # A real download by the paired browser shows up on the PC with what the PC actually sent.
+    $itinerary = @($page.entries | Where-Object { $_.name -eq 'itinerary.txt' })[0]
+    $prepared = Api 'Post' '/v1/download-sessions' @{ pcId = $pcId; entryId = $itinerary.entryId } $device
+    Check ($prepared.status -eq 201) 'the browser prepared a download'
+    $bytes = (Invoke-WebRequest -UseBasicParsing ($relay + $prepared.body.urlPath)).Content
+    Check ($bytes.Length -eq [int]$prepared.body.size) 'the file arrived through the relay'
+    Nav 'Transfers'
+    $sent = $null
+    for ($i = 0; $i -lt 40; $i++) { $sent = @(ListItems 'TransfersList') | Where-Object { $_ -match 'itinerary\.txt' -and $_ -match 'sent to the relay' }; if ($sent) { break }; Start-Sleep -Milliseconds 250 }
+    Check ($null -ne $sent) 'the PC console lists the transfer with the bytes it sent to the relay'
+    Check (-not (@(ListItems 'TransfersList') -join ' ' -match 'saved|downloaded|complete')) 'the PC never claims the file was saved on the phone'
+    Shot 'transfers'
     # Hidden items: private unless the owner opts in for that folder, from the console.
     Check (@($page.entries | Where-Object { $_.name -eq 'private-diary.txt' }).Count -eq 0) 'a hidden file in the shared folder is not listed by default'
     Nav 'Shared folders'

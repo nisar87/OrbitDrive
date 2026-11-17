@@ -15,6 +15,7 @@ internal sealed record TokenBody
     [JsonPropertyName("d")] public bool IsDirectory { get; init; }
     [JsonPropertyName("z")] public long Size { get; init; }
     [JsonPropertyName("m")] public long ModifiedTicks { get; init; }
+    [JsonPropertyName("g")] public long ChangeStamp { get; init; }
     [JsonPropertyName("h")] public string? Sha256 { get; init; }
     [JsonPropertyName("o")] public int Offset { get; init; }
 }

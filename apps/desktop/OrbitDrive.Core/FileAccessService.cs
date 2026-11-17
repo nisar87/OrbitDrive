@@ -6,8 +6,11 @@ using OrbitDrive.Protocol;
 namespace OrbitDrive.Core;
 
 /// <summary>An opened, validated source file. Bytes are served from this handle, never from a re-opened path.</summary>
-public sealed class ValidatedRead(SafeFileHandle handle, long offset, long length) : IDisposable
+public sealed class ValidatedRead(SafeFileHandle handle, long offset, long length, string name = "") : IDisposable
 {
+    public string Name { get; } = name;
+    /// <summary>Bytes of this range written to the relay so far (not what a browser saved).</summary>
+    public long BytesSent;
     public SafeFileHandle Handle { get; } = handle;
     public long Offset { get; } = offset;
     public long Length { get; } = length;
@@ -176,6 +179,7 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         using var handle = OpenValidated(root, body.Segments);
         var size = RandomAccess.GetLength(handle);
         var modified = File.GetLastWriteTimeUtc(handle);
+        var changeStamp = NativeFile.GetChangeStamp(handle);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var buffer = ArrayPool<byte>.Shared.Rent(HashBufferBytes);
         try
@@ -188,7 +192,7 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
                 hash.AppendData(buffer, 0, read);
                 position += read;
             }
-            if (position != size || RandomAccess.GetLength(handle) != size || File.GetLastWriteTimeUtc(handle) != modified)
+            if (position != size || RandomAccess.GetLength(handle) != size || File.GetLastWriteTimeUtc(handle) != modified || NativeFile.GetChangeStamp(handle) != changeStamp)
                 throw new ProtocolException(ErrorCode.RevisionChanged, "The file changed while it was being prepared.");
         }
         finally { ArrayPool<byte>.Shared.Return(buffer); }
@@ -199,7 +203,7 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
             Size = size,
             ModifiedUnixMs = new DateTimeOffset(modified).ToUnixTimeMilliseconds(),
             Revision = "sha256-" + sha,
-            ReadToken = tokens.Seal(new TokenBody { Type = "r", RootId = root.RootId, Segments = body.Segments, Size = size, ModifiedTicks = modified.Ticks, Sha256 = sha }),
+            ReadToken = tokens.Seal(new TokenBody { Type = "r", RootId = root.RootId, Segments = body.Segments, Size = size, ModifiedTicks = modified.Ticks, ChangeStamp = changeStamp, Sha256 = sha }),
         };
     }
 
@@ -211,11 +215,13 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         if (offset < 0 || length < 0 || offset > body.Size || length > body.Size - offset)
             throw new ProtocolException(ErrorCode.RangeNotSatisfiable, "Requested range is outside the file.");
         var handle = OpenValidated(root, body.Segments);
-        if (RandomAccess.GetLength(handle) != body.Size || File.GetLastWriteTimeUtc(handle).Ticks != body.ModifiedTicks)
+        // Size and modified time can be put back by whoever rewrites a file; the filesystem change stamp cannot.
+        if (RandomAccess.GetLength(handle) != body.Size || File.GetLastWriteTimeUtc(handle).Ticks != body.ModifiedTicks ||
+            (body.ChangeStamp != 0 && NativeFile.GetChangeStamp(handle) != body.ChangeStamp))
         {
             handle.Dispose();
             throw new ProtocolException(ErrorCode.RevisionChanged, "The file changed after this download was prepared.");
         }
-        return new ValidatedRead(handle, offset, length);
+        return new ValidatedRead(handle, offset, length, body.Segments[^1]);
     }
 }
