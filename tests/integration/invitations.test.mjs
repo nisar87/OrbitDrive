@@ -278,7 +278,7 @@ test('the Explorer hand-over spool: a selection written while the app was not ru
 test('the command-line hand-over (classic Send to) while the app is not running leaves data in the spool, and the app sends it when it starts', { timeout: 90_000 }, async () => {
   const { agentCliRaw } = await import('./harness.mjs');
   const lonely = tempDir('invite-lonely-state');
-  const path = write('with spaces & "odd" name.txt', 'x');
+  const path = write(process.platform === 'win32' ? "with spaces & 'odd' ; name.txt" : 'with spaces & "odd" name.txt', 'x'); // a double quote cannot be part of a Windows file name
   const result = agentCliRaw(lonely, 'ctl', 'send_files', 'some-receiver', path);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /not running/);

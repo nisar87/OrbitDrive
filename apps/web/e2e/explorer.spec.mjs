@@ -219,7 +219,7 @@ test('desktop shell: windows, taskbar, launcher, account menu, theme', async ({ 
 
   // Launcher lists only apps that exist; Escape closes it and focus returns to where it was.
   await start.click();
-  await expect(page.getByRole('menu', { name: 'Apps' }).getByRole('menuitem')).toHaveText(['File Explorer', 'Transfers', 'Devices', 'Settings']);
+  await expect(page.getByRole('menu', { name: 'Apps' }).getByRole('menuitem')).toHaveText(['File Explorer', 'Inbox', 'Transfers', 'Devices', 'Settings']);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('menu', { name: 'Apps' })).toHaveCount(0);
   await expect(start).toBeFocused();

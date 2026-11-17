@@ -78,7 +78,8 @@ test('a file sent from the PC appears with a notice and a badge; accepting downl
   const downloading = page.waitForEvent('download');
   await card.getByRole('button', { name: 'Accept and download' }).click();
   const download = await downloading;
-  expect(download.suggestedFilename()).toBe(NAME);
+  // WebKit's own download handling (Playwright on Linux) turns spaces into underscores; every other character must survive exactly.
+  expect(download.suggestedFilename()).toBe(info.project.name.includes('webkit') ? NAME.replaceAll(' ', '_') : NAME);
   const path = await download.path();
   expect(createHash('sha256').update(readFileSync(path)).digest('hex')).toBe(createHash('sha256').update(content).digest('hex'));
   await expect(card).toHaveAttribute('data-state', 'accepted');
