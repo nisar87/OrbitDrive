@@ -1,10 +1,15 @@
 #cloud-config
-# OrbitDrive relay host, first boot. Ubuntu 24.04 ARM64 on Oracle Cloud (VM.Standard.A1.Flex).
+# OrbitDrive relay host, first boot. Ubuntu 24.04 on Oracle Cloud: works on the temporary x86-64
+# VM.Standard.E2.1.Micro and on the intended ARM64 VM.Standard.A1.Flex.
 # Installs only what the relay needs and opens only web ports on the host firewall. Contains no secrets.
 # NOT yet applied to any server or tested on a real host.
 package_update: true
-package_upgrade: true
+# A full package upgrade is left to unattended-upgrades: it is heavy for the 1 GB Always Free micro shape.
 runcmd:
+  # 2 GB swap file so package installs and the .NET runtime do not exhaust memory on a 1 GB server.
+  # Harmless on the larger Ampere A1 shape; the script is architecture-neutral (x86-64 and ARM64).
+  - fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+  - echo '/swapfile none swap sw 0 0' >> /etc/fstab
   # Each install is separate so one unavailable package cannot block the others; results are logged for review.
   - apt-get install -y unattended-upgrades >> /var/log/orbitdrive-init.log 2>&1
   - apt-get install -y aspnetcore-runtime-10.0 >> /var/log/orbitdrive-init.log 2>&1
