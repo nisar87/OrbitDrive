@@ -259,7 +259,7 @@ All seven workflows green on `main` for `62bb432` (contracts 44113458195, integr
 All seven workflows green on `main` for `8905264`, and `relay-release` 44124795696 passed test, publish,
 verify-deployment and both live-agent jobs.
 
-## Commit `ef4b025` — downloads, resume and Transfers (D5/W5) — NOT on `main`
+## Commits `ef4b025` → `98e29a4` — downloads, resume and Transfers (D5/W5) — on `main` at `98e29a4`
 
 - Six workflows green: web 44142286306 (72 passed, 13 skipped), integration 44142286270, desktop 44142286356,
   desktop-ui 44142286463 (71/71), gateway 44142286681, contracts 44142286450.
@@ -288,6 +288,21 @@ verify-deployment and both live-agent jobs.
 - **Not evidenced:** the real save-location picker and real disks; phones (most mobile browsers lack save-to-file,
   so they use the browser download path); 1 GiB through save-to-file (tested at 24 MB; the relay path itself is
   tested at 1 GiB); Safari; throughput figures; bandwidth limits and metered-network warnings (not built).
+
+### D5/W5 completion (commits `c96c6bd`, `ac7e1de`, `c0ce7e4`, `98e29a4`)
+
+- Seven workflows green on `98e29a4` (runs listed in IMPLEMENTATION_STATE). Earlier candidates failed and were fixed, not
+  re-run until lucky: `ac7e1de` integration 44162937157 (windows-2025: gateway bind to a fixed port failed with WSAEACCES →
+  tests now take an OS-assigned free port, `c0ce7e4`); integration 44165071129 and 44167038049 (ubuntu: a late
+  `stream_finished` of the previous test's small file was consumed as the abandoned big.bin transfer → event matched by
+  file name, `98e29a4`; the 64 MiB-file attempt in between did not change the result and was reverted). No assertion weakened.
+- web run 44162937386 (same web code as `98e29a4`): 75 passed, 20 skipped. 1 GiB save-to-file, Chromium desktop: 13.8 s, slow
+  phase receiver wrote 61 MiB while the PC had sent 81 MiB (backpressure), growth page 4 / relay 14 / PC 1 MiB. Firefox
+  heap metric unavailable (0/0, not claimed). Skips: WebKit save-to-file, and per-engine items listed in the specs.
+- Owner limits (`MaxUploadKBps`, `MaxConcurrentTransfers`, 429 after a 2 s slot wait) and pause-on-metered covered by
+  integration tests and the console UI Automation test; real metered-network behaviour on Windows is AWAITING_DEVICE_TEST.
+- Security gate: `GHSA-fc5q-39xc-vjpf` (picomatch, dev-only, not in the production bundle) is an **accepted risk, not fixed**;
+  expiry 2026-12-17, rationale and removal conditions in `docs/security/accepted-risks.md`.
 
 ## Local-only observations (not CI evidence)
 
