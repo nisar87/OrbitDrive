@@ -20,7 +20,11 @@ public sealed class MainWindow : Window
     private static readonly string[] Pages = ["Overview", "Shared folders", "Devices", "Transfers", "Activity", "Settings", "Diagnostics"];
     private static readonly string[] PageIcons = ["\uE80F", "\uE8B7", "\uE8EA", "\uE896", "\uE81C", "\uE713", "\uE9D9"];
     // Theme brush keys (Windows Fluent theme): they follow light, dark and high-contrast automatically.
-    private const string Muted = "TextFillColorSecondaryBrush";
+    // Secondary text: the theme's own secondary brush measured about 3.2:1 on cards in real light-theme screenshots,
+    // below the 4.5:1 needed for small text, so secondary text is the primary colour at reduced opacity (about 5.5:1
+    // light, 7:1 dark) and full strength in Windows high contrast.
+    private const string Muted = "muted";
+    private static void Mute(TextBlock block) => block.Opacity = SystemParameters.HighContrast ? 1.0 : 0.74;
     private const string Danger = "SystemFillColorCriticalBrush";
 
     private readonly string _stateDirectory;
@@ -178,7 +182,8 @@ public sealed class MainWindow : Window
     private static TextBlock MakeText(string id, string text, double size, FontWeight weight, string? brushKey = null)
     {
         var block = new TextBlock { Text = text, FontSize = size, FontWeight = weight, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
-        if (brushKey is not null) block.SetResourceReference(TextBlock.ForegroundProperty, brushKey);
+        if (brushKey == Muted) Mute(block);
+        else if (brushKey is not null) block.SetResourceReference(TextBlock.ForegroundProperty, brushKey);
         AutomationProperties.SetAutomationId(block, id);
         return block;
     }
@@ -220,7 +225,7 @@ public sealed class MainWindow : Window
     private static Border Stat(TextBlock value, string label)
     {
         var caption = new TextBlock { Text = label, FontSize = 13 };
-        caption.SetResourceReference(TextBlock.ForegroundProperty, Muted);
+        Mute(caption);
         var card = Card(null, value, caption);
         card.Margin = new Thickness(0, 0, 14, 14);
         return card;
@@ -236,7 +241,7 @@ public sealed class MainWindow : Window
     private static TextBlock MakeLabel(string text, TextBox target)
     {
         var label = new TextBlock { Text = text, FontSize = 13, Margin = new Thickness(0, 4, 0, 0) };
-        label.SetResourceReference(TextBlock.ForegroundProperty, Muted);
+        Mute(label);
         AutomationProperties.SetName(target, text);
         return label;
     }
@@ -479,6 +484,9 @@ public sealed class MainWindow : Window
                 : _mayStart ? ("Starting…", "Starting OrbitDrive's background agent.")
                 : ("Agent not running", "OrbitDrive's background agent is not running. Nothing is being shared.");
             SetDot(0xC4, 0x2B, 0x1C);
+            // Nothing is known while the agent is down: do not leave the last known numbers on screen.
+            _summary.Text = "";
+            _statFolders.Text = _statTransfers.Text = _statDevices.Text = "–";
             _pause.IsEnabled = false;
             _pause.Visibility = Visibility.Collapsed;
             _start.Visibility = _mayStart ? Visibility.Collapsed : Visibility.Visible;
