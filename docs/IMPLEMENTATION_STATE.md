@@ -70,9 +70,9 @@ web) works end to end in CI. It is a slice through M1–M2, not completion of th
 1. **Firebase service-account key** (owner to create and store as a secret) for Firestore (W3), revocation checks and FCM (W6). Auth itself needs none.
 2. **Real Windows 11 machine (standard user)** for the Explorer modern-menu spike (D0/D6), lifecycle and DPI evidence.
 3. **Physical Android / iPhone** for the 1 GiB native-download spike (W0) and all device claims.
-4. **Relay host** (VM/VPS + TLS + DNS) — nothing provisioned; cross-network proof is impossible until one exists.
+4. **Relay host**: development relay exists (Oracle Always Free, `https://139-185-60-75.sslip.io`). Still needed for cross-network proof: a verified Firebase test account and the repo secrets `ORBIT_TEST_EMAIL`, `ORBIT_TEST_PASSWORD`, `ORBIT_FIREBASE_WEB_API_KEY`; a real domain later.
 5. **Code-signing identity** for D10.
-6. **Decision**: ADR-1 (plain WebSocket envelope instead of SignalR) — see `docs/architecture/decisions.md`.
+6. **Decision (optional)**: ADR-1 keeps a plain WebSocket envelope instead of SignalR — see `docs/architecture/decisions.md`; say so if you prefer SignalR.
 
 ## Known gaps in what exists
 
@@ -96,7 +96,8 @@ Blocked on the owner (cannot be done from the build environment):
 
 Not blocked, in order:
 1. W3/D3 remainder: idempotency keys for retried mutations; Firestore when credentials exist. (Durable store, leases, fault suite and ADR-1 done.)
-2. W2 remainder: real-phone camera scan (owner device needed). Live relay needs the bootstrap re-run once more to set `OrbitDrive__TrustedProxies` (until then every client shares one address bucket: 10 pairing attempts/min in total).
+2. W2 remainder: real-phone camera scan (owner device needed). (`OrbitDrive__TrustedProxies` was set on the live relay by the owner on 2026-11-17.)
+   Next up: D4 agent side — volume-identity binding of roots, 10,000-entry fixture, hidden-file preference end to end, ancestor-swap/reparse race tests.
 3. D1 remainder needs the owner's Windows 11 PC: standard user, lock/sleep, high contrast, DPI, tray menu.
 4. D4/W4: Windows-style web shell (desktop, taskbar, windows), full Explorer (views, sort, selection, properties,
    context menus, back/forward/up), root volume binding. Visual iteration against the rubric starts here.
