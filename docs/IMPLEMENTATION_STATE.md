@@ -13,8 +13,12 @@ VM.Standard.A1.Flex in availability domain AD-1".** Owner then chose the tempora
 VM.Standard.E2.1.Micro (Always Free-eligible, 1 OCPU / 1 GB), Canonical Ubuntu 24.04 build 2026.11.05-0, 50 GB Balanced
 boot volume, new VCN `vcn-20261117-0500` + subnet `subnet-20261117-0500` (10.0.0.0/24), private IP 10.0.0.129, **no public
 IP yet**, owner's SSH public key (`ssh-key-2026-11-17`), first-boot script = `infra/relay/cloud-init.yaml` (result not yet
-checked on the host). Instance OCID ends `...zymwlqjcq`. Still to do, in this order: restrict the security list's SSH rule
-to the owner's IP (needs the address), add ingress 80/443, attach a free ephemeral public IP, owner confirms SSH login and
+checked on the host). Instance OCID ends `...zymwlqjcq`. Done 2026-11-17: default security list ingress is now TCP 22 from 175.107.226.244/32 only (owner's IP at the
+time), TCP 80 and TCP 443 from anywhere, plus Oracle's default ICMP rules; ephemeral public IP **139.185.60.75** attached
+(ephemeral: it changes if the instance is terminated/recreated). NOT verified: that the VCN has an internet gateway and
+route (the console offers a "Connect public subnet to internet" quick action, which suggests it may not), and SSH login.
+The first-boot script ran before the server had internet access, so its package installs very likely failed and must be
+re-run. Still to do: owner confirms SSH login and
 `/var/log/orbitdrive-init.log`, deploy the gateway behind Caddy, test, check the billing page. A1.Flex remains the
 intended final shape (migrate when capacity exists; the script and deployment stay architecture-neutral). The owner's rules:
 Always Free only, no Pay As You Go, SSH restricted to the owner's IP, do not deploy the public website until the relay is tested.
