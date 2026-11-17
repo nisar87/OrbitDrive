@@ -158,7 +158,7 @@ try {
     # A real download by the paired browser shows up on the PC with what the PC actually sent.
     $itinerary = @($page.entries | Where-Object { $_.name -eq 'itinerary.txt' })[0]
     $prepared = Api 'Post' '/v1/download-sessions' @{ pcId = $pcId; entryId = $itinerary.entryId } $device
-    Check ($prepared.status -eq 201) 'the browser prepared a download'
+    Check ($prepared.status -eq 200 -and $prepared.body.urlPath) 'the browser prepared a download'
     $bytes = (Invoke-WebRequest -UseBasicParsing ($relay + $prepared.body.urlPath)).Content
     Check ($bytes.Length -eq [int]$prepared.body.size) 'the file arrived through the relay'
     Nav 'Transfers'

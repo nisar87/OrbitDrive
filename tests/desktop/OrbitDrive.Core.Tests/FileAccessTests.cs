@@ -303,7 +303,7 @@ public sealed class FileAccessTests : IDisposable
     }
 
     [Fact]
-    public void FilesWithASecondHardLinkAreRefused()
+    public async Task FilesWithASecondHardLinkAreRefused()
     {
         var original = Path.Join(_outside, "ledger.txt");
         File.WriteAllText(original, "private ledger");
@@ -321,7 +321,7 @@ public sealed class FileAccessTests : IDisposable
         Assert.Contains("innocent.txt", List().Entries.Select(e => e.Name));
         Assert.Equal(ErrorCode.LinkNotAllowed, CodeOf(() => _service.PrepareReadAsync(new PrepareReadRequest { EntryId = Entry(false, "innocent.txt") }, default).GetAwaiter().GetResult()));
         // An ordinary single-link file next to it is still served.
-        Assert.Equal(5, _service.PrepareReadAsync(new PrepareReadRequest { EntryId = Entry(false, "a.txt") }, default).GetAwaiter().GetResult().Size);
+        Assert.Equal(5, (await _service.PrepareReadAsync(new PrepareReadRequest { EntryId = Entry(false, "a.txt") }, default)).Size);
     }
 
     [Fact]
