@@ -33,16 +33,31 @@ jobs:
       - name: Relay scripts never embed credentials or disable TLS checks
         run: |
           if grep -RnE "curl[^|]*(-k|--insecure)|StrictHostKeyChecking=no|PRIVATE KEY|password=" infra/relay; then echo "unsafe relay script"; exit 1; fi
-      - name: npm audit (high and above)
-        working-directory: apps/web
-        run: npm ci && npm audit --audit-level=high
-      - name: Integration-test dependencies audit (high and above)
-        working-directory: tests/integration
-        run: npm ci && npm audit --audit-level=high
+      # Each audit below runs even if an earlier one failed, so one finding can never hide another.
+      # Shipped dependencies: any high/critical advisory fails, no exceptions. Build/test tooling: fails unless the
+      # advisory has a valid, owner-authorised, dated entry in security/audit-exceptions.json (max 30 days; see
+      # scripts/audit-check.mjs and docs/security/accepted-risks.md). Accepted advisories are printed as warnings.
+      - name: Web dependencies audit
+        if: ${{ !cancelled() }}
+        run: (cd apps/web && npm ci) && node scripts/audit-check.mjs apps/web
+      - name: Production web bundle contains only reviewed runtime packages
+        if: ${{ !cancelled() }}
+        run: node scripts/bundle-check.mjs
+      - name: Assumptions behind accepted advisories still hold
+        if: ${{ !cancelled() }}
+        run: node --test tests/relay/picomatch-exposure.test.mjs
+      - name: Audit gate self-test
+        if: ${{ !cancelled() }}
+        run: node --test tests/relay/audit-check.test.mjs
+      - name: Integration-test dependencies audit
+        if: ${{ !cancelled() }}
+        run: (cd tests/integration && npm ci) && node scripts/audit-check.mjs tests/integration
       - name: Emulator tooling audit (test-only, never shipped; report only)
+        if: ${{ !cancelled() }}
         working-directory: tests/emulators
         run: npm ci && (npm audit --audit-level=high || echo "::warning::firebase-tools (test-only emulator tooling) has known advisories; it is not part of any shipped artifact")
       - name: NuGet vulnerability audit
+        if: ${{ !cancelled() }}
         run: |
           dotnet restore OrbitDrive.slnx
           dotnet list OrbitDrive.slnx package --vulnerable --include-transitive | tee nuget-audit.txt

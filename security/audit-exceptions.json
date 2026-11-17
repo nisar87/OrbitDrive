@@ -1,0 +1,17 @@
+{
+  "_policy": "Temporary, owner-authorised acceptance of specific npm advisories in build/test tooling. Shipped (production) dependencies get no exceptions. The gate (scripts/audit-check.mjs) fails when: an advisory is not listed here; an entry has expired or runs longer than 30 days; the advisory reaches the project through a package not listed in allowedVia; a newer release of the package than reviewedLatest exists (re-review, a fix may be available); or the package appears among production dependencies. See docs/security/accepted-risks.md.",
+  "exceptions": [
+    {
+      "advisory": "GHSA-fc5q-39xc-vjpf",
+      "package": "picomatch",
+      "directory": "apps/web",
+      "allowedVia": ["vite", "vitest", "tinyglobby", "fdir", "@vitejs/plugin-react"],
+      "reviewedLatest": "4.0.7",
+      "authorisedBy": "repository owner (nisar87), instruction of 2026-11-18 (owner local time; 2026-11-17 UTC): evaluate and, if justified by documented evidence, implement a narrowly scoped temporary exception for this exact advisory",
+      "reason": "ReDoS that needs an attacker-chosen glob PATTERN. Here picomatch only receives patterns fixed in the repository and tool defaults; file names and request paths are matched text, which stays fast (measured). It is build/test tooling only: absent from the production bundle and from every deployable artifact. No fixed release exists (advisory range <=4.0.7, latest 4.0.7); the only automatic alternative (older vite/vitest) still contains it and adds critical advisories.",
+      "added": "2026-11-17",
+      "expires": "2026-12-17",
+      "removeWhen": "a picomatch release outside the advisory range exists, or vite/vitest stop depending on it; then update and delete this entry"
+    }
+  ]
+}

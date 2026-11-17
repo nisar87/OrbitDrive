@@ -97,7 +97,7 @@ Blocked on the owner (cannot be done from the build environment):
 Not blocked, in order:
 1. W3/D3 remainder: idempotency keys for retried mutations; Firestore when credentials exist. (Durable store, leases, fault suite and ADR-1 done.)
 2. W2 remainder: real-phone camera scan (owner device needed). (`OrbitDrive__TrustedProxies` was set on the live relay by the owner on 2026-11-17.)
-   **BLOCKED on an owner decision (2026-11-17):** the `security` workflow fails on a new upstream advisory in build tooling (GHSA-fc5q-39xc-vjpf, `picomatch`, no fixed release). `main` stays at `8905264`; D5/W5 work is on the feature branch at `ef4b025`. Options: wait for an upstream fix, or approve a dated exception for build-only tooling while shipped dependencies stay at zero tolerance.
+   **Accepted risk AR-1 (owner-authorised 2026-11-18, expires 2026-12-17):** `picomatch` GHSA-fc5q-39xc-vjpf in build/test tooling only — NOT fixed; see `docs/security/accepted-risks.md`. The `security` workflow fails again on expiry, on any new picomatch release, or if it becomes reachable some other way. Re-review before 2026-12-17.
    After that: D6/W6 (Explorer send-to-phone, incoming files).
 3. D1 remainder needs the owner's Windows 11 PC: standard user, lock/sleep, high contrast, DPI, tray menu.
 4. D4/W4: Windows-style web shell (desktop, taskbar, windows), full Explorer (views, sort, selection, properties,
