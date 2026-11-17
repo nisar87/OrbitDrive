@@ -5,6 +5,13 @@ Updated: 2026-11-17 (session 1). Branch: `feature/orbitdrive-foundation`.
 **Last code-verified commit: `8390f81`** — all seven workflows green: contracts 43974825117, gateway 43974825202,
 desktop 43974825184, desktop-ui 43974825160, integration 43974825234, web 43974825166, security 43974825223.
 
+Relay host decision (owner, 2026-11-17): Oracle Cloud, tenancy `nisar87`, home region UAE East (Dubai, `me-dubai-1`),
+Free Tier (in trial). Target: `orbitdrive-relay`, VM.Standard.A1.Flex (Always Free-eligible) 1 OCPU / 6 GB, Canonical
+Ubuntu 24.04, 50 GB boot volume, new VCN + public subnet, Oracle-generated SSH key pair held only by the owner,
+first-boot script `infra/relay/cloud-init.yaml`. **Create attempt on 2026-11-17 failed: "Out of capacity for shape
+VM.Standard.A1.Flex in availability domain AD-1".** Nothing exists in the tenancy (no instance, no VCN). The owner's rules:
+Always Free only, no Pay As You Go, SSH restricted to the owner's IP, do not deploy the public website until the relay is tested.
+
 Hosting decision (owner, 2026-11-17): no subdomain of the AI CV Studio domain. The web app will be served from the
 `orbitdrive-dev` project's own Hosting address until the owner buys a new domain. **Nothing is deployed.** A live site
 is pointless until a public relay exists, and the relay host (possible cost) is still the owner's open decision.
