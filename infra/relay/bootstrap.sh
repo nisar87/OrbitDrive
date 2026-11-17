@@ -121,5 +121,6 @@ systemctl restart systemd-journald
 systemctl enable --now orbitdrive-update.timer orbitdrive-monitor.timer orbitdrive-backup.timer
 systemctl enable orbitdrive-gateway.service
 systemctl start orbitdrive-update.service || true   # installs the newest release and starts the gateway
+systemctl try-restart orbitdrive-gateway.service    # a re-run must apply a changed unit/env even when no new release was installed
 systemctl enable --now caddy && systemctl reload caddy
 echo "bootstrap complete: https://$HOST/healthz (channel $CHANNEL)"
