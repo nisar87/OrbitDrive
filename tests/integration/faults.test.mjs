@@ -5,12 +5,12 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { createHash, generateKeyPairSync, sign, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
-import { startGateway, startAgent, startProxy, kill, agentCli, tempDir, makeFixtureRoot, writeLargeFile, Browser, pair, sleep } from './harness.mjs';
+import { startGateway, startAgent, startProxy, kill, agentCli, tempDir, makeFixtureRoot, writeLargeFile, Browser, pair, sleep, freePort } from './harness.mjs';
 
 const HEARTBEAT = 1, LEASE = 3;
 const dataDir = tempDir('faults-data');
 const secret = randomBytes(32).toString('hex');
-const port = 5800 + Math.floor(Math.random() * 300);
+const port = await freePort();   // one address for the whole file: the gateway is restarted on it
 const boot = () => startGateway({
   OrbitDrive__DataDirectory: dataDir, OrbitDrive__DevIdentity__Secret: secret,
   OrbitDrive__AgentHeartbeatSeconds: String(HEARTBEAT), OrbitDrive__AgentLeaseSeconds: String(LEASE),

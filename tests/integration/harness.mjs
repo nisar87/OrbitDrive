@@ -18,7 +18,8 @@ export const WEB_ORIGIN = 'http://localhost:5173';
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 
-async function freePort() {
+/** A port the operating system reports as free right now (never a hard-coded range: Windows reserves some). */
+export async function freePort() {
   const server = createServer();
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');

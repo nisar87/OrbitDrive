@@ -5,11 +5,11 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { startGateway, startAgent, agentCli, tempDir, makeFixtureRoot, Browser, pair, sleep } from './harness.mjs';
+import { startGateway, startAgent, agentCli, tempDir, makeFixtureRoot, Browser, pair, sleep, freePort } from './harness.mjs';
 
 const dataDir = tempDir('gateway-data');
 const secret = randomBytes(32).toString('hex');
-const port = 5400 + Math.floor(Math.random() * 300);
+const port = await freePort();   // one address for the whole file: the gateway is restarted on it
 const boot = () => startGateway({ OrbitDrive__DataDirectory: dataDir, OrbitDrive__DevIdentity__Secret: secret }, port);
 let gateway, agent;
 after(async () => { await agent?.stop(); await gateway?.stop(); });

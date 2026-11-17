@@ -2,12 +2,12 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { startGateway, startAgent, connectIpc, agentCli, tempDir, makeFixtureRoot, Browser, pair } from './harness.mjs';
+import { startGateway, startAgent, connectIpc, agentCli, tempDir, makeFixtureRoot, Browser, pair, freePort } from './harness.mjs';
 
 const LIMIT = 10, POLLS = 90;
 const dataDir = tempDir('limits-data');
 const secret = randomBytes(32).toString('hex');
-const port = 6200 + Math.floor(Math.random() * 300);
+const port = await freePort();   // one address for the whole file: the gateway is restarted on it
 const boot = (extra = {}, fixed = port) => startGateway({
   OrbitDrive__PairingClaimsPerMinute: String(LIMIT), OrbitDrive__PairingPollsPerMinute: String(POLLS),
   OrbitDrive__TrustedProxies__0: '127.0.0.1', OrbitDrive__DataDirectory: dataDir, OrbitDrive__DevIdentity__Secret: secret, ...extra,
@@ -84,7 +84,7 @@ test('a client cannot dodge the limit by forging X-Forwarded-For', async () => {
   assert.deepEqual(statuses, [...Array(LIMIT).fill(404), 429]);
 
   // No trusted proxy configured: the header is ignored entirely and the TCP peer address is used.
-  const direct = await boot({ OrbitDrive__TrustedProxies__0: '10.255.255.1', OrbitDrive__DataDirectory: '' }, port + 1);
+  const direct = await boot({ OrbitDrive__TrustedProxies__0: '10.255.255.1', OrbitDrive__DataDirectory: '' }, await freePort());
   try {
     const seen = [];
     for (let i = 0; i <= LIMIT; i++) {
