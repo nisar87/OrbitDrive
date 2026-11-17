@@ -127,6 +127,15 @@ through the live relay are **not** covered (no verified Firebase test account ye
 - **Not evidenced:** persistence on the live relay. Its systemd unit and `gateway.env` predate this change, so it still
   runs memory-only until the owner re-runs the bootstrap pinned to this commit.
 
+## Live relay — durable store enabled (owner-run, 2026-11-17)
+
+Host output supplied by the owner: bootstrap from `7be37ee` re-run on the existing server completed; `gateway.env`
+contains `OrbitDrive__DataDirectory=/var/lib/orbitdrive-gateway`; after a gateway restart the directory exists
+(`drwx------ orbitdrive orbitdrive`), the service is active, public HTTPS `/v1/meta` reports 0.1.4, firewall order intact.
+Two defects found and handled: the Oracle Dubai apt mirror returned 404 (sources switched to `archive.ubuntu.com` on the
+host), and the re-run did not restart an already-current gateway (fixed in `3cdd3e4`).
+**Not evidenced:** a real registration surviving a restart on the live relay (no pairing through it yet).
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were

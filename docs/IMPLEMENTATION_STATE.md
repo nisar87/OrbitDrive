@@ -76,7 +76,7 @@ web) works end to end in CI. It is a slice through M1–M2, not completion of th
 
 ## Known gaps in what exists
 
-- Gateway registrations/grants persist only when `OrbitDrive:DataDirectory` is set. The live relay's unit file predates this, so it stays memory-only until the owner re-runs the pinned bootstrap. Pending pairings and download capabilities never survive a restart (by design).
+- Gateway registrations/grants persist only when `OrbitDrive:DataDirectory` is set. The live relay has it enabled since 2026-11-17 (owner re-ran the bootstrap; directory present, still empty). Pending pairings and download capabilities never survive a restart (by design).
 - Device credential and dev token live in `localStorage`; no CSP yet.
 - Same-size rewrite that restores the timestamp between prepare and read is not detected.
 - Agent-side busy limits (16 requests, 4 streams) and pending-request caps have no dedicated tests yet.

@@ -56,3 +56,5 @@ check, checksum refusal, automatic rollback, bad-version memory, malformed/malic
 pruning, monitor output and alerts, backup + restore check. **Not yet proven on the Oracle host:** `bootstrap.sh` end
 to end (apt packages, systemd units, Caddy certificate issuance via sslip.io, journald/logrotate/unattended-upgrades
 settings), behaviour within 1 GB under load, and the two GitHub workflows against the live relay.
+- If `apt-get update` fails with 404 on `*.clouds.archive.ubuntu.com` (Oracle regional mirror), replace that host with
+  `archive.ubuntu.com` in `/etc/apt/sources.list.d/ubuntu.sources`; the bootstrap stops before changing anything.
