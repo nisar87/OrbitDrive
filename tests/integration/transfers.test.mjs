@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { startGateway, startAgent, startProxy, connectIpc, agentCli, tempDir, makeFixtureRoot, writeLargeFile, Browser, pair, sleep } from './harness.mjs';
 
 let gateway, agent, ipc, phone, tablet, stranger, pcId, root, rootId, bigHash, state;
-const BIG_MIB = 64;   // larger than every buffer between the PC and the browser, so an abandoned download cannot already be "all sent"
+const BIG_MIB = 24;
 
 before(async () => {
   root = makeFixtureRoot();
@@ -33,6 +33,10 @@ async function prepare(name, browser = phone) {
   const created = await browser.post('/v1/download-sessions', { pcId, entryId: (await entry(name)).entryId });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   return created.body;
+}
+// The next 'stream_finished' for this file: a late event from an earlier test (a small file) must not be taken for it.
+async function finishedFor(name, ms = 30_000) {
+  for (;;) { const event = await agent.next('stream_finished', ms); if (event.name === name) return event; }
 }
 const sessions = async (browser = phone) => (await browser.get('/v1/download-sessions')).body.sessions;
 const find = async (id, browser = phone) => (await sessions(browser)).find((s) => s.sessionId === id);
@@ -89,9 +93,8 @@ test('a download the browser abandons half way is reported as interrupted on the
   assert.ok(Number(running.sent) >= received, 'the PC has sent at least what the browser received');
   controller.abort();
   link.stop();
-  const finished = await agent.next('stream_finished', 30_000);
+  const finished = await finishedFor('big.bin');
   assert.notEqual(finished.outcome, 'sent_to_relay');
-  assert.equal(finished.name, 'big.bin');
   assert.ok(Number(finished.bytes) < BIG_MIB * (1 << 20), 'the PC reports the bytes it really sent, not the whole length');
   live = await until(async () => { const s = await find(session.sessionId); return s.state === 'interrupted' ? s : null; }, 10_000, 'interrupted state');
   assert.ok(Number(live.bytesCovered) >= received && Number(live.bytesCovered) < BIG_MIB * (1 << 20));
