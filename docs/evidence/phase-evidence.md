@@ -221,6 +221,39 @@ run was created for this commit because nothing under the relay's paths changed;
 - Not built in W4 yet: Inbox and Transfers apps (their phases come later), multi-file download (needs archives, W8),
   search across folders (W8; the current box filters the open folder and says so), keyboard move/resize of windows.
 
+## `main` @ `62bb432` (W4) — confirmed
+
+All seven workflows green on `main` for `62bb432` (contracts 44113458195, integration 44113460182, desktop-ui
+44113458197, gateway 44113460702, desktop 44113452013, security 44113451849, web 44113451642).
+
+## Commit `8905264` — disk binding, hidden items, large folders, listing race fix (D4)
+
+- All seven workflows green (desktop 44122833259: 61/61 Core tests on windows-2025; integration 44122833746;
+  desktop-ui 44122833204: 67/67; web 44122833598: 61 passed, 9 skipped; gateway 44122834709; contracts
+  44122833945; security 44122833613).
+- **Security defect found and fixed.** The new ancestor-swap race test failed on Windows (run 44120828276): while a
+  folder inside the share was repeatedly replaced by a link to a private folder, a directory listing returned the
+  private folder's file name (`secret.txt`). Cause: the folder was validated by path and then enumerated by path
+  again. Fix: listings open the folder, verify the opened handle is inside the root and is not a link, and enumerate
+  through that handle (which also pins the folder and its parents on Windows). The same test now passes on Windows
+  and Linux with the swap running for 3 s. File contents were never affected (always served from a validated handle).
+- Disk binding: unit tests with a simulated disk swap (listing, nested listing, prepare and an already prepared
+  download all refused as unavailable, access returns when the original disk does); real volume identities differ
+  between two real volumes on both runners; through the real agent and gateway a mismatching identity gives
+  `available: false` and 503 "different disk", is never silently re-bound, and an older config is bound once.
+- Hidden items: not sent unless the PC owner opts in for that folder (Core test incl. Windows Hidden and System
+  attributes; integration over IPC on both runners; console UI Automation with a real hidden file; browser test).
+  No remote instruction or HTTP route can change what a PC shares (asserted).
+- Other adversarial cases: nine encoded or look-alike separator forms are treated as literal names (NotFound); a
+  second hard link to an outside file is refused on Windows (the alias really exposed the bytes); a root chosen
+  through a link works while links inside it are refused.
+- Large folders: 10,000 real files through the real agent and gateway in all five browser projects. Load-all
+  2.2–3.5 s; filter 45–116 ms; sort 275–439 ms; Ctrl+A 360–484 ms; End 145–413 ms; at most 1,200 rows drawn at once.
+  Before the change, load-all had not finished after 240 s.
+- **Not evidenced:** a real removable disk being swapped (identity comparison is tested with real serials and a
+  simulated swap); mount points inside a shared folder; cloud placeholders (no policy built yet); EFS/protected
+  files; network shares; real-phone performance with 10,000 items; hard-link refusal on Linux (development only).
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were
