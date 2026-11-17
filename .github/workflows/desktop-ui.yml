@@ -23,6 +23,18 @@ jobs:
       - name: Drive the real WPF console through UI Automation (real agent + gateway)
         shell: powershell
         run: ./scripts/desktop-ui-test.ps1 -Exe "apps/desktop/OrbitDrive.Desktop/bin/Release/net10.0-windows/OrbitDrive.exe" -GatewayDll "services/gateway/OrbitDrive.Gateway/bin/Release/net10.0/OrbitDrive.Gateway.dll" -OutDir artifacts
+      # The build sandbox used for review can read job logs but not artifact storage, so the screenshots are also
+      # written to the log (base64, between markers) to make visual review of the real Windows UI possible.
+      - name: Publish screenshots in the log for review
+        if: always()
+        shell: powershell
+        run: |
+          Get-ChildItem artifacts -Filter *.png -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "@@PNG-BEGIN $($_.Name)"
+            $b = [Convert]::ToBase64String([IO.File]::ReadAllBytes($_.FullName))
+            for ($i = 0; $i -lt $b.Length; $i += 4000) { Write-Host ("@@" + $b.Substring($i, [Math]::Min(4000, $b.Length - $i))) }
+            Write-Host "@@PNG-END $($_.Name)"
+          }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
