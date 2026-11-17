@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import type { Prefs, WindowLayout } from '../../prefs';
 
-export interface DesktopApp { id: string; title: string; icon: ReactNode; render: () => ReactNode }
+export interface DesktopApp { id: string; title: string; icon: ReactNode; render: () => ReactNode; /** A count shown on the taskbar icon (for example files waiting). */ badge?: number }
 
 interface Props {
   apps: DesktopApp[];
@@ -227,9 +227,10 @@ export function Desktop({ apps, account, prefs, onPrefs, onSignOut, openRef }: P
             const state = windows[app.id];
             const running = !!state?.open;
             return (
-              <button key={app.id} type="button" className={`task${running ? ' running' : ''}${active === app.id ? ' current' : ''}`} aria-label={app.title}
+              <button key={app.id} type="button" className={`task${running ? ' running' : ''}${active === app.id ? ' current' : ''}`} aria-label={app.badge ? `${app.title}, ${app.badge} waiting` : app.title}
                 aria-pressed={active === app.id} title={app.title} onClick={() => taskbarClick(app.id)}>
                 <span className="glyph" aria-hidden="true">{app.icon}</span>
+                {app.badge ? <span className="count-badge" aria-hidden="true">{app.badge > 9 ? '9+' : app.badge}</span> : null}
               </button>
             );
           })}

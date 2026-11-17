@@ -67,7 +67,7 @@ internal static class LocalProtection
 /// <summary>Per-user agent state: device identity key, token-sealing key and the owner's approved roots.</summary>
 internal sealed class AgentState
 {
-    private sealed record Config(List<SharedRoot> Roots, string? Gateway = null, string? WebOrigin = null, int MaxUploadKBps = 0, int MaxConcurrentTransfers = 4);
+    private sealed record Config(List<SharedRoot> Roots, string? Gateway = null, string? WebOrigin = null, int MaxUploadKBps = 0, int MaxConcurrentTransfers = 4, bool SendToShortcuts = false);
     private readonly string _configPath;
     private volatile IReadOnlyList<SharedRoot> _roots = [];
 
@@ -82,6 +82,8 @@ internal sealed class AgentState
     public int MaxUploadKBps { get; private set; }
     /// <summary>How many files this PC sends at the same time (1-16).</summary>
     public int MaxConcurrentTransfers { get; private set; } = 4;
+    /// <summary>Owner choice: keep one classic Explorer "Send to" shortcut per paired receiver (the fallback beside the modern menu).</summary>
+    public bool SendToShortcuts { get; private set; }
     public string Directory_ { get; }
 
     public AgentState(string directory)
@@ -114,6 +116,7 @@ internal sealed class AgentState
         WebOrigin = config?.WebOrigin;
         MaxUploadKBps = Math.Clamp(config?.MaxUploadKBps ?? 0, 0, 10_000_000);
         MaxConcurrentTransfers = Math.Clamp(config?.MaxConcurrentTransfers ?? 4, 1, 16);
+        SendToShortcuts = config?.SendToShortcuts ?? false;
         // Folders approved before disk binding existed are bound to the disk they are on now (once, when reachable).
         if (_roots.Any(r => r.VolumeId is null && Directory.Exists(r.Path)))
             Save([.. _roots.Select(r => r.VolumeId is null && NativeFile.GetVolumeIdentity(r.Path) is { } id ? r with { VolumeId = id } : r)]);
@@ -121,7 +124,7 @@ internal sealed class AgentState
 
     private void Save(List<SharedRoot> roots)
     {
-        File.WriteAllText(_configPath + ".tmp", JsonSerializer.Serialize(new Config(roots, Gateway, WebOrigin, MaxUploadKBps, MaxConcurrentTransfers), new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(_configPath + ".tmp", JsonSerializer.Serialize(new Config(roots, Gateway, WebOrigin, MaxUploadKBps, MaxConcurrentTransfers, SendToShortcuts), new JsonSerializerOptions { WriteIndented = true }));
         File.Move(_configPath + ".tmp", _configPath, overwrite: true);
         _roots = roots;
     }
@@ -163,6 +166,8 @@ internal sealed class AgentState
         MaxUploadKBps = maxUploadKBps; MaxConcurrentTransfers = maxConcurrentTransfers;
         Save([.. _roots]);
     }
+
+    public void SetSendToShortcuts(bool enabled) { SendToShortcuts = enabled; Save([.. _roots]); }
 
     /// <summary>Owner-only: whether hidden files and folders inside this shared folder are visible to paired devices.</summary>
     public bool SetShowHidden(string rootId, bool showHidden)

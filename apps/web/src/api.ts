@@ -49,6 +49,8 @@ async function call<K extends keyof ProtocolTypeMap>(type: K, session: Session |
   return validate(type, json);
 }
 
+export const INVITATION_PREFIX = 'invitation:';
+
 export const api = {
   devSignIn: (email: string) => call('DevSignInResponse', null, 'POST', '/v1/dev/sign-in', { email }),
   claimPairing: (s: Session, id: string, secret: string, browserName: string) => call('ClaimPairingResponse', s, 'POST', `/v1/pairing-requests/${encodeURIComponent(id)}/claim`, { secret, browserName }),
@@ -56,7 +58,12 @@ export const api = {
   pcs: (s: Session) => call('PcListResponse', s, 'GET', '/v1/pcs'),
   roots: (s: Session, pcId: string) => call('RootListResponse', s, 'GET', `/v1/pcs/${encodeURIComponent(pcId)}/roots`),
   directory: (s: Session, pcId: string, query: DirectoryQuery) => call('DirectoryPage', s, 'POST', `/v1/pcs/${encodeURIComponent(pcId)}/directory-queries`, query),
-  prepareDownload: (s: Session, pcId: string, entryId: string) => call('DownloadSession', s, 'POST', '/v1/download-sessions', { pcId, entryId }),
+  /** A real entry id is an opaque base64url token; an invitation source is written "invitation:<id>" so one download path serves both. */
+  prepareDownload: (s: Session, pcId: string, entryId: string) => entryId.startsWith(INVITATION_PREFIX)
+    ? call('DownloadSession', s, 'POST', `/v1/invitations/${encodeURIComponent(entryId.slice(INVITATION_PREFIX.length))}/accept`)
+    : call('DownloadSession', s, 'POST', '/v1/download-sessions', { pcId, entryId }),
+  invitations: (s: Session) => call('InvitationList', s, 'GET', '/v1/invitations'),
+  declineInvitation: (s: Session, id: string) => call('Ack', s, 'POST', `/v1/invitations/${encodeURIComponent(id)}/decline`),
   devices: (s: Session) => call('BrowserDeviceListResponse', s, 'GET', '/v1/browser-devices'),
   downloadSessions: (s: Session) => call('DownloadSessionList', s, 'GET', '/v1/download-sessions'),
   cancelDownload: (s: Session, sessionId: string) => call('Ack', s, 'DELETE', `/v1/download-sessions/${encodeURIComponent(sessionId)}`),

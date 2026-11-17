@@ -66,7 +66,7 @@ public sealed class AgentConnection(WebSocket socket, string pcId, long generati
 }
 
 /// <summary>Tracks the single authoritative connection generation per PC and runs the control protocol.</summary>
-public sealed class AgentHub(Store store, GatewayOptions options, ILogger<AgentHub> logger)
+public sealed class AgentHub(Store store, Invitations invitations, GatewayOptions options, ILogger<AgentHub> logger)
 {
     private readonly ConcurrentDictionary<string, AgentConnection> _connections = new();
     private long _generation;
@@ -220,7 +220,15 @@ public sealed class AgentHub(Store store, GatewayOptions options, ILogger<AgentH
                 var confirm = ProtocolJson.FromElement<ConfirmPairingRequest>(envelope.Payload ?? throw new JsonException());
                 return new ConfirmPairingResult { State = store.ConfirmPairing(confirm.PairingId, connection.PcId, confirm.Approve) };
             case Actions.ListDevices:
-                return new BrowserDeviceListResponse { Devices = [.. store.DevicesForPc(connection.PcId).Select(d => new BrowserDeviceSummary { DeviceId = d.Id, Name = d.Name, Current = false, PcIds = [connection.PcId] })] };
+                return new BrowserDeviceListResponse { Devices = [.. store.DevicesForPc(connection.PcId).Select(d => new BrowserDeviceSummary { DeviceId = d.Id, Name = d.Name, Current = false, PcIds = [connection.PcId], LastSeenUnixMs = d.LastSeenUnixMs })] };
+            case Actions.CreateInvitation:
+                var offer = invitations.Create(connection.PcId, ProtocolJson.FromElement<CreateInvitationRequest>(envelope.Payload ?? throw new JsonException()));
+                return invitations.Summarize(offer, true);
+            case Actions.ListInvitations:
+                return new InvitationList { Invitations = [.. invitations.ForPc(connection.PcId).Select(i => invitations.Summarize(i, true))] };
+            case Actions.CancelInvitation:
+                invitations.Cancel(connection.PcId, ProtocolJson.FromElement<CancelInvitationRequest>(envelope.Payload ?? throw new JsonException()).InvitationId);
+                return new Ack { Ok = true };
             case Actions.RevokeDevice:
                 // Scoped to the calling PC's own grants: one PC can never revoke (or learn about) another PC's devices.
                 store.RevokeGrant(connection.PcId, ProtocolJson.FromElement<RevokeDeviceRequest>(envelope.Payload ?? throw new JsonException()).DeviceId);

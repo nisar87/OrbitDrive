@@ -29,11 +29,21 @@ internal sealed class AgentHost : IDisposable
     public CancellationToken Shutdown => _shutdown.Token;
 
     private readonly FileAccessService _files;
+    private readonly string _receiverCache;
+    private readonly List<JsonObject> _offers = [];                   // newest last, bounded; what "Send to my phone" did, success or not
+    private readonly SemaphoreSlim _outboxGate = new(1, 1);
+    private FileSystemWatcher? _outboxWatcher;
+    private Timer? _outboxTimer;
+    public static readonly TimeSpan SpoolMaxAge = TimeSpan.FromMinutes(5);
+    public string OutboxDirectory => Path.Join(_state.Directory_, "outbox");
+    public const int MaxFilesPerSend = 500;
+    public static readonly TimeSpan OfferLifetime = TimeSpan.FromHours(24);
 
     public AgentHost(AgentState state, string pcName, Action<string, object?> log)
     {
         _state = state; _pcName = pcName; _log = log;
         _files = new FileAccessService(() => state.Roots, state.Tokens);
+        _receiverCache = Path.Join(state.Directory_, "receivers.json");
         _ipc = new LocalIpcServer(LocalIpc.PipeName(state.Directory_), HandleAsync);
     }
 
@@ -51,6 +61,7 @@ internal sealed class AgentHost : IDisposable
             }
         }
         _log(name, data);
+        if (name is "connected" or "pairing_result" or "device_revoked") _ = Task.Run(RefreshReceiversAsync);
         _ipc.Broadcast(name, data is null ? null : JsonSerializer.SerializeToNode(data));
     }
 
@@ -92,6 +103,7 @@ internal sealed class AgentHost : IDisposable
                 ["agentVersion"] = ControlClient.AgentVersion,
                 ["activeStreams"] = _client?.ActiveStreams ?? 0,
                 ["transfers"] = _client?.RecentTransfers() ?? [],
+                ["offers"] = new JsonArray([.. _offers.Select(o => o.DeepClone())]),
                 ["roots"] = new JsonArray([.. _state.Roots.Select(r => (JsonNode)new JsonObject { ["rootId"] = r.RootId, ["name"] = r.Name, ["path"] = r.Path, ["available"] = _files.IsAvailable(r), ["readOnly"] = true, ["showHidden"] = r.ShowHidden })]),
                 ["activePairing"] = _activePairing?.DeepClone(),
                 ["pendingApproval"] = _pendingApproval?.DeepClone(),
@@ -163,7 +175,26 @@ internal sealed class AgentHost : IDisposable
                 case "deny": return new JsonObject { ["state"] = await ConfirmAsync(false, cancellation) };
                 case "devices":
                     var devices = await Client.ListDevicesAsync(cancellation);
-                    return new JsonArray([.. devices.Devices.Select(d => (JsonNode)new JsonObject { ["deviceId"] = d.DeviceId, ["name"] = d.Name })]);
+                    WriteReceiverCache(devices);
+                    return new JsonArray([.. devices.Devices.Select(d => (JsonNode)new JsonObject { ["deviceId"] = d.DeviceId, ["name"] = d.Name, ["lastSeenUnixMs"] = d.LastSeenUnixMs?.ToString(System.Globalization.CultureInfo.InvariantCulture) })]);
+                case "set_sendto":
+                    _state.SetSendToShortcuts(args["enabled"]?.GetValue<bool>() ?? false);
+                    await SyncSendToAsync(cancellation);
+                    return new JsonObject { ["enabled"] = _state.SendToShortcuts };
+                case "send_files":
+                    var sent = await SendFilesAsync(args, cancellation);
+                    RecordOffers((sent as JsonObject)?["results"], "");
+                    return sent;
+                case "invitations":
+                    return new JsonArray([.. (await Client.ListInvitationsAsync(cancellation)).Invitations.Select(i => (JsonNode)new JsonObject
+                    {
+                        ["invitationId"] = i.InvitationId, ["name"] = i.Name, ["size"] = i.Size.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        ["state"] = JsonSerializer.SerializeToNode(i.State), ["receiverName"] = i.ReceiverName, ["failure"] = i.Failure,
+                        ["expiresAtUnixMs"] = i.ExpiresAtUnixMs.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    })]);
+                case "cancel_invitation":
+                    await Client.CancelInvitationAsync(Arg(args, "invitationId", 64), cancellation);
+                    return null;
                 case "revoke_device":
                     await Client.RevokeDeviceAsync(Arg(args, "deviceId", 128), cancellation);
                     Emit("device_revoked", null);
@@ -190,5 +221,168 @@ internal sealed class AgentHost : IDisposable
         catch (TimeoutException) { throw new IpcException("The service did not answer in time."); }
     }
 
-    public void Dispose() { _shutdown.Dispose(); _clientCancel?.Dispose(); }
+    /// <summary>
+    /// Offers explicitly chosen files to one paired receiver. Each file becomes a durable invitation; nothing is copied to the relay.
+    /// Paths come only from the owner's own Explorer selection over the per-user pipe, are never put in a command line, and every
+    /// outcome is reported per file: a bad name or folder in the selection does not stop the others.
+    /// </summary>
+    private async Task<JsonNode?> SendFilesAsync(JsonObject args, CancellationToken cancellation)
+    {
+        var receiverId = Arg(args, "receiverId", 128);
+        if (args["paths"] is not JsonArray list || list.Count is 0 or > MaxFilesPerSend) throw new IpcException($"Choose between 1 and {MaxFilesPerSend} files.");
+        var requestId = args["requestId"]?.GetValue<string>() is { Length: > 0 and <= 64 } given ? given : Guid.NewGuid().ToString("N");
+        var results = new JsonArray();
+        for (var i = 0; i < list.Count; i++)
+        {
+            var path = list[i]?.GetValue<string>() ?? "";
+            var entry = new JsonObject { ["path"] = path };
+            try
+            {
+                var offer = _files.IssueOneShot(path, OfferLifetime);
+                var key = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(requestId + "\n" + i + "\n" + path)))[..32];
+                var created = await Client.CreateInvitationAsync(new CreateInvitationRequest
+                {
+                    ReceiverId = receiverId, Name = offer.Name, Size = offer.Size, ModifiedUnixMs = offer.ModifiedUnixMs, Grant = offer.Grant, IdempotencyKey = key,
+                }, cancellation);
+                entry["ok"] = true; entry["invitationId"] = created.InvitationId; entry["name"] = offer.Name;
+                Emit("invitation_created", new { invitationId = created.InvitationId, name = offer.Name });
+            }
+            catch (ProtocolException e)
+            {
+                entry["ok"] = false; entry["code"] = JsonSerializer.SerializeToNode(e.Code); entry["message"] = e.Message;
+            }
+            results.Add(entry);
+        }
+        return new JsonObject { ["results"] = results };
+    }
+
+    private void RecordOffers(JsonNode? results, string receiverId)
+    {
+        if (results is not JsonArray list) return;
+        lock (_gate)
+        {
+            foreach (var item in list.OfType<JsonObject>())
+            {
+                var ok = item["ok"]?.GetValue<bool>() ?? false;
+                _offers.Add(new JsonObject
+                {
+                    ["atUnixMs"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["name"] = ok ? item["name"]?.GetValue<string>() : System.IO.Path.GetFileName(item["path"]?.GetValue<string>() ?? ""),
+                    ["ok"] = ok, ["message"] = ok ? "Offered. It waits in the phone's Inbox." : item["message"]?.GetValue<string>() ?? "Could not be offered.",
+                });
+            }
+            if (_offers.Count > 20) _offers.RemoveRange(0, _offers.Count - 20);
+        }
+        Emit("offers_changed", null);
+    }
+
+    /// <summary>
+    /// The Explorer command hands selections over here when the pipe is not available (the app was not running yet): a small
+    /// per-user spool file holding paths as DATA (never a command line). A file older than five minutes is discarded rather than
+    /// sent late; a file written while the relay is unreachable waits for the connection until then.
+    /// </summary>
+    public void StartOutbox()
+    {
+        Directory.CreateDirectory(OutboxDirectory);
+        _outboxWatcher = new FileSystemWatcher(OutboxDirectory, "*.send") { EnableRaisingEvents = true };
+        _outboxWatcher.Created += (_, _) => _ = ProcessOutboxAsync();
+        _outboxWatcher.Renamed += (_, _) => _ = ProcessOutboxAsync();
+        _outboxTimer = new Timer(_ => _ = ProcessOutboxAsync(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5));
+    }
+
+    public async Task ProcessOutboxAsync()
+    {
+        if (!await _outboxGate.WaitAsync(0)) return;
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(OutboxDirectory, "*.send").Order().Take(20))
+            {
+                var age = DateTime.UtcNow - File.GetLastWriteTimeUtc(file);
+                JsonObject? request = null;
+                try
+                {
+                    var info = new FileInfo(file);
+                    if (info.Length is > 0 and <= 1 << 20) request = JsonNode.Parse(File.ReadAllText(file)) as JsonObject;
+                }
+                catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException) { /* unreadable or half-written */ }
+                if (request is null) { if (age > TimeSpan.FromSeconds(30)) TryDelete(file); continue; }
+                if (age > SpoolMaxAge)
+                {
+                    RecordOffers(new JsonArray([.. (request["paths"] as JsonArray ?? []).Select(p => (JsonNode)new JsonObject { ["ok"] = false, ["path"] = p?.GetValue<string>(), ["message"] = "Not sent: OrbitDrive was not running or not connected in time. Send it again." })]), "");
+                    TryDelete(file);
+                    continue;
+                }
+                JsonNode? done;
+                try { done = await SendFilesAsync(request, _shutdown.Token); }
+                catch (IpcException e) { RecordOffers(new JsonArray([.. (request["paths"] as JsonArray ?? []).Select(p => (JsonNode)new JsonObject { ["ok"] = false, ["path"] = p?.GetValue<string>(), ["message"] = e.Message })]), ""); TryDelete(file); continue; }
+                var results = (done as JsonObject)?["results"] as JsonArray;
+                var offline = results is { Count: > 0 } && results.All(r => r?["code"]?.ToString() == "pc_offline");
+                if (offline) continue;                                      // not connected yet: keep it until it is stale
+                RecordOffers(results, request["receiverId"]?.GetValue<string>() ?? "");
+                TryDelete(file);
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException) { /* try again on the next tick */ }
+        finally { _outboxGate.Release(); }
+    }
+
+    private static void TryDelete(string file) { try { File.Delete(file); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
+
+    /// <summary>Windows only. Keeps the classic Send to shortcuts in step with the paired receivers when the owner turned them on.</summary>
+    private async Task SyncSendToAsync(CancellationToken cancellation)
+    {
+        if (!OperatingSystem.IsWindows()) { if (_state.SendToShortcuts) throw new IpcException("Explorer shortcuts are only available on Windows."); return; }
+        try
+        {
+            var folder = SendToFolderOverride ?? SendToShortcuts.DefaultFolder;
+            if (!_state.SendToShortcuts) { SendToShortcuts.RemoveAll(folder); return; }
+            var devices = await Client.ListDevicesAsync(cancellation);
+            WriteReceiverCache(devices);
+            var exe = Environment.ProcessPath ?? throw new IpcException("Cannot find the OrbitDrive program.");
+            var custom = Path.GetFullPath(_state.Directory_) != Path.GetFullPath(DefaultStateDirectory);
+            // Explorer appends the file paths after the arguments, so a non-default state folder (tests only) cannot be expressed: skip it.
+            if (custom && SendToFolderOverride is null) return;
+            SendToShortcuts.Sync(folder, devices.Devices.Select(d => new SendToShortcuts.Receiver(d.DeviceId, d.Name)), exe, "ctl");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { throw new IpcException("Could not update the Explorer \"Send to\" shortcuts: " + e.Message); }
+    }
+
+    public static string DefaultStateDirectory => Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OrbitDrive", "agent");
+    /// <summary>Tests point the shortcut folder somewhere harmless.</summary>
+    public static string? SendToFolderOverride => Environment.GetEnvironmentVariable("ORBITDRIVE_SENDTO_FOLDER");
+
+    private async Task RefreshReceiversAsync()
+    {
+        try { WriteReceiverCache(await Client.ListDevicesAsync(_shutdown.Token)); if (_state.SendToShortcuts) await SyncSendToAsync(_shutdown.Token); }
+        catch (Exception e) when (e is ProtocolException or OperationCanceledException or TimeoutException) { /* offline: keep the last list, its age is shown */ }
+    }
+
+    /// <summary>
+    /// The Explorer command must not do network or IPC work while Explorer builds its menu, so it reads this small per-user file.
+    /// It lists receiver names and ids only (no secrets) and says when it was written; the command shows that age honestly.
+    /// </summary>
+    private void WriteReceiverCache(BrowserDeviceListResponse devices)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(new
+            {
+                writtenUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), pipe = LocalIpc.PipeName(_state.Directory_),
+                receivers = devices.Devices.Select(d => new { deviceId = d.DeviceId, name = d.Name, lastSeenUnixMs = d.LastSeenUnixMs }),
+            });
+            var temp = _receiverCache + ".tmp";
+            File.WriteAllText(temp, json);
+            File.Move(temp, _receiverCache, overwrite: true);
+            // The native Explorer command reads this simpler file: no JSON parser inside Explorer's process.
+            var lines = new List<string> { "v1", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture), LocalIpc.PipeName(_state.Directory_) };
+            foreach (var d in devices.Devices.Where(d => d.DeviceId.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_')))
+                lines.Add($"{d.DeviceId}\t{d.LastSeenUnixMs?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "0"}\t{new string([.. d.Name.Select(c => char.IsControl(c) ? ' ' : c)])}");
+            var plain = Path.Join(_state.Directory_, "receivers.txt");
+            File.WriteAllText(plain + ".tmp", string.Join("\n", lines) + "\n", new System.Text.UTF8Encoding(false));
+            File.Move(plain + ".tmp", plain, overwrite: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* a stale cache only makes the menu list older names */ }
+    }
+
+    public void Dispose() { _outboxTimer?.Dispose(); _outboxWatcher?.Dispose(); _shutdown.Dispose(); _clientCancel?.Dispose(); }
 }

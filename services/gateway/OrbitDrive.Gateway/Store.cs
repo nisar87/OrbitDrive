@@ -23,6 +23,8 @@ public sealed class BrowserDeviceRecord
     public required byte[] SecretHash { get; init; }
     public bool Active { get; set; }
     public bool Revoked { get; set; }
+    /// <summary>Last authenticated request, in memory only (best effort: it says nothing about notification delivery).</summary>
+    public long? LastSeenUnixMs { get; set; }
     public HashSet<string> PcIds { get; } = [];
 }
 
@@ -305,6 +307,7 @@ public sealed class Store
                 device.OwnerUid != identity.Uid || !device.Active || device.Revoked) throw denied;
             if (pcId is not null && (!_pcs.TryGetValue(pcId, out var pc) || pc.OwnerUid != identity.Uid || !device.PcIds.Contains(pcId)))
                 throw new ProtocolException(ErrorCode.NotFound, "PC not found.");
+            device.LastSeenUnixMs = time.GetUtcNow().ToUnixTimeMilliseconds();
             return device;
         }
     }
@@ -318,6 +321,8 @@ public sealed class Store
     {
         lock (_gate) return [.. _devices.Values.Where(d => d.OwnerUid == ownerUid && d.Active && !d.Revoked)];
     }
+
+    public string PcName(string pcId) { lock (_gate) return _pcs.TryGetValue(pcId, out var pc) ? pc.Name : ""; }
 
     public List<BrowserDeviceRecord> DevicesForPc(string pcId)
     {

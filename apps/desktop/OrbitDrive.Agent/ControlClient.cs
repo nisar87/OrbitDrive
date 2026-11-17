@@ -346,6 +346,15 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
         return (await RequestAsync<ConfirmPairingResult>(Actions.ConfirmPairing, new ConfirmPairingRequest { PairingId = id, Approve = approve }, cancellation)).State;
     }
 
+    public Task<InvitationSummary> CreateInvitationAsync(CreateInvitationRequest request, CancellationToken cancellation) =>
+        RequestAsync<InvitationSummary>(Actions.CreateInvitation, request, cancellation);
+
+    public Task<InvitationList> ListInvitationsAsync(CancellationToken cancellation) =>
+        RequestAsync<InvitationList>(Actions.ListInvitations, new Ack { Ok = true }, cancellation);
+
+    public Task<Ack> CancelInvitationAsync(string invitationId, CancellationToken cancellation) =>
+        RequestAsync<Ack>(Actions.CancelInvitation, new CancelInvitationRequest { InvitationId = invitationId }, cancellation);
+
     public Task<BrowserDeviceListResponse> ListDevicesAsync(CancellationToken cancellation) =>
         RequestAsync<BrowserDeviceListResponse>(Actions.ListDevices, new Ack { Ok = true }, cancellation);
 

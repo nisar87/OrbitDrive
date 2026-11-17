@@ -54,8 +54,11 @@ if (args[0] == "ctl" && args.Length >= 2)
         ("remove_root", 1) => new JsonObject { ["rootId"] = positional[0] },
         ("set_limits", 2) => new JsonObject { ["maxUploadKBps"] = int.Parse(positional[0]), ["maxConcurrentTransfers"] = int.Parse(positional[1]) },
         ("set_root_hidden", 2) => new JsonObject { ["rootId"] = positional[0], ["showHidden"] = positional[1] is "on" or "true" },
+        ("set_sendto", 1) => new JsonObject { ["enabled"] = positional[0] is "on" or "true" },
+        ("cancel_invitation", 1) => new JsonObject { ["invitationId"] = positional[0] },
         ("revoke_device", 1) => new JsonObject { ["deviceId"] = positional[0] },
         ("set_gateway", 1 or 2) => new JsonObject { ["gateway"] = positional[0], ["webOrigin"] = positional.Length == 2 ? positional[1] : null },
+        ("send_files", >= 2) => new JsonObject { ["receiverId"] = positional[0], ["paths"] = new JsonArray([.. positional.Skip(1).Select(p => (JsonNode)p)]) },
         (_, 0) => new JsonObject(),
         _ => null,
     };
@@ -67,7 +70,25 @@ if (args[0] == "ctl" && args.Length >= 2)
         return 0;
     }
     catch (IpcException e) { Console.Error.WriteLine(e.Message); return 1; }
-    catch (Exception e) when (e is TimeoutException or IOException or UnauthorizedAccessException) { Console.Error.WriteLine("The OrbitDrive agent is not running for this user."); return 1; }
+    catch (Exception e) when (e is TimeoutException or IOException or UnauthorizedAccessException)
+    {
+        // "Send to" while OrbitDrive is not running: leave the selection as DATA in the per-user spool and start the app. It is sent when the
+        // app connects, or discarded after five minutes; it is never sent late and never put on a command line.
+        if (args[1] == "send_files" && arguments["paths"] is JsonArray chosen)
+        {
+            var outbox = Path.Join(stateDirectory, "outbox");
+            Directory.CreateDirectory(outbox);
+            var spool = Path.Join(outbox, Guid.NewGuid().ToString("N"));
+            File.WriteAllText(spool + ".tmp", new JsonObject { ["receiverId"] = arguments["receiverId"]!.DeepClone(), ["paths"] = chosen.DeepClone(), ["requestId"] = Guid.NewGuid().ToString("N") }.ToJsonString());
+            File.Move(spool + ".tmp", spool + ".send");
+            var desktop = Path.Join(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "OrbitDrive.exe" : "OrbitDrive");
+            if (File.Exists(desktop)) { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(desktop, "--background") { UseShellExecute = false }); } catch (Exception) { /* the spool waits */ } }
+            Console.WriteLine("OrbitDrive was not running. Your selection will be sent when it connects (within five minutes).");
+            return 0;
+        }
+        Console.Error.WriteLine("The OrbitDrive agent is not running for this user.");
+        return 1;
+    }
 }
 
 var state = new AgentState(stateDirectory);
@@ -108,6 +129,7 @@ using var host = new AgentHost(state, Option(args, "--name") ?? Environment.Mach
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; host.Quit(); };
 var ipcTask = host.RunIpcAsync();
 host.StartClient();
+host.StartOutbox();
 Emit("ready", new { state = host.Status()["state"]!.GetValue<string>(), pipe = LocalIpc.PipeName(state.Directory_) });
 
 // Foreground console commands (development convenience; same operations as the local pipe).

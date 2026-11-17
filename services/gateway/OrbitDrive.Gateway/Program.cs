@@ -23,6 +23,7 @@ builder.WebHost.ConfigureKestrel(kestrel =>
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<Store>();
+builder.Services.AddSingleton<Invitations>();
 builder.Services.AddSingleton<RateLimiter>();
 builder.Services.AddSingleton<AgentHub>();
 builder.Services.AddSingleton<StreamRegistry>();
@@ -44,6 +45,7 @@ builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy => policy
 var app = builder.Build();
 var store = app.Services.GetRequiredService<Store>();
 var limiter = app.Services.GetRequiredService<RateLimiter>();
+var invitations = app.Services.GetRequiredService<Invitations>();
 var hub = app.Services.GetRequiredService<AgentHub>();
 app.Lifetime.ApplicationStopping.Register(hub.Shutdown);
 var streams = app.Services.GetRequiredService<StreamRegistry>();
@@ -204,22 +206,64 @@ app.MapPost("/v1/pcs/{pcId}/directory-queries", async (HttpContext context, stri
     await WriteJson(context, await hub.Get(pcId).RequestAsync<DirectoryPage>(Actions.ListDirectory, query, agentTimeout, context.RequestAborted));
 });
 
-app.MapPost("/v1/download-sessions", async (HttpContext context) =>
+async Task<DownloadSession> StartDownload(BrowserDeviceRecord device, string pcId, string entryId, CancellationToken cancellation)
 {
-    var request = await ReadJson<CreateDownloadSessionRequest>(context);
-    var device = AuthorizeBrowser(context, request.PcId);
-    var prepared = await hub.Get(request.PcId).RequestAsync<PrepareReadResult>(Actions.PrepareRead, new PrepareReadRequest { EntryId = request.EntryId },
-        TimeSpan.FromSeconds(options.PrepareTimeoutSeconds), context.RequestAborted);
+    var prepared = await hub.Get(pcId).RequestAsync<PrepareReadResult>(Actions.PrepareRead, new PrepareReadRequest { EntryId = entryId },
+        TimeSpan.FromSeconds(options.PrepareTimeoutSeconds), cancellation);
     if (prepared.Size < 0 || !prepared.Revision.StartsWith("sha256-", StringComparison.Ordinal) || prepared.Revision.Length != 71 || prepared.Name.Length is 0 or > 255)
         throw new ProtocolException(ErrorCode.Internal, "The PC sent an answer this service does not understand.");
     var expires = DateTimeOffset.UtcNow.AddSeconds(options.DownloadSessionTtlSeconds);
     var record = new DownloadSessionRecord
     {
-        OwnerUid = device.OwnerUid, BrowserDeviceId = device.Id, PcId = request.PcId, Name = prepared.Name, Size = prepared.Size,
+        OwnerUid = device.OwnerUid, BrowserDeviceId = device.Id, PcId = pcId, Name = prepared.Name, Size = prepared.Size,
         Revision = prepared.Revision, ReadToken = prepared.ReadToken, ExpiresAt = expires, CreatedAt = DateTimeOffset.UtcNow,
     };
     var capability = store.AddDownload(record);
-    await WriteJson(context, new DownloadSession { SessionId = record.Id, Capability = capability, UrlPath = $"/v1/downloads/{capability}", Name = prepared.Name, Size = prepared.Size, Revision = prepared.Revision, ExpiresAtUnixMs = expires.ToUnixTimeMilliseconds() }, 201);
+    return new DownloadSession { SessionId = record.Id, Capability = capability, UrlPath = $"/v1/downloads/{capability}", Name = prepared.Name, Size = prepared.Size, Revision = prepared.Revision, ExpiresAtUnixMs = expires.ToUnixTimeMilliseconds() };
+}
+
+app.MapPost("/v1/download-sessions", async (HttpContext context) =>
+{
+    var request = await ReadJson<CreateDownloadSessionRequest>(context);
+    var device = AuthorizeBrowser(context, request.PcId);
+    await WriteJson(context, await StartDownload(device, request.PcId, request.EntryId, context.RequestAborted), 201);
+});
+
+// "Send to my phone": the Inbox of this browser (never another browser's, never the PC's grant), and its decisions.
+app.MapGet("/v1/invitations", (HttpContext context) =>
+{
+    var device = AuthorizeBrowser(context);
+    return WriteJson(context, new InvitationList { Invitations = [.. invitations.ForReceiver(device.Id).Where(i => device.PcIds.Contains(i.PcId)).Select(i => invitations.Summarize(i, hub.IsOnline(i.PcId)))] });
+});
+
+app.MapPost("/v1/invitations/{id}/accept", async (HttpContext context, string id) =>
+{
+    var device = AuthorizeBrowser(context);
+    var item = invitations.ForReceiver(device.Id, id);
+    if (item.State is InvitationState.Declined or InvitationState.Cancelled or InvitationState.Expired)
+        throw new ProtocolException(item.State == InvitationState.Expired ? ErrorCode.Expired : ErrorCode.Conflict,
+            item.Failure ?? (item.State == InvitationState.Expired ? "This offer has expired. Ask for the file to be sent again." : "This offer is no longer available."));
+    // Offline PC: nothing is copied anywhere, so the offer simply waits (503 pc_offline) and stays in the Inbox.
+    AuthorizeBrowser(context, item.PcId);   // the grant for that PC must still stand
+    try
+    {
+        var session = await StartDownload(device, item.PcId, item.Grant, context.RequestAborted);
+        invitations.Accepted(item);
+        await WriteJson(context, session, 201);
+    }
+    catch (ProtocolException e) when (e.Code is ErrorCode.RevisionChanged or ErrorCode.NotFound or ErrorCode.LinkNotAllowed or ErrorCode.AccessDeniedLocal or ErrorCode.Expired)
+    {
+        invitations.Failed(item, e.Code == ErrorCode.RevisionChanged
+            ? "The file changed on the PC after it was offered. Ask for it to be sent again."
+            : e.Code == ErrorCode.Expired ? "The PC's permission for this file ran out. Ask for it to be sent again." : "The file is no longer available on the PC. Ask for it to be sent again.");
+        throw;
+    }
+});
+
+app.MapPost("/v1/invitations/{id}/decline", (HttpContext context, string id) =>
+{
+    invitations.Decline(AuthorizeBrowser(context).Id, id);
+    return WriteJson(context, new Ack { Ok = true });
 });
 
 // What the relay observed for this browser's downloads (never the capability itself), and cancelling one.

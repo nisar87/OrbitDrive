@@ -9,7 +9,7 @@ namespace OrbitDrive.Core;
 /// <summary>Contents of an opaque entry/read/cursor token. Only the agent can read or mint these.</summary>
 internal sealed record TokenBody
 {
-    [JsonPropertyName("t")] public required string Type { get; init; }          // "e" entry, "r" read, "c" cursor
+    [JsonPropertyName("t")] public required string Type { get; init; }          // "e" entry, "r" read, "c" cursor, "o" one-shot grant
     [JsonPropertyName("r")] public required string RootId { get; init; }
     [JsonPropertyName("s")] public required string[] Segments { get; init; }
     [JsonPropertyName("d")] public bool IsDirectory { get; init; }
@@ -18,6 +18,7 @@ internal sealed record TokenBody
     [JsonPropertyName("g")] public long ChangeStamp { get; init; }
     [JsonPropertyName("h")] public string? Sha256 { get; init; }
     [JsonPropertyName("o")] public int Offset { get; init; }
+    [JsonPropertyName("x")] public long ExpiresUnixMs { get; init; }   // one-shot grants only
 }
 
 /// <summary>
@@ -44,6 +45,13 @@ public sealed class SealedTokens
         using var gcm = new AesGcm(_key, 16);
         gcm.Encrypt(output.AsSpan(0, 12), plain, output.AsSpan(12, plain.Length), output.AsSpan(12 + plain.Length, 16), Aad);
         return Base64Url.EncodeToString(output);
+    }
+
+    /// <summary>True when the token is genuine and of this type; never throws for a wrong type or a forgery.</summary>
+    internal bool TryUnseal(string? token, string expectedType, out TokenBody body)
+    {
+        try { body = Unseal(token, expectedType); return true; }
+        catch (ProtocolException) { body = null!; return false; }
     }
 
     internal TokenBody Unseal(string? token, string expectedType)

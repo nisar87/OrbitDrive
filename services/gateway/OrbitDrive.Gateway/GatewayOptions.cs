@@ -37,6 +37,10 @@ public sealed class GatewayOptions
     public int MaxConcurrentStreamsPerOwner { get; set; } = 4;
     /// <summary>Unexpired download sessions one browser may hold (each is a prepared file on a PC).</summary>
     public int MaxDownloadSessionsPerDevice { get; set; } = 64;
+    /// <summary>How long a "send to my phone" invitation stays open before it expires.</summary>
+    public int InvitationTtlSeconds { get; set; } = 86400;
+    /// <summary>Open invitations one receiver may have at a time (a hostile or buggy PC cannot flood an Inbox).</summary>
+    public int MaxPendingInvitationsPerReceiver { get; set; } = 50;
     public int MaxControlMessageBytes { get; set; } = 262144;
     /// <summary>How often a connected PC must prove it is alive, and how long silence is tolerated before it is treated as offline.</summary>
     public int AgentHeartbeatSeconds { get; set; } = 10;

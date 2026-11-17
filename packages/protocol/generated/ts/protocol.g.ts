@@ -5,7 +5,7 @@ export type Int64String = string;
 
 export const PROTOCOL_VERSION = 1;
 export const MIN_PROTOCOL_VERSION = 1;
-export const ACTIONS = ["challenge","hello","create_pairing","confirm_pairing","pairing_claimed","list_roots","list_directory","prepare_read","open_read","cancel_stream","list_devices","revoke_device","heartbeat"] as const;
+export const ACTIONS = ["challenge","hello","create_pairing","confirm_pairing","pairing_claimed","list_roots","list_directory","prepare_read","open_read","cancel_stream","list_devices","revoke_device","heartbeat","create_invitation","list_invitations","cancel_invitation"] as const;
 
 export type EnvelopeKind = 'req' | 'res' | 'evt';
 
@@ -16,6 +16,8 @@ export type EntryKind = 'file' | 'directory';
 export type DownloadState = 'prepared' | 'sending' | 'interrupted' | 'sent_to_browser' | 'cancelled';
 
 export type PairingState = 'issued' | 'claimed' | 'approved' | 'denied' | 'expired';
+
+export type InvitationState = 'pending' | 'accepted' | 'declined' | 'cancelled' | 'expired';
 
 export type TransferState = 'offered' | 'accepted' | 'preparing' | 'transferring' | 'interrupted' | 'cancelled' | 'expired' | 'revoked' | 'sent_to_browser' | 'confirmed_saved';
 
@@ -200,6 +202,39 @@ export interface DownloadSessionList {
   sessions: DownloadSessionSummary[];
 }
 
+export interface CreateInvitationRequest {
+  receiverId: string;
+  name: string;
+  size: Int64String;
+  modifiedUnixMs: Int64String;
+  grant: string;
+  idempotencyKey: string;
+}
+
+export interface InvitationSummary {
+  invitationId: string;
+  pcId: string;
+  pcName: string;
+  receiverId: string;
+  receiverName: string;
+  name: string;
+  size: Int64String;
+  modifiedUnixMs: Int64String;
+  state: InvitationState;
+  sourceOnline: boolean;
+  createdAtUnixMs: Int64String;
+  expiresAtUnixMs: Int64String;
+  failure?: string | null;
+}
+
+export interface InvitationList {
+  invitations: InvitationSummary[];
+}
+
+export interface CancelInvitationRequest {
+  invitationId: string;
+}
+
 export interface OpenReadRequest {
   readToken: string;
   offset: Int64String;
@@ -217,6 +252,7 @@ export interface BrowserDeviceSummary {
   name: string;
   current: boolean;
   pcIds: string[];
+  lastSeenUnixMs?: Int64String | null;
 }
 
 export interface BrowserDeviceListResponse {
@@ -281,6 +317,10 @@ export interface ProtocolTypeMap {
   DownloadSession: DownloadSession;
   DownloadSessionSummary: DownloadSessionSummary;
   DownloadSessionList: DownloadSessionList;
+  CreateInvitationRequest: CreateInvitationRequest;
+  InvitationSummary: InvitationSummary;
+  InvitationList: InvitationList;
+  CancelInvitationRequest: CancelInvitationRequest;
   OpenReadRequest: OpenReadRequest;
   CancelStreamRequest: CancelStreamRequest;
   BrowserDeviceSummary: BrowserDeviceSummary;
@@ -335,6 +375,13 @@ export const SCHEMA = {
       "claimed",
       "approved",
       "denied",
+      "expired"
+    ],
+    "InvitationState": [
+      "pending",
+      "accepted",
+      "declined",
+      "cancelled",
       "expired"
     ],
     "TransferState": [
@@ -505,6 +552,35 @@ export const SCHEMA = {
     "DownloadSessionList": {
       "sessions": "DownloadSessionSummary[]"
     },
+    "CreateInvitationRequest": {
+      "receiverId": "string",
+      "name": "string",
+      "size": "int64",
+      "modifiedUnixMs": "int64",
+      "grant": "string",
+      "idempotencyKey": "string"
+    },
+    "InvitationSummary": {
+      "invitationId": "string",
+      "pcId": "string",
+      "pcName": "string",
+      "receiverId": "string",
+      "receiverName": "string",
+      "name": "string",
+      "size": "int64",
+      "modifiedUnixMs": "int64",
+      "state": "InvitationState",
+      "sourceOnline": "bool",
+      "createdAtUnixMs": "int64",
+      "expiresAtUnixMs": "int64",
+      "failure": "string?"
+    },
+    "InvitationList": {
+      "invitations": "InvitationSummary[]"
+    },
+    "CancelInvitationRequest": {
+      "invitationId": "string"
+    },
     "OpenReadRequest": {
       "readToken": "string",
       "offset": "int64",
@@ -519,7 +595,8 @@ export const SCHEMA = {
       "deviceId": "string",
       "name": "string",
       "current": "bool",
-      "pcIds": "string[]"
+      "pcIds": "string[]",
+      "lastSeenUnixMs": "int64?"
     },
     "BrowserDeviceListResponse": {
       "devices": "BrowserDeviceSummary[]"

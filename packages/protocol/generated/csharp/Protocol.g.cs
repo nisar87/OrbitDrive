@@ -25,7 +25,10 @@ public static class Actions
     public const string ListDevices = "list_devices";
     public const string RevokeDevice = "revoke_device";
     public const string Heartbeat = "heartbeat";
-    public static readonly IReadOnlySet<string> All = new HashSet<string> { "challenge", "hello", "create_pairing", "confirm_pairing", "pairing_claimed", "list_roots", "list_directory", "prepare_read", "open_read", "cancel_stream", "list_devices", "revoke_device", "heartbeat" };
+    public const string CreateInvitation = "create_invitation";
+    public const string ListInvitations = "list_invitations";
+    public const string CancelInvitation = "cancel_invitation";
+    public static readonly IReadOnlySet<string> All = new HashSet<string> { "challenge", "hello", "create_pairing", "confirm_pairing", "pairing_claimed", "list_roots", "list_directory", "prepare_read", "open_read", "cancel_stream", "list_devices", "revoke_device", "heartbeat", "create_invitation", "list_invitations", "cancel_invitation" };
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<EnvelopeKind>))]
@@ -82,6 +85,16 @@ public enum PairingState
     [JsonStringEnumMemberName("claimed")] Claimed,
     [JsonStringEnumMemberName("approved")] Approved,
     [JsonStringEnumMemberName("denied")] Denied,
+    [JsonStringEnumMemberName("expired")] Expired,
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter<InvitationState>))]
+public enum InvitationState
+{
+    [JsonStringEnumMemberName("pending")] Pending,
+    [JsonStringEnumMemberName("accepted")] Accepted,
+    [JsonStringEnumMemberName("declined")] Declined,
+    [JsonStringEnumMemberName("cancelled")] Cancelled,
     [JsonStringEnumMemberName("expired")] Expired,
 }
 
@@ -308,6 +321,43 @@ public sealed record DownloadSessionList
     [JsonPropertyName("sessions")] public required IReadOnlyList<DownloadSessionSummary> Sessions { get; init; }
 }
 
+public sealed record CreateInvitationRequest
+{
+    [JsonPropertyName("receiverId")] public required string ReceiverId { get; init; }
+    [JsonPropertyName("name")] public required string Name { get; init; }
+    [JsonPropertyName("size")] [JsonConverter(typeof(Int64StringConverter))] public required long Size { get; init; }
+    [JsonPropertyName("modifiedUnixMs")] [JsonConverter(typeof(Int64StringConverter))] public required long ModifiedUnixMs { get; init; }
+    [JsonPropertyName("grant")] public required string Grant { get; init; }
+    [JsonPropertyName("idempotencyKey")] public required string IdempotencyKey { get; init; }
+}
+
+public sealed record InvitationSummary
+{
+    [JsonPropertyName("invitationId")] public required string InvitationId { get; init; }
+    [JsonPropertyName("pcId")] public required string PcId { get; init; }
+    [JsonPropertyName("pcName")] public required string PcName { get; init; }
+    [JsonPropertyName("receiverId")] public required string ReceiverId { get; init; }
+    [JsonPropertyName("receiverName")] public required string ReceiverName { get; init; }
+    [JsonPropertyName("name")] public required string Name { get; init; }
+    [JsonPropertyName("size")] [JsonConverter(typeof(Int64StringConverter))] public required long Size { get; init; }
+    [JsonPropertyName("modifiedUnixMs")] [JsonConverter(typeof(Int64StringConverter))] public required long ModifiedUnixMs { get; init; }
+    [JsonPropertyName("state")] public required InvitationState State { get; init; }
+    [JsonPropertyName("sourceOnline")] public required bool SourceOnline { get; init; }
+    [JsonPropertyName("createdAtUnixMs")] [JsonConverter(typeof(Int64StringConverter))] public required long CreatedAtUnixMs { get; init; }
+    [JsonPropertyName("expiresAtUnixMs")] [JsonConverter(typeof(Int64StringConverter))] public required long ExpiresAtUnixMs { get; init; }
+    [JsonPropertyName("failure")] public string? Failure { get; init; }
+}
+
+public sealed record InvitationList
+{
+    [JsonPropertyName("invitations")] public required IReadOnlyList<InvitationSummary> Invitations { get; init; }
+}
+
+public sealed record CancelInvitationRequest
+{
+    [JsonPropertyName("invitationId")] public required string InvitationId { get; init; }
+}
+
 public sealed record OpenReadRequest
 {
     [JsonPropertyName("readToken")] public required string ReadToken { get; init; }
@@ -328,6 +378,7 @@ public sealed record BrowserDeviceSummary
     [JsonPropertyName("name")] public required string Name { get; init; }
     [JsonPropertyName("current")] public required bool Current { get; init; }
     [JsonPropertyName("pcIds")] public required IReadOnlyList<string> PcIds { get; init; }
+    [JsonPropertyName("lastSeenUnixMs")] [JsonConverter(typeof(NullableInt64StringConverter))] public long? LastSeenUnixMs { get; init; }
 }
 
 public sealed record BrowserDeviceListResponse

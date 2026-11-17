@@ -18,8 +18,11 @@ public sealed class ValidatedRead(SafeFileHandle handle, long offset, long lengt
 }
 
 /// <summary>Local, read-only filesystem policy. Applied to every instruction regardless of gateway authorisation.</summary>
-public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, SealedTokens tokens, Func<string, string?>? volumeIdentity = null)
+public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, SealedTokens tokens, Func<string, string?>? volumeIdentity = null, TimeProvider? clock = null)
 {
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+    /// <summary>Marks a read token whose file is one the owner picked in Explorer rather than one under a shared folder.</summary>
+    public const string OneShotRoot = "~oneshot";
     private readonly Func<string, string?> _volumeIdentity = volumeIdentity ?? NativeFile.GetVolumeIdentity;
     private const string DifferentDisk = "A different disk is at this location now. Share the folder again on the PC to allow access.";
 
@@ -170,13 +173,79 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         catch { handle.Dispose(); throw; }
     }
 
+    public sealed record OneShotOffer(string Name, long Size, long ModifiedUnixMs, string Grant);
+
+    /// <summary>
+    /// The owner picked this exact file (Explorer "Send to my phone"). It is sealed into a grant bound to the file's real location, size,
+    /// modified time and filesystem change stamp, and to an expiry. The grant reveals nothing about the parent folder to the relay or the
+    /// phone, creates no shared folder, and works only for the receiver the PC names in the invitation.
+    /// </summary>
+    public OneShotOffer IssueOneShot(string path, TimeSpan lifetime)
+    {
+        if (lifetime <= TimeSpan.Zero || lifetime > TimeSpan.FromDays(7)) throw new ProtocolException(ErrorCode.InvalidRequest, "Invalid lifetime.");
+        using var handle = OpenOneShotHandle(path, out var finalPath);
+        var name = Path.GetFileName(finalPath);
+        if (!PathPolicy.IsSafeSegment(name)) throw new ProtocolException(ErrorCode.InvalidRequest, "This file name cannot be sent.");
+        var modified = File.GetLastWriteTimeUtc(handle);
+        var size = RandomAccess.GetLength(handle);
+        var grant = tokens.Seal(new TokenBody
+        {
+            Type = "o", RootId = OneShotRoot, Segments = [finalPath], Size = size, ModifiedTicks = modified.Ticks,
+            ChangeStamp = NativeFile.GetChangeStamp(handle), ExpiresUnixMs = _clock.GetUtcNow().Add(lifetime).ToUnixTimeMilliseconds(),
+        });
+        return new OneShotOffer(name, size, new DateTimeOffset(modified).ToUnixTimeMilliseconds(), grant);
+    }
+
+    /// <summary>Opens one explicitly chosen file read-only and proves the opened object is a plain single-link regular file.</summary>
+    private static SafeFileHandle OpenOneShotHandle(string path, out string finalPath)
+    {
+        if (path.Length is 0 or > 32000 || path.Contains('\0') || !Path.IsPathFullyQualified(path) || path.StartsWith(@"\\", StringComparison.Ordinal) ||
+            (OperatingSystem.IsWindows() && path.IndexOf(':', 2) >= 0))
+            throw new ProtocolException(ErrorCode.InvalidRequest, "Only files on this PC's own drives can be sent.");
+        if (Directory.Exists(path)) throw new ProtocolException(ErrorCode.InvalidRequest, "Folders cannot be sent yet.");
+        try { var info = new FileInfo(path); if (info.Exists && info.Attributes.HasFlag(FileAttributes.ReparsePoint)) throw new ProtocolException(ErrorCode.LinkNotAllowed, "Links and shortcuts are not followed. Send the file they point to."); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* reported precisely by the open below */ }
+        SafeFileHandle handle;
+        try { handle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.Asynchronous | FileOptions.SequentialScan); }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException) { throw new ProtocolException(ErrorCode.NotFound, "The file no longer exists."); }
+        catch (UnauthorizedAccessException) { throw new ProtocolException(ErrorCode.AccessDeniedLocal, "Windows denied access to this file."); }
+        catch (IOException) { throw new ProtocolException(ErrorCode.Unavailable, "The file is in use by another program and cannot be read right now."); }
+        try
+        {
+            var (links, isReparse) = NativeFile.GetLinkInfo(handle);
+            if (isReparse) throw new ProtocolException(ErrorCode.LinkNotAllowed, "Links and junctions are not followed.");
+            if (links > 1) throw new ProtocolException(ErrorCode.LinkNotAllowed, "Files with multiple hard links are not sent.");
+            finalPath = NativeFile.GetFinalPath(handle);
+            return handle;
+        }
+        catch { handle.Dispose(); throw; }
+    }
+
+    /// <summary>Re-opens a granted file and proves it is still the very file, at the very revision, the owner offered.</summary>
+    private SafeFileHandle OpenGranted(TokenBody grant)
+    {
+        if (grant.ExpiresUnixMs <= _clock.GetUtcNow().ToUnixTimeMilliseconds()) throw new ProtocolException(ErrorCode.Expired, "The permission to send this file ran out.");
+        var handle = OpenOneShotHandle(grant.Segments[0], out var finalPath);
+        try
+        {
+            var sameFile = string.Equals(finalPath, grant.Segments[0], OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+            if (!sameFile) throw new ProtocolException(ErrorCode.NotFound, "The file was moved or replaced.");
+            if (RandomAccess.GetLength(handle) != grant.Size || File.GetLastWriteTimeUtc(handle).Ticks != grant.ModifiedTicks ||
+                (grant.ChangeStamp != 0 && NativeFile.GetChangeStamp(handle) != grant.ChangeStamp))
+                throw new ProtocolException(ErrorCode.RevisionChanged, "The file changed after it was offered.");
+            return handle;
+        }
+        catch { handle.Dispose(); throw; }
+    }
+
     /// <summary>Hashes the file under a share-read handle (writers are blocked on Windows) to produce a content-verified revision.</summary>
     public async Task<PrepareReadResult> PrepareReadAsync(PrepareReadRequest request, CancellationToken cancellation)
     {
-        var body = tokens.Unseal(request.EntryId, "e");
+        var oneShot = tokens.TryUnseal(request.EntryId, "o", out var grant);
+        var body = oneShot ? grant : tokens.Unseal(request.EntryId, "e");
         if (body.IsDirectory) throw new ProtocolException(ErrorCode.InvalidRequest, "Folders cannot be downloaded as a single file.");
-        var root = FindRoot(body.RootId);
-        using var handle = OpenValidated(root, body.Segments);
+        var root = oneShot ? null : FindRoot(body.RootId);
+        using var handle = oneShot ? OpenGranted(body) : OpenValidated(root!, body.Segments);
         var size = RandomAccess.GetLength(handle);
         var modified = File.GetLastWriteTimeUtc(handle);
         var changeStamp = NativeFile.GetChangeStamp(handle);
@@ -199,11 +268,11 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         var sha = Convert.ToHexStringLower(hash.GetHashAndReset());
         return new PrepareReadResult
         {
-            Name = body.Segments[^1],
+            Name = oneShot ? Path.GetFileName(body.Segments[0]) : body.Segments[^1],
             Size = size,
             ModifiedUnixMs = new DateTimeOffset(modified).ToUnixTimeMilliseconds(),
             Revision = "sha256-" + sha,
-            ReadToken = tokens.Seal(new TokenBody { Type = "r", RootId = root.RootId, Segments = body.Segments, Size = size, ModifiedTicks = modified.Ticks, ChangeStamp = changeStamp, Sha256 = sha }),
+            ReadToken = tokens.Seal(new TokenBody { Type = "r", RootId = oneShot ? OneShotRoot : root!.RootId, Segments = body.Segments, Size = size, ModifiedTicks = modified.Ticks, ChangeStamp = changeStamp, Sha256 = sha, ExpiresUnixMs = body.ExpiresUnixMs }),
         };
     }
 
@@ -211,10 +280,11 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
     public ValidatedRead OpenRead(string readToken, long offset, long length)
     {
         var body = tokens.Unseal(readToken, "r");
-        var root = FindRoot(body.RootId);
+        var oneShot = body.RootId == OneShotRoot;
+        var root = oneShot ? null : FindRoot(body.RootId);
         if (offset < 0 || length < 0 || offset > body.Size || length > body.Size - offset)
             throw new ProtocolException(ErrorCode.RangeNotSatisfiable, "Requested range is outside the file.");
-        var handle = OpenValidated(root, body.Segments);
+        var handle = oneShot ? OpenGranted(body) : OpenValidated(root!, body.Segments);
         // Size and modified time can be put back by whoever rewrites a file; the filesystem change stamp cannot.
         if (RandomAccess.GetLength(handle) != body.Size || File.GetLastWriteTimeUtc(handle).Ticks != body.ModifiedTicks ||
             (body.ChangeStamp != 0 && NativeFile.GetChangeStamp(handle) != body.ChangeStamp))
@@ -222,6 +292,6 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
             handle.Dispose();
             throw new ProtocolException(ErrorCode.RevisionChanged, "The file changed after this download was prepared.");
         }
-        return new ValidatedRead(handle, offset, length, body.Segments[^1]);
+        return new ValidatedRead(handle, offset, length, oneShot ? Path.GetFileName(body.Segments[0]) : body.Segments[^1]);
     }
 }

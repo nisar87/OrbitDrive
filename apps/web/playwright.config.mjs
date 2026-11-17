@@ -13,7 +13,7 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
   use: { baseURL: 'http://localhost:5173', trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   webServer: [
-    { command: 'npx vite --mode e2e', url: 'http://localhost:5173', env: { VITE_GATEWAY_URL: 'http://127.0.0.1:5199', VITE_AUTH_MODE: 'dev' }, reuseExistingServer: false },
+    { command: 'npx vite --mode e2e', url: 'http://localhost:5173', env: { VITE_GATEWAY_URL: 'http://127.0.0.1:5199', VITE_AUTH_MODE: 'dev', VITE_REGISTER_SW: 'true' }, reuseExistingServer: false },
     // Firebase mode against the local Auth emulator ("demo-" projects never touch a real Firebase project).
     { command: 'npx firebase emulators:start --only auth --project demo-orbitdrive', cwd: '../../tests/emulators', url: 'http://127.0.0.1:9099', reuseExistingServer: false, timeout: 120_000 },
     {

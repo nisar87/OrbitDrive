@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { api, ApiError, AUTH_MODE, GATEWAY_URL, loadDevice, loadSession, saveDevice, saveSession, setTokenProvider, type Session } from './api';
 import { firebaseAuth, type AuthUser } from './features/auth/firebaseAuth';
 import { AccountForms, VerifyEmail } from './features/auth/AccountForms';
@@ -12,6 +12,9 @@ import { DevicesApp } from './features/devices/DevicesApp';
 import { SettingsApp } from './features/settings/SettingsApp';
 import { TransfersApp } from './features/transfers/TransfersApp';
 import { transfers } from './features/transfers/transfers';
+import { InboxApp } from './features/inbox/InboxApp';
+import { inbox } from './features/inbox/inbox';
+import { pwa } from './pwa';
 import { applyTheme, loadPrefs, savePrefs, type Prefs } from './prefs';
 
 const initialLink = takePairingLinkFromLocation(window.location, window.history);
@@ -26,6 +29,8 @@ function Workspace({ session, onDevice, onSignOut, onUnauthenticated }: Workspac
   const signOut = useCallback(async () => {
     // Signing out revokes this browser's approval on the service, then clears every local credential.
     transfers.reset();
+    inbox.reset();
+    void pwa.purge();
     if (session.device) await api.revokeThisBrowser(session).catch(() => undefined);
     await onSignOut();
   }, [session, onSignOut]);
@@ -49,6 +54,7 @@ const glyph = (path: string) => <svg viewBox="0 0 24 24" aria-hidden="true"><pat
 const ICONS = {
   explorer: glyph('M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l2 2h8.8A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z'),
   devices: glyph('M4 5h11a1 1 0 0 1 1 1v2h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zm11 5v8h3v-8z'),
+  inbox: glyph('M4 13l2.2-6.2A2 2 0 0 1 8.1 5.5h7.8a2 2 0 0 1 1.9 1.3L20 13m-16 0v4.5A1.5 1.5 0 0 0 5.5 19h13a1.5 1.5 0 0 0 1.5-1.5V13m-16 0h4l1 2h6l1-2h4'),
   transfers: glyph('M8 4v12m0 0l-4-4m4 4l4-4M16 20V8m0 0l-4 4m4-4l4 4'),
   settings: glyph('M4 7h9m4 0h3M4 12h3m4 0h9M4 17h11m4 0h1M15 5v4M9 10v4M17 15v4'),
 };
@@ -61,13 +67,37 @@ function Workbench({ session, onAuthLost, onSignOut, onPairAnother }: { session:
   const updatePrefs = useCallback((next: Prefs) => { savePrefs(next); setPrefs(next); }, []);
   useEffect(() => { applyTheme(prefs.theme); }, [prefs.theme]);
   const changed = useCallback(() => setDataVersion((n) => n + 1), []);
+  useEffect(() => { inbox.start(session); }, [session]);
+  useEffect(() => { pwa.setBusyCheck(() => transfers.list().some((t) => t.state === 'preparing' || t.state === 'saving')); }, []);
+  useEffect(() => () => inbox.reset(), []);
+  const waiting = useSyncExternalStore(inbox.subscribe, inbox.pending);
+  const announcements = useSyncExternalStore(inbox.subscribe, inbox.announcements);
+  // A system notification opens the Inbox (it never carries a link or a file name).
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => { if ((event.data as { open?: string } | null)?.open === 'inbox') openApp.current?.('inbox'); };
+    navigator.serviceWorker?.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
+  }, []);
   const apps = useMemo<DesktopApp[]>(() => [
     { id: 'explorer', title: 'File Explorer', icon: ICONS.explorer, render: () => <Explorer session={session} prefs={prefs} onPrefs={updatePrefs} onAuthLost={onAuthLost} dataVersion={dataVersion} onOpenApp={(id) => openApp.current?.(id)} /> },
+    { id: 'inbox', title: 'Inbox', icon: ICONS.inbox, badge: waiting, render: () => <InboxApp session={session} /> },
     { id: 'transfers', title: 'Transfers', icon: ICONS.transfers, render: () => <TransfersApp session={session} /> },
     { id: 'devices', title: 'Devices', icon: ICONS.devices, render: () => <DevicesApp session={session} onAuthLost={onAuthLost} onPairAnother={onPairAnother} onChanged={changed} dataVersion={dataVersion} /> },
     { id: 'settings', title: 'Settings', icon: ICONS.settings, render: () => <SettingsApp prefs={prefs} onPrefs={updatePrefs} account={session.email} onSignOut={onSignOut} /> },
-  ], [session, prefs, updatePrefs, onAuthLost, dataVersion, onPairAnother, changed, onSignOut]);
-  return <Desktop apps={apps} account={session.email} prefs={prefs} onPrefs={updatePrefs} onSignOut={onSignOut} openRef={openApp} />;
+  ], [session, prefs, updatePrefs, onAuthLost, dataVersion, onPairAnother, changed, onSignOut, waiting]);
+  return (
+    <>
+      <Desktop apps={apps} account={session.email} prefs={prefs} onPrefs={updatePrefs} onSignOut={onSignOut} openRef={openApp} />
+      <div className="toast-region" role="status" aria-live="polite">
+        {announcements.slice(-1).map((text) => (
+          <div className="toast" key={text} data-testid="inbox-toast">
+            <span>{text}</span>
+            <span><button type="button" onClick={() => { openApp.current?.('inbox'); inbox.dismissAnnouncements(); }}>Open Inbox</button> <button type="button" className="ghost" aria-label="Dismiss" onClick={() => inbox.dismissAnnouncements()}>✕</button></span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
 }
 
 function DevApp() {
