@@ -1,0 +1,29 @@
+name: relay-probe
+# Independent outside-in diagnosis of the development relay from GitHub's network (not from the relay itself and
+# not from the owner's PC). Read-only: it only makes ordinary requests. TLS verification is never disabled.
+on:
+  push:
+    paths: ['infra/relay/probe-request.txt']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Probe DNS, port 80, port 443 and the TLS handshake
+        run: |
+          URL=$(jq -r .url infra/relay/environments/dev.json); HOST=${URL#https://}
+          echo "== DNS"; getent ahosts "$HOST" | head -3
+          echo "== port 80 (ACME HTTP-01 path and redirect)"
+          curl -sS -m 15 -o /dev/null -D - "http://$HOST/.well-known/acme-challenge/probe" || echo "PORT 80 FAILED: $?"
+          echo "== TLS handshake (certificate as presented, verification ON)"
+          timeout 20 openssl s_client -connect "$HOST:443" -servername "$HOST" -brief </dev/null 2>&1 | head -20 || true
+          echo "== certificate details"
+          timeout 20 openssl s_client -connect "$HOST:443" -servername "$HOST" </dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates -ext subjectAltName 2>&1 | head -12 || true
+          echo "== HTTPS request with normal verification"
+          curl -sS -m 20 -w '\nhttp=%{http_code} tls=%{ssl_verify_result}\n' "https://$HOST/v1/meta" || echo "HTTPS FAILED: $?"
+          echo "== host status file"
+          curl -sS -m 20 "https://$HOST/relay-status.json" || echo "STATUS FAILED: $?"
