@@ -242,9 +242,10 @@ test('desktop shell: windows, taskbar, launcher, account menu, theme', async ({ 
     await page.mouse.down(); await page.mouse.move(moved.x + moved.width - 106, moved.y + moved.height - 56, { steps: 5 }); await page.mouse.up();
     const resized = await settings.boundingBox();
     expect([Math.round(resized.width - moved.width), Math.round(resized.height - moved.height)]).toEqual([-100, -50]);
-    // Dragging far outside keeps the title bar reachable.
-    await page.mouse.move(resized.x + 200, resized.y + 18);
-    await page.mouse.down(); await page.mouse.move(-2000, -2000, { steps: 3 }); await page.mouse.up();
+    // Grab the title bar near its right end and pull it to the top-left corner of the screen: most of the window
+    // would leave the desktop. (Kept inside the viewport: test drivers do not deliver moves outside it.)
+    await page.mouse.move(resized.x + resized.width - 160, resized.y + 18);
+    await page.mouse.down(); await page.mouse.move(1, 1, { steps: 4 }); await page.mouse.up();
     const pinned = await settings.boundingBox();
     expect(pinned.y).toBeGreaterThanOrEqual(0);
     expect(Math.round(pinned.x + pinned.width)).toBe(200);         // buttons plus room to grab the title bar stay reachable
