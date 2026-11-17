@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# OrbitDrive relay updater (pull-based deployment).
+# The server polls this repository's public GitHub Releases over HTTPS: no inbound access, no SSH and no
+# credentials are needed on either side. A release is installed only if its checksum matches, and kept only
+# if the running gateway then reports exactly that version; otherwise the previous release is restored.
+set -euo pipefail
+ROOT=${ORBIT_ROOT:-/opt/orbitdrive}
+API=${ORBIT_API:-https://api.github.com/repos/nisar87/OrbitDrive}
+CHANNEL=${ORBIT_CHANNEL:-dev}
+HEALTH=${ORBIT_HEALTH_URL:-http://127.0.0.1:8080}
+RESTART=${ORBIT_RESTART_CMD:-systemctl restart orbitdrive-gateway}
+LOG=${ORBIT_DEPLOY_LOG:-/var/log/orbitdrive/deploy.log}
+MAX_DISK=${ORBIT_MAX_DISK_PCT:-90}
+TRIES=${ORBIT_HEALTH_TRIES:-30}
+mkdir -p "$ROOT/releases" "$(dirname "$LOG")"
+exec 9>"$ROOT/.update.lock"
+flock -n 9 || exit 0   # one update at a time
+
+audit() { printf '{"time":"%s","action":"%s","version":"%s","previous":"%s","detail":"%s"}\n' "$(date -u +%FT%TZ)" "$1" "${2:-}" "${3:-}" "${4:-}" >>"$LOG"; }
+current() { [ -L "$ROOT/current" ] && basename "$(readlink "$ROOT/current")" || true; }
+healthy() { # $1 = version the gateway must report
+  for _ in $(seq "$TRIES"); do
+    [ "$(curl -fsS -m 5 "$HEALTH/v1/meta" 2>/dev/null | jq -r '.version // empty' 2>/dev/null)" = "$1" ] && return 0
+    sleep 2
+  done
+  return 1
+}
+
+releases=$(curl -fsS -m 30 -H 'Accept: application/vnd.github+json' "$API/releases?per_page=30")
+tag=$(jq -r --arg p "relay-$CHANNEL-" '[.[] | select(.draft|not) | select(.tag_name|startswith($p))][0].tag_name // empty' <<<"$releases")
+[ -n "$tag" ] || exit 0
+version=${tag#relay-"$CHANNEL"-}
+[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { audit refused "$version" "" "invalid version in tag"; exit 1; }
+previous=$(current)
+[ "$version" = "$previous" ] && exit 0
+grep -qxF "$version" "$ROOT/bad-versions" 2>/dev/null && exit 0   # already tried and rolled back
+
+used=$(df --output=pcent "$ROOT" | tail -1 | tr -dc 0-9)
+[ "$used" -lt "$MAX_DISK" ] || { audit refused "$version" "$previous" "disk ${used}% used"; exit 1; }
+
+asset() { jq -r --arg t "$tag" --arg n "$1" '.[] | select(.tag_name==$t) | .assets[] | select(.name==$n) | .browser_download_url' <<<"$releases"; }
+work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+tar_url=$(asset "gateway-$version.tar.gz"); sum_url=$(asset "gateway-$version.tar.gz.sha256")
+[ -n "$tar_url" ] && [ -n "$sum_url" ] || { audit refused "$version" "$previous" "release assets missing"; exit 1; }
+curl -fsSL -m 300 -o "$work/gateway-$version.tar.gz" "$tar_url"
+curl -fsSL -m 60 -o "$work/gateway-$version.tar.gz.sha256" "$sum_url"
+(cd "$work" && sha256sum -c "gateway-$version.tar.gz.sha256" >/dev/null) || { audit refused "$version" "$previous" "checksum mismatch"; exit 1; }
+
+target="$ROOT/releases/$version"
+rm -rf "$target.tmp" && mkdir -p "$target.tmp"
+tar -xzf "$work/gateway-$version.tar.gz" -C "$target.tmp" --no-same-owner
+[ -f "$target.tmp/OrbitDrive.Gateway.dll" ] || { rm -rf "$target.tmp"; audit refused "$version" "$previous" "archive has no gateway"; exit 1; }
+rm -rf "$target" && mv "$target.tmp" "$target"
+
+switch() { ln -sfn "$ROOT/releases/$1" "$ROOT/current.new" && mv -T "$ROOT/current.new" "$ROOT/current"; $RESTART 9>&-; }   # never let the service inherit the update lock
+switch "$version"
+if healthy "$version"; then
+  audit deployed "$version" "$previous" "health check passed"
+  # keep the three newest releases plus whatever is current
+  ls -1t "$ROOT/releases" | tail -n +4 | while read -r old; do [ "$old" = "$version" ] || rm -rf "$ROOT/releases/${old:?}"; done
+  exit 0
+fi
+echo "$version" >>"$ROOT/bad-versions"
+if [ -n "$previous" ] && [ -d "$ROOT/releases/$previous" ]; then
+  switch "$previous"
+  if healthy "$previous"; then audit rolled_back "$version" "$previous" "new release failed health check; previous restored"
+  else audit rollback_failed "$version" "$previous" "previous release is not healthy either"; fi
+else
+  audit failed "$version" "" "first release failed health check; nothing to roll back to"
+fi
+exit 2

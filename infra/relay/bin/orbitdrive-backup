@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Daily local backup of relay configuration and state, with a restore check. Seven copies are kept.
+# Local copies protect against a bad change, not against losing the disk: the server can always be rebuilt from
+# the repository with bootstrap.sh. Off-host backup (Oracle Object Storage, Always Free) is a later step.
+set -euo pipefail
+DEST=${ORBIT_BACKUP_DIR:-/var/backups/orbitdrive}
+SOURCES=${ORBIT_BACKUP_SOURCES:-/etc/orbitdrive /var/lib/orbitdrive /etc/caddy/Caddyfile /opt/orbitdrive/bad-versions}
+mkdir -p "$DEST"; chmod 700 "$DEST"
+file="$DEST/orbitdrive-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+existing=(); for s in $SOURCES; do [ -e "$s" ] && existing+=("$s"); done
+tar -czf "$file" --absolute-names "${existing[@]}"
+# Restore test: the archive must list and extract cleanly, and every file must match what is on disk now.
+check=$(mktemp -d); trap 'rm -rf "$check"' EXIT
+tar -xzf "$file" -C "$check" --absolute-names --transform 's,^/,,'
+for s in "${existing[@]}"; do diff -r "$s" "$check/${s#/}" >/dev/null || { echo "backup verification failed for $s" >&2; rm -f "$file"; exit 1; }; done
+ls -1t "$DEST"/orbitdrive-*.tar.gz | tail -n +8 | xargs -r rm -f
+echo "backup ok: $file"

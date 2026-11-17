@@ -12,3 +12,6 @@ playwright-report/
 artifacts/
 *.log
 .firebase/
+
+# Relay host scripts live in a bin/ directory that must be tracked.
+!infra/relay/bin/
