@@ -70,13 +70,14 @@ test('create account, verify email, pair, download, sign out, sign in again, res
   expect(await code.textContent()).toBe(shown.confirmationCode);
   expect(shown.accountLabel).toBe(email);
   agent.send('approve');
-  await page.getByRole('button', { name: /Test Share/ }).click();
+  await page.getByRole('region', { name: "This account's PCs" }).getByRole('button', { name: /Test Share/ }).click();
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download data.bin' }).click()]);
   expect(sha256(readFileSync(await download.path()))).toBe(sha256(readFileSync(join(root, 'data.bin'))));
   await shot('03-explorer-signed-in');
   expect(await page.evaluate(() => localStorage.getItem('orbitdrive.session.v1')), 'no account token is stored by OrbitDrive in Firebase mode').toBeNull();
 
-  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Sign out' }).click();
   await expect(page.getByRole('heading', { name: 'Sign in' }).first()).toBeVisible();
   expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('orbitdrive.device'))), 'device credential cleared on sign-out').toEqual([]);
 

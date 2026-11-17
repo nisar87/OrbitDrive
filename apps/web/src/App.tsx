@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, AUTH_MODE, GATEWAY_URL, loadDevice, loadSession, saveDevice, saveSession, setTokenProvider, type Session } from './api';
 import { firebaseAuth, type AuthUser } from './features/auth/firebaseAuth';
 import { AccountForms, VerifyEmail } from './features/auth/AccountForms';
@@ -7,6 +7,10 @@ import { SignIn } from './features/auth/SignIn';
 import { Pairing } from './features/pairing/Pairing';
 import { Explorer } from './features/explorer/Explorer';
 import { Shell } from './features/desktop-shell/Shell';
+import { Desktop, type DesktopApp } from './features/desktop-shell/Desktop';
+import { DevicesApp } from './features/devices/DevicesApp';
+import { SettingsApp } from './features/settings/SettingsApp';
+import { applyTheme, loadPrefs, savePrefs, type Prefs } from './prefs';
 
 const initialLink = takePairingLinkFromLocation(window.location, window.history);
 
@@ -35,11 +39,30 @@ function Workspace({ session, onDevice, onSignOut, onUnauthenticated }: Workspac
       </Shell>
     );
   }
-  return (
-    <Shell title="File Explorer" account={session.email} onSignOut={signOut} onPairAnother={() => setPairing(true)}>
-      <Explorer session={session} onAuthLost={onAuthLost} />
-    </Shell>
-  );
+  return <Workbench session={session} onAuthLost={onAuthLost} onSignOut={() => void signOut()} onPairAnother={() => setPairing(true)} />;
+}
+
+const glyph = (path: string) => <svg viewBox="0 0 24 24" aria-hidden="true"><path d={path} /></svg>;
+const ICONS = {
+  explorer: glyph('M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l2 2h8.8A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z'),
+  devices: glyph('M4 5h11a1 1 0 0 1 1 1v2h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zm11 5v8h3v-8z'),
+  settings: glyph('M4 7h9m4 0h3M4 12h3m4 0h9M4 17h11m4 0h1M15 5v4M9 10v4M17 15v4'),
+};
+
+/** The signed-in, paired workspace: a desktop with the implemented apps only (Explorer, Devices, Settings). */
+function Workbench({ session, onAuthLost, onSignOut, onPairAnother }: { session: Session; onAuthLost: (error: unknown) => void; onSignOut: () => void; onPairAnother: () => void }) {
+  const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
+  const [dataVersion, setDataVersion] = useState(0);
+  const openApp = useRef<((id: string) => void) | null>(null);
+  const updatePrefs = useCallback((next: Prefs) => { savePrefs(next); setPrefs(next); }, []);
+  useEffect(() => { applyTheme(prefs.theme); }, [prefs.theme]);
+  const changed = useCallback(() => setDataVersion((n) => n + 1), []);
+  const apps = useMemo<DesktopApp[]>(() => [
+    { id: 'explorer', title: 'File Explorer', icon: ICONS.explorer, render: () => <Explorer session={session} prefs={prefs} onPrefs={updatePrefs} onAuthLost={onAuthLost} dataVersion={dataVersion} /> },
+    { id: 'devices', title: 'Devices', icon: ICONS.devices, render: () => <DevicesApp session={session} onAuthLost={onAuthLost} onPairAnother={onPairAnother} onChanged={changed} dataVersion={dataVersion} /> },
+    { id: 'settings', title: 'Settings', icon: ICONS.settings, render: () => <SettingsApp prefs={prefs} onPrefs={updatePrefs} account={session.email} onSignOut={onSignOut} /> },
+  ], [session, prefs, updatePrefs, onAuthLost, dataVersion, onPairAnother, changed, onSignOut]);
+  return <Desktop apps={apps} account={session.email} prefs={prefs} onPrefs={updatePrefs} onSignOut={onSignOut} openRef={openApp} />;
 }
 
 function DevApp() {
@@ -77,7 +100,7 @@ function FirebaseApp() {
 }
 
 export function App() {
-  useEffect(() => { document.title = 'OrbitDrive'; }, []);
+  useEffect(() => { document.title = 'OrbitDrive'; applyTheme(loadPrefs().theme); }, []);
   if (!GATEWAY_URL) return <Shell title="Setup needed"><p role="alert" className="notice error">This build has no relay address configured (VITE_GATEWAY_URL).</p></Shell>;
   return AUTH_MODE === 'dev' ? <DevApp /> : <FirebaseApp />;
 }

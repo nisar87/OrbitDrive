@@ -1,11 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { api, ApiError, GATEWAY_URL, type Session } from '../../api';
 import type { Breadcrumb, DownloadSession, FileEntry, PcSummary, RootSummary } from '../../protocol';
 import { formatBytes, formatTime } from '../../format';
-import { Devices } from '../devices/Devices';
+import type { Prefs, SortKey, ViewMode } from '../../prefs';
+import { emptySelection, filterEntries, pruneSelection, select, sortEntries, totalSize, typeLabel, type Selection } from './model';
 
 interface Location { pc: PcSummary; root: RootSummary; entryId: string | null }
 type Transfer = { name: string; phase: 'preparing' } | { name: string; phase: 'handed'; session: DownloadSession } | { name: string; phase: 'failed'; message: string };
+interface Menu { x: number; y: number; entryId: string }
+const PAGE = 200, LOAD_ALL_LIMIT = 20_000;
+const SORTS: { key: SortKey; label: string }[] = [{ key: 'name', label: 'Name' }, { key: 'modified', label: 'Date modified' }, { key: 'type', label: 'Type' }, { key: 'size', label: 'Size' }];
 
 /** Two-step button for actions that end access; avoids blocking browser dialogs. */
 export function ConfirmButton({ label, confirmLabel, onConfirm }: { label: string; confirmLabel: string; onConfirm: () => void | Promise<void> }) {
@@ -19,7 +24,19 @@ export function ConfirmButton({ label, confirmLabel, onConfirm }: { label: strin
   );
 }
 
-export function Explorer({ session, onAuthLost }: { session: Session; onAuthLost: (error: unknown) => void }) {
+const Icon = ({ name }: { name: 'back' | 'forward' | 'up' | 'refresh' | 'tree' }) => (
+  <svg className="tool-icon" viewBox="0 0 16 16" aria-hidden="true">
+    {name === 'back' && <path d="M9.5 3L4.5 8l5 5M4.5 8h8" />}
+    {name === 'forward' && <path d="M6.5 3l5 5-5 5M11.5 8h-8" />}
+    {name === 'up' && <path d="M3 7.5l5-5 5 5M8 2.5v11" />}
+    {name === 'refresh' && <path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v3h-3" />}
+    {name === 'tree' && <path d="M2.5 3.5h11M2.5 8h11M2.5 12.5h11" />}
+  </svg>
+);
+
+interface Props { session: Session; prefs: Prefs; onPrefs: (next: Prefs) => void; onAuthLost: (error: unknown) => void; dataVersion: number }
+
+export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion }: Props) {
   const [pcs, setPcs] = useState<PcSummary[] | null>(null);
   const [roots, setRoots] = useState<Record<string, RootSummary[] | string>>({});
   const [location, setLocation] = useState<Location | null>(null);
@@ -30,14 +47,26 @@ export function Explorer({ session, onAuthLost }: { session: Session; onAuthLost
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transfer, setTransfer] = useState<Transfer | null>(null);
+  const [filter, setFilter] = useState('');
+  const [selection, setSelection] = useState<Selection>(emptySelection);
+  const [selectMode, setSelectMode] = useState(false);
+  const [current, setCurrent] = useState<string | null>(null);
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const [properties, setProperties] = useState<FileEntry[] | null>(null);
+  const [treeDrawer, setTreeDrawer] = useState(false);
+  // Visit history for Back/Forward. Browser Back is wired to the same list through history.state.
+  const history = useRef<{ list: (Location | null)[]; index: number }>({ list: [null], index: 0 });
+  const [, bump] = useState(0);
+  const body = useRef<HTMLDivElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const requestId = useRef(0);
 
   const fail = useCallback((e: unknown) => {
     onAuthLost(e);
     setError(e instanceof ApiError ? e.message : 'Something went wrong.');
   }, [onAuthLost]);
 
-  const loadHome = useCallback(async () => {
-    setError(null); setLocation(null);
+  const loadPcs = useCallback(async () => {
     try {
       const list = (await api.pcs(session)).pcs;
       setPcs(list);
@@ -50,20 +79,75 @@ export function Explorer({ session, onAuthLost }: { session: Session; onAuthLost
     } catch (e) { fail(e); }
   }, [session, fail]);
 
-  useEffect(() => { void loadHome(); }, [loadHome]);
-
-  const open = useCallback(async (target: Location, more?: string) => {
-    setLoading(true); setError(null);
+  /** Shows a location (null = the list of PCs). `more` appends the next page of the same folder. */
+  const show = useCallback(async (target: Location | null, more?: string): Promise<boolean> => {
+    const id = ++requestId.current;
+    setError(null); setMenu(null);
+    if (target === null) {
+      setLocation(null); setEntries([]); setBreadcrumbs([]); setCursor(null); setSkipped(0); setSelection(emptySelection); setFilter(''); setCurrent(null);
+      await loadPcs();
+      return true;
+    }
+    setLoading(true);
     try {
-      const page = await api.directory(session, target.pc.pcId, { rootId: target.root.rootId, entryId: target.entryId, cursor: more ?? null, pageSize: 100 });
+      const page = await api.directory(session, target.pc.pcId, { rootId: target.root.rootId, entryId: target.entryId, cursor: more ?? null, pageSize: PAGE });
+      if (id !== requestId.current) return false;              // a newer navigation won
       setLocation(target);
       setEntries((previous) => (more ? [...previous, ...page.entries] : page.entries));
       setBreadcrumbs(page.breadcrumbs);
       setCursor(page.nextCursor ?? null);
       setSkipped(page.skippedLinks);
-    } catch (e) { fail(e); }
-    finally { setLoading(false); }
-  }, [session, fail]);
+      if (!more) { setSelection(emptySelection); setFilter(''); setCurrent(null); }
+      return true;
+    } catch (e) { if (id === requestId.current) fail(e); return false; }
+    finally { if (id === requestId.current) setLoading(false); }
+  }, [session, fail, loadPcs]);
+
+  /** A user navigation: shows the place and records it for Back/Forward (app buttons and the browser's Back). */
+  const navigate = useCallback(async (target: Location | null) => {
+    if (!(await show(target))) return;
+    const h = history.current;
+    h.list = [...h.list.slice(0, h.index + 1), target];
+    h.index = h.list.length - 1;
+    window.history.pushState({ orbitExplorer: h.index }, '');
+    bump((n) => n + 1);
+    body.current?.scrollTo({ top: 0 });
+    // Opening a folder removes the item that had focus. Keep keyboard users inside the list instead of dropping
+    // focus to the page (where Backspace, arrows and Enter would do nothing).
+    requestAnimationFrame(() => {
+      const content = body.current;
+      if (!content || (document.activeElement !== document.body && !content.contains(document.activeElement))) return;
+      (content.querySelector<HTMLElement>('.row-button[tabindex="0"], .tile:not(:disabled)') ?? content).focus({ preventScroll: true });
+    });
+  }, [show]);
+
+  const go = useCallback(async (index: number) => {
+    const h = history.current;
+    if (index < 0 || index >= h.list.length) return;
+    h.index = index;
+    bump((n) => n + 1);
+    await show(h.list[index]);
+  }, [show]);
+
+  useEffect(() => {
+    window.history.replaceState({ orbitExplorer: 0 }, '');
+    const onPop = (event: PopStateEvent) => {
+      const index = (event.state as { orbitExplorer?: unknown } | null)?.orbitExplorer;
+      if (typeof index === 'number') void go(index);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [go]);
+
+  // First load, and whenever another app changed what this browser can reach (PC disconnected, device removed).
+  useEffect(() => { void show(history.current.list[history.current.index]); }, [show, dataVersion]);
+
+  const visible = useMemo(() => sortEntries(filterEntries(entries, filter, prefs.showHidden), prefs.sortKey, prefs.sortDescending), [entries, filter, prefs.showHidden, prefs.sortKey, prefs.sortDescending]);
+  const order = useMemo(() => visible.map((entry) => entry.entryId), [visible]);
+  useEffect(() => { setSelection((s) => pruneSelection(s, order)); }, [order]);
+  const selected = useMemo(() => visible.filter((entry) => selection.ids.has(entry.entryId)), [visible, selection]);
+  const hiddenCount = useMemo(() => (prefs.showHidden ? 0 : entries.filter((entry) => entry.hidden).length), [entries, prefs.showHidden]);
+  const currentId = current !== null && order.includes(current) ? current : order[0] ?? null;
 
   async function download(entry: FileEntry) {
     if (!location) return;
@@ -84,86 +168,311 @@ export function Explorer({ session, onAuthLost }: { session: Session; onAuthLost
     }
   }
 
-  if (!location) {
-    return (
-      <section aria-label="This account's PCs">
-        <div className="commandbar"><button type="button" className="ghost" onClick={() => void loadHome()}>Refresh</button></div>
-        {error && <p role="alert" className="notice error">{error}</p>}
-        {pcs === null && !error && <p className="empty">Loading your PCs…</p>}
-        {pcs?.length === 0 && <p className="empty">No PCs are paired with this browser yet.</p>}
-        {pcs?.map((pc) => {
-          const state = roots[pc.pcId];
-          return (
-            <article key={pc.pcId} className="pc">
-              <h2><span className={pc.online ? 'dot online' : 'dot'} aria-hidden="true" />{pc.name} <small>{pc.online ? 'Online' : `Offline · last seen ${formatTime(pc.lastSeenUnixMs)}`}</small></h2>
-              {typeof state === 'string' && <p className="notice">{state}</p>}
-              {Array.isArray(state) && state.length === 0 && <p className="empty">No folders are shared from this PC. Choose folders to share in OrbitDrive on the PC.</p>}
-              {Array.isArray(state) && (
-                <ul className="tiles">
-                  {state.map((root) => (
-                    <li key={root.rootId}>
-                      <button type="button" className="tile" disabled={!root.available} onClick={() => void open({ pc, root, entryId: null })}>
-                        <span className="icon folder" aria-hidden="true" />
-                        <span>{root.name}<small>{root.available ? 'Read-only' : 'Unavailable on the PC'}</small></span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <ConfirmButton label="Disconnect this PC" confirmLabel={`Yes, disconnect ${pc.name}`}
-                onConfirm={async () => { try { await api.disconnectPc(session, pc.pcId); await loadHome(); } catch (e) { fail(e); } }} />
-            </article>
-          );
-        })}
-        {pcs !== null && <Devices session={session} pcs={pcs} onError={fail} />}
-      </section>
-    );
+  const activate = (entry: FileEntry) => { if (!location) return; if (entry.kind === 'directory') void navigate({ ...location, entryId: entry.entryId }); else void download(entry); };
+
+  async function loadAll() {
+    if (!location) return;
+    let next = cursor, count = entries.length;
+    while (next && count < LOAD_ALL_LIMIT) {
+      const id = ++requestId.current;
+      setLoading(true);
+      try {
+        const page = await api.directory(session, location.pc.pcId, { rootId: location.root.rootId, entryId: location.entryId, cursor: next, pageSize: PAGE });
+        if (id !== requestId.current) return;
+        setEntries((previous) => [...previous, ...page.entries]);
+        count += page.entries.length; next = page.nextCursor ?? null;
+        setCursor(next);
+      } catch (e) { fail(e); break; }
+      finally { setLoading(false); }
+    }
   }
 
+  const focusRow = (id: string) => requestAnimationFrame(() => body.current?.querySelector<HTMLElement>(`[data-entry="${CSS.escape(id)}"] .row-button`)?.focus());
+
+  function onListKeyDown(event: ReactKeyboardEvent) {
+    if ((event.target as HTMLElement).closest('input, select, dialog')) return;
+    const index = currentId === null ? -1 : order.indexOf(currentId);
+    const columns = prefs.view === 'details' ? 1 : Math.max(1, Math.floor((body.current?.querySelector('tbody')?.clientWidth ?? 1) / ((body.current?.querySelector('tbody tr') as HTMLElement | null)?.offsetWidth || 1)));
+    const move = (to: number, extend: boolean) => {
+      if (order.length === 0) return;
+      const id = order[Math.min(Math.max(to, 0), order.length - 1)];
+      event.preventDefault();
+      setCurrent(id);
+      if (extend) setSelection((s) => select(s.anchor === null ? { ids: s.ids, anchor: currentId } : s, order, id, 'range'));
+      focusRow(id);
+    };
+    if (event.key === 'ArrowDown') move(index + columns, event.shiftKey);
+    else if (event.key === 'ArrowUp') move(index - columns, event.shiftKey);
+    else if (event.key === 'ArrowRight' && prefs.view !== 'details') move(index + 1, event.shiftKey);
+    else if (event.key === 'ArrowLeft' && prefs.view !== 'details' && !event.altKey) move(index - 1, event.shiftKey);
+    else if (event.key === 'Home') move(0, event.shiftKey);
+    else if (event.key === 'End') move(order.length - 1, event.shiftKey);
+    else if (event.key === ' ' && currentId !== null && (event.target as HTMLElement).classList.contains('row-button')) { event.preventDefault(); setSelection((s) => select(s, order, currentId, 'toggle')); }
+    else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') { event.preventDefault(); setSelection({ ids: new Set(order), anchor: order[0] ?? null }); }
+    else if (event.key === 'Escape' && selection.ids.size > 0) { setSelection(emptySelection); setSelectMode(false); }
+    else if (event.key === 'Backspace' || (event.altKey && event.key === 'ArrowUp')) { event.preventDefault(); goUp(); }
+    else if (event.altKey && event.key === 'ArrowLeft') { event.preventDefault(); void go(history.current.index - 1); }
+    else if (event.altKey && event.key === 'ArrowRight') { event.preventDefault(); void go(history.current.index + 1); }
+    else if ((event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) && currentId !== null) {
+      event.preventDefault();
+      const rect = body.current?.querySelector(`[data-entry="${CSS.escape(currentId)}"]`)?.getBoundingClientRect();
+      openMenu(currentId, (rect?.left ?? 0) + 40, (rect?.top ?? 0) + 24);
+    }
+  }
+
+  function goUp() {
+    if (!location) return;
+    if (breadcrumbs.length <= 1) void navigate(null);
+    else void navigate({ ...location, entryId: breadcrumbs[breadcrumbs.length - 2].entryId ?? null });
+  }
+
+  function openMenu(entryId: string, x: number, y: number) {
+    if (!selection.ids.has(entryId)) setSelection({ ids: new Set([entryId]), anchor: entryId });
+    setCurrent(entryId);
+    setMenu({ entryId, x: Math.min(x, window.innerWidth - 230), y: Math.min(y, window.innerHeight - 190) });
+  }
+
+  function onRowClick(event: ReactMouseEvent, entry: FileEntry) {
+    if ((event.target as HTMLElement).closest('button, input')) return;       // the name button and the checkbox act for themselves
+    setCurrent(entry.entryId);
+    setSelection((s) => select(s, order, entry.entryId, event.shiftKey ? 'range' : event.ctrlKey || event.metaKey || selectMode ? 'toggle' : 'single'));
+  }
+
+  // Long-press on touch opens the actions menu (a tap opens the item).
+  const press = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const suppressClick = useRef(false);
+  const startPress = (entryId: string) => (event: React.PointerEvent) => {
+    if (event.pointerType === 'mouse') return;
+    const { clientX, clientY } = event;
+    press.current = setTimeout(() => { suppressClick.current = true; openMenu(entryId, clientX, clientY); }, 550);
+  };
+  const cancelPress = () => clearTimeout(press.current);
+
+  useEffect(() => { if (properties) dialog.current?.showModal(); }, [properties]);
+  // Keep the end of a long path in view: the current folder matters more than the first crumb.
+  const crumbs = useRef<HTMLElement>(null);
+  useEffect(() => { const bar = crumbs.current; if (bar) bar.scrollLeft = bar.scrollWidth; }, [breadcrumbs, location]);
+  const setPref = (patch: Partial<Prefs>) => onPrefs({ ...prefs, ...patch });
+  const showCheckboxes = selectMode || selection.ids.size > 1;
+  const h = history.current;
+
+  const tree = (
+    <nav className={`tree${treeDrawer ? ' drawer-open' : ''}`} aria-label="PCs and shared folders">
+      <button type="button" className={`tree-item home${location === null ? ' current' : ''}`} aria-current={location === null ? 'true' : undefined} onClick={() => { setTreeDrawer(false); void navigate(null); }}>
+        <span className="icon pc" aria-hidden="true" />This account&apos;s PCs
+      </button>
+      {pcs?.map((pc) => {
+        const state = roots[pc.pcId];
+        return (
+          <div key={pc.pcId} className="tree-group">
+            <p className="tree-pc"><span className={pc.online ? 'dot online' : 'dot'} aria-hidden="true" /><bdi>{pc.name}</bdi>{!pc.online && <small> (offline)</small>}</p>
+            {Array.isArray(state) && state.map((root) => {
+              const here = location?.pc.pcId === pc.pcId && location.root.rootId === root.rootId;
+              return (
+                <button key={root.rootId} type="button" className={`tree-item${here ? ' current' : ''}`} aria-current={here ? 'true' : undefined} disabled={!root.available}
+                  onClick={() => { setTreeDrawer(false); void navigate({ pc, root, entryId: null }); }}>
+                  <span className="icon folder" aria-hidden="true" /><bdi>{root.name}</bdi>
+                </button>
+              );
+            })}
+          </div>
+        );
+      })}
+    </nav>
+  );
+
+  const menuEntry = menu ? visible.find((entry) => entry.entryId === menu.entryId) ?? null : null;
+
   return (
-    <section aria-label="Files">
-      <nav className="commandbar" aria-label="Breadcrumb">
-        <button type="button" className="ghost" onClick={() => void loadHome()}>{location.pc.name}</button>
-        {breadcrumbs.map((crumb, index) => (
-          <span key={index} className="crumb">
-            <span aria-hidden="true">›</span>
-            <button type="button" className="ghost" aria-current={index === breadcrumbs.length - 1 ? 'page' : undefined}
-              onClick={() => void open({ ...location, entryId: crumb.entryId ?? null })}>{crumb.name}</button>
-          </span>
-        ))}
-        <span className="spacer" />
-        <button type="button" className="ghost" onClick={() => void open(location)}>Refresh</button>
-      </nav>
-      {error && <p role="alert" className="notice error">{error}</p>}
-      {transfer && (
-        <p role="status" className={transfer.phase === 'failed' ? 'notice error' : 'notice'} data-testid="transfer-status">
-          {transfer.phase === 'preparing' && <>Checking <strong>{transfer.name}</strong> on the PC…</>}
-          {transfer.phase === 'handed' && <><strong>{transfer.name}</strong> ({formatBytes(transfer.session.size)}) was handed to your browser. Check your browser's downloads — OrbitDrive cannot see when the file has finished saving.</>}
-          {transfer.phase === 'failed' && <><strong>{transfer.name}</strong>: {transfer.message}</>}
+    <div className="explorer" data-tree={prefs.treeOpen ? 'open' : 'closed'}>
+      <div className="toolbar" role="toolbar" aria-label="Navigation">
+        <button type="button" className="ghost icon-button tree-toggle" aria-label="Folders" aria-expanded={treeDrawer} onClick={() => { setTreeDrawer((open) => !open); setPref({ treeOpen: !prefs.treeOpen }); }}><Icon name="tree" /></button>
+        <button type="button" className="ghost icon-button" aria-label="Back" disabled={h.index === 0} onClick={() => void go(h.index - 1)}><Icon name="back" /></button>
+        <button type="button" className="ghost icon-button" aria-label="Forward" disabled={h.index >= h.list.length - 1} onClick={() => void go(h.index + 1)}><Icon name="forward" /></button>
+        <button type="button" className="ghost icon-button" aria-label="Up one level" disabled={location === null} onClick={goUp}><Icon name="up" /></button>
+        <button type="button" className="ghost icon-button" aria-label="Refresh" onClick={() => void show(location)}><Icon name="refresh" /></button>
+        <nav className="breadcrumbs" aria-label="Breadcrumb" ref={crumbs}>
+          <button type="button" className="ghost" onClick={() => void navigate(null)} aria-current={location === null ? 'page' : undefined}>{location ? location.pc.name : 'This account’s PCs'}</button>
+          {location && breadcrumbs.map((crumb, index) => (
+            <span key={index} className="crumb">
+              <span aria-hidden="true">›</span>
+              <button type="button" className="ghost" aria-current={index === breadcrumbs.length - 1 ? 'page' : undefined}
+                onClick={() => void navigate({ ...location, entryId: crumb.entryId ?? null })}><bdi>{crumb.name}</bdi></button>
+            </span>
+          ))}
+        </nav>
+      </div>
+
+      {location && (
+        <div className="toolbar second" role="toolbar" aria-label="View">
+          <input type="search" className="filter" aria-label="Filter this folder" placeholder="Filter this folder" value={filter} onChange={(event) => setFilter(event.target.value)} />
+          <label className="inline"><span className="label-text">Sort by</span>
+            <select value={prefs.sortKey} onChange={(event) => setPref({ sortKey: event.target.value as SortKey })}>
+              {SORTS.map((sort) => <option key={sort.key} value={sort.key}>{sort.label}</option>)}
+            </select>
+          </label>
+          <button type="button" className="ghost" aria-label={prefs.sortDescending ? 'Descending. Switch to ascending' : 'Ascending. Switch to descending'} onClick={() => setPref({ sortDescending: !prefs.sortDescending })}>{prefs.sortDescending ? '↓' : '↑'}</button>
+          <div className="segmented" role="group" aria-label="View">
+            {(['details', 'list', 'icons'] as ViewMode[]).map((view) => (
+              <button key={view} type="button" className="ghost" aria-pressed={prefs.view === view} onClick={() => setPref({ view })}>{view === 'details' ? 'Details' : view === 'list' ? 'List' : 'Icons'}</button>
+            ))}
+          </div>
+          <button type="button" className="ghost" aria-pressed={selectMode} onClick={() => { setSelectMode((on) => !on); if (selectMode) setSelection(emptySelection); }}>Select</button>
+        </div>
+      )}
+
+      <div className="explorer-main">
+        {tree}
+        {treeDrawer && <button type="button" className="scrim" aria-label="Close folders" onClick={() => setTreeDrawer(false)} />}
+        <div className="content" ref={body} tabIndex={-1} onKeyDown={onListKeyDown}>
+          {error && <p role="alert" className="notice error">{error}</p>}
+          {transfer && (
+            <p role="status" className={transfer.phase === 'failed' ? 'notice error' : 'notice'} data-testid="transfer-status">
+              {transfer.phase === 'preparing' && <>Checking <strong><bdi>{transfer.name}</bdi></strong> on the PC…</>}
+              {transfer.phase === 'handed' && <><strong><bdi>{transfer.name}</bdi></strong> ({formatBytes(transfer.session.size)}) was handed to your browser. Check your browser&apos;s downloads — OrbitDrive cannot see when the file has finished saving.</>}
+              {transfer.phase === 'failed' && <><strong><bdi>{transfer.name}</bdi></strong>: {transfer.message}</>}
+            </p>
+          )}
+
+          {location === null ? (
+            <section aria-label="This account's PCs">
+              {pcs === null && !error && <p className="empty" role="status">Loading your PCs…</p>}
+              {pcs?.length === 0 && <p className="empty">No PCs are paired with this browser yet.</p>}
+              {pcs?.map((pc) => {
+                const state = roots[pc.pcId];
+                return (
+                  <article key={pc.pcId} className="pc">
+                    <h2><span className={pc.online ? 'dot online' : 'dot'} aria-hidden="true" /><bdi>{pc.name}</bdi> <small>{pc.online ? 'Online' : `Offline · last seen ${formatTime(pc.lastSeenUnixMs)}`}</small></h2>
+                    {typeof state === 'string' && <p className="notice">{state}</p>}
+                    {Array.isArray(state) && state.length === 0 && <p className="empty">No folders are shared from this PC. Choose folders to share in OrbitDrive on the PC.</p>}
+                    {Array.isArray(state) && (
+                      <ul className="tiles">
+                        {state.map((root) => (
+                          <li key={root.rootId}>
+                            <button type="button" className="tile" disabled={!root.available} onClick={() => void navigate({ pc, root, entryId: null })}>
+                              <span className="icon folder large" aria-hidden="true" />
+                              <span><bdi>{root.name}</bdi><small>{root.available ? 'Read-only' : 'Unavailable on the PC'}</small></span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </article>
+                );
+              })}
+            </section>
+          ) : (
+            <>
+              <table className="entries" data-view={prefs.view} aria-label="Files and folders" aria-multiselectable="true">
+                <thead>
+                  <tr>
+                    {showCheckboxes && <th scope="col" className="check"><span className="sr-only">Selected</span></th>}
+                    {SORTS.map((sort) => (
+                      <th key={sort.key} scope="col" className={sort.key} aria-sort={prefs.sortKey === sort.key ? (prefs.sortDescending ? 'descending' : 'ascending') : undefined}>
+                        <button type="button" className="ghost th-button" onClick={() => setPref(prefs.sortKey === sort.key ? { sortDescending: !prefs.sortDescending } : { sortKey: sort.key, sortDescending: false })}>
+                          {sort.label}{prefs.sortKey === sort.key && <span aria-hidden="true"> {prefs.sortDescending ? '↓' : '↑'}</span>}
+                        </button>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((entry) => {
+                    const isSelected = selection.ids.has(entry.entryId);
+                    return (
+                      <tr key={entry.entryId} data-entry={entry.entryId} aria-selected={isSelected} className={isSelected ? 'selected' : undefined}
+                        onClick={(event) => onRowClick(event, entry)} onDoubleClick={(event) => { if (!(event.target as HTMLElement).closest('button, input')) activate(entry); }}
+                        onContextMenu={(event) => { event.preventDefault(); openMenu(entry.entryId, event.clientX, event.clientY); }}
+                        onPointerDown={startPress(entry.entryId)} onPointerUp={cancelPress} onPointerMove={cancelPress} onPointerCancel={cancelPress}>
+                        {showCheckboxes && (
+                          <td className="check"><input type="checkbox" aria-label={`Select ${entry.name}`} checked={isSelected} onChange={() => setSelection((s) => select(s, order, entry.entryId, 'toggle'))} /></td>
+                        )}
+                        <td className="name">
+                          <button type="button" className="row-button" tabIndex={entry.entryId === currentId ? 0 : -1} onFocus={() => setCurrent(entry.entryId)}
+                            onClick={() => { if (suppressClick.current) { suppressClick.current = false; return; } activate(entry); }}
+                            title={entry.name} aria-label={entry.kind === 'directory' ? `Open folder ${entry.name}` : `Download ${entry.name}`}>
+                            <span className={`icon ${entry.kind === 'directory' ? 'folder' : 'file'}`} aria-hidden="true" /><bdi>{entry.name}</bdi>
+                          </button>
+                        </td>
+                        <td className="modified">{formatTime(entry.modifiedUnixMs)}</td>
+                        <td className="type">{typeLabel(entry)}</td>
+                        <td className="size">{entry.kind === 'file' ? formatBytes(entry.size) : ''}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {!loading && !error && entries.length === 0 && <p className="empty">This folder is empty.</p>}
+              {!loading && entries.length > 0 && visible.length === 0 && <p className="empty">{filter.trim() ? <>Nothing in this folder matches “<bdi>{filter.trim()}</bdi>”.</> : 'Only hidden items are here. Turn on “Show hidden items” in Settings to see them.'}</p>}
+              {skipped > 0 && <p className="notice">{skipped} link{skipped === 1 ? '' : 's'} or shortcut target{skipped === 1 ? '' : 's'} not shown. OrbitDrive does not follow links out of a shared folder.</p>}
+              {cursor && (
+                <p className="more">
+                  <button type="button" onClick={() => void show(location, cursor)} disabled={loading}>Load more</button>
+                  <button type="button" className="ghost" onClick={() => void loadAll()} disabled={loading}>Load all</button>
+                  <span className="hint">Sorting and filtering apply to the {entries.length.toLocaleString()} items loaded so far.</span>
+                </p>
+              )}
+              {loading && <p className="empty" role="status">Loading…</p>}
+            </>
+          )}
+        </div>
+      </div>
+
+      {location && (
+        <p className="statusbar" role="status" aria-live="off">
+          <span>{visible.length.toLocaleString()} item{visible.length === 1 ? '' : 's'}{cursor ? ' loaded (more available)' : ''}{hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ''}</span>
+          {selected.length > 0 && <span>{selected.length.toLocaleString()} selected{selected.some((entry) => entry.kind === 'file') ? ` · ${formatBytes(totalSize(selected).toString())}` : ''}</span>}
+          {selected.length > 0 && <button type="button" className="ghost" onClick={() => setProperties(selected)}>Properties</button>}
         </p>
       )}
-      <table className="details">
-        <thead><tr><th scope="col">Name</th><th scope="col" className="num">Size</th><th scope="col" className="when">Modified</th></tr></thead>
-        <tbody>
-          {entries.map((entry) => (
-            <tr key={entry.entryId}>
-              <td>
-                <button type="button" className="row-button"
-                  onClick={() => (entry.kind === 'directory' ? void open({ ...location, entryId: entry.entryId }) : void download(entry))}
-                  aria-label={entry.kind === 'directory' ? `Open folder ${entry.name}` : `Download ${entry.name}`}>
-                  <span className={`icon ${entry.kind === 'directory' ? 'folder' : 'file'}`} aria-hidden="true" /><bdi>{entry.name}</bdi>
-                </button>
-              </td>
-              <td className="num">{entry.kind === 'file' ? formatBytes(entry.size) : ''}</td>
-              <td className="when">{formatTime(entry.modifiedUnixMs)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {!loading && entries.length === 0 && !error && <p className="empty">This folder is empty.</p>}
-      {skipped > 0 && <p className="notice">{skipped} link{skipped === 1 ? '' : 's'} or shortcut target{skipped === 1 ? '' : 's'} not shown. OrbitDrive does not follow links out of a shared folder.</p>}
-      {cursor && <button type="button" onClick={() => void open(location, cursor)} disabled={loading}>Load more</button>}
-      {loading && <p className="empty" role="status">Loading…</p>}
-    </section>
+
+      {menu && menuEntry && (
+        <ContextMenu x={menu.x} y={menu.y} onClose={() => { setMenu(null); focusRow(menu.entryId); }}>
+          {selected.length <= 1 && <button type="button" role="menuitem" onClick={() => { setMenu(null); activate(menuEntry); }}>{menuEntry.kind === 'directory' ? 'Open' : 'Download'}</button>}
+          <button type="button" role="menuitem" onClick={() => { setMenu(null); setProperties(selected.length > 1 ? selected : [menuEntry]); }}>{selected.length > 1 ? `Properties of ${selected.length} items` : 'Properties'}</button>
+        </ContextMenu>
+      )}
+
+      {properties && location && (
+        <dialog ref={dialog} className="properties" aria-labelledby="properties-title" onClose={() => setProperties(null)}>
+          <h2 id="properties-title">{properties.length === 1 ? <bdi>{properties[0].name}</bdi> : `${properties.length} items`}</h2>
+          <dl>
+            {properties.length === 1 ? (<>
+              <dt>Type</dt><dd>{typeLabel(properties[0])}</dd>
+              {properties[0].kind === 'file' && (<><dt>Size</dt><dd>{formatBytes(properties[0].size)} ({BigInt(properties[0].size).toLocaleString()} bytes)</dd></>)}
+              <dt>Modified</dt><dd>{formatTime(properties[0].modifiedUnixMs)}</dd>
+              <dt>Attributes</dt><dd>{properties[0].hidden ? 'Hidden, read-only access' : 'Read-only access'}</dd>
+            </>) : (<>
+              <dt>Contains</dt><dd>{properties.filter((entry) => entry.kind === 'file').length} files, {properties.filter((entry) => entry.kind === 'directory').length} folders</dd>
+              <dt>Size of files</dt><dd>{formatBytes(totalSize(properties).toString())} ({totalSize(properties).toLocaleString()} bytes; folder contents not counted)</dd>
+            </>)}
+            <dt>Location</dt><dd><bdi>{[location.pc.name, ...breadcrumbs.map((crumb) => crumb.name)].join(' › ')}</bdi></dd>
+          </dl>
+          <form method="dialog"><button type="submit">Close</button></form>
+        </dialog>
+      )}
+    </div>
   );
+}
+
+function ContextMenu({ x, y, onClose, children }: { x: number; y: number; onClose: () => void; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    const outside = (event: PointerEvent) => { if (!ref.current?.contains(event.target as Node)) close.current(); };
+    document.addEventListener('pointerdown', outside, true);
+    return () => document.removeEventListener('pointerdown', outside, true);
+  }, []);
+  const onKeyDown = (event: ReactKeyboardEvent) => {
+    const items = [...(ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    event.stopPropagation();
+    if (event.key === 'Escape' || event.key === 'Tab') { event.preventDefault(); onClose(); }
+    else if (event.key === 'ArrowDown') { event.preventDefault(); items[(index + 1) % items.length]?.focus(); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); items[(index - 1 + items.length) % items.length]?.focus(); }
+  };
+  // Rendered at the page root: inside a window it would be clipped by the window's rounded, blurred frame.
+  return createPortal(<div ref={ref} className="flyout context" role="menu" aria-label="Actions" style={{ left: Math.max(8, x), top: Math.max(8, y) }} onKeyDown={onKeyDown}>{children}</div>, document.body);
 }

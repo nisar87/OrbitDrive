@@ -22,6 +22,13 @@ test.afterAll(async () => {
   await gateway?.stop();
 });
 
+const home = (page) => page.getByRole('region', { name: "This account's PCs" });
+const openApp = (page, name) => page.getByRole('navigation', { name: 'Taskbar' }).getByRole('button', { name, exact: true }).click();
+async function signOut(page) {
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Sign out' }).click();
+}
+
 async function signIn(page, email) {
   await page.goto('/');
   await page.getByLabel('Email').fill(email);
@@ -46,7 +53,7 @@ test('pair by QR link, browse the real folder and download real files', async ({
   await shot('02-confirm-on-pc');
 
   agent.send('approve');
-  const share = page.getByRole('button', { name: /Test Share/ });
+  const share = home(page).getByRole('button', { name: /Test Share/ });
   await expect(share).toBeVisible();
   await expect(page.getByText('Online')).toBeVisible();
   await shot('03-pcs-and-roots');
@@ -74,9 +81,9 @@ test('pair by QR link, browse the real folder and download real files', async ({
   // Paged folder: 450 real files, 100 per page.
   await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('button', { name: 'Test Share' }).click();
   await page.getByRole('button', { name: 'Open folder Many' }).click();
-  await expect(page.getByRole('button', { name: /^Download item-/ })).toHaveCount(100);
-  await page.getByRole('button', { name: 'Load more' }).click();
   await expect(page.getByRole('button', { name: /^Download item-/ })).toHaveCount(200);
+  await page.getByRole('button', { name: 'Load more' }).click();
+  await expect(page.getByRole('button', { name: /^Download item-/ })).toHaveCount(400);
 
   // PC goes away: truthful offline state, no canned data.
   await agent.stop();
@@ -85,11 +92,11 @@ test('pair by QR link, browse the real folder and download real files', async ({
   await shot('06-pc-offline');
   agent = await startAgent(gateway, stateDir, 'Office PC');
   await page.getByRole('button', { name: 'Refresh' }).click();
-  await expect(page.getByRole('button', { name: /^Download item-/ })).toHaveCount(100);
+  await expect(page.getByRole('button', { name: /^Download item-/ })).toHaveCount(200);
 
   // Signing out revokes this browser on the service and clears local credentials.
   const stored = await page.evaluate(() => localStorage.getItem('orbitdrive.session.v1'));
-  await page.getByRole('button', { name: 'Sign out' }).click();
+  await signOut(page);
   await expect(page.getByRole('heading', { name: 'Sign in' }).first()).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('orbitdrive.session.v1'))).toBeNull();
   const old = JSON.parse(stored);
@@ -125,13 +132,15 @@ test('devices page: see approved browsers, remove another browser, disconnect th
   await expect(page.getByTestId('confirmation-code')).toBeVisible();
   await agent.next('pairing_claimed');
   agent.send('approve');
-  const browsers = page.getByRole('article', { name: 'Approved browsers' });
+  await openApp(page, 'Devices');
+  const devices = page.getByRole('dialog', { name: 'Devices' });
+  const browsers = devices.getByRole('article', { name: 'Approved browsers' });
   await expect(browsers.getByText('(this browser)')).toBeVisible();
 
   // A second browser of the same account, paired through the real API.
   const tablet = await new Browser(gateway, 'owner@example.test').signIn();
   await pair(agent, tablet, 'Kitchen tablet');
-  await page.getByRole('button', { name: 'Refresh' }).click();
+  await devices.getByRole('button', { name: 'Refresh' }).click();
   await expect(browsers.getByText('Kitchen tablet', { exact: true })).toBeVisible();
   await expect(browsers.getByText('Can reach Office PC').first()).toBeVisible();
   await page.screenshot({ path: join(shots, `${info.project.name}-08-devices.png`) });
@@ -145,9 +154,12 @@ test('devices page: see approved browsers, remove another browser, disconnect th
   expect((await tablet.get('/v1/pcs')).status).toBe(403);
   await expect(browsers.getByRole('button', { name: /^Remove/ })).toHaveCount(0); // the current browser is removed by signing out
 
-  await page.getByRole('button', { name: 'Disconnect this PC' }).click();
-  await page.getByRole('button', { name: 'Yes, disconnect Office PC' }).click();
-  await expect(page.getByText('No PCs are paired with this browser yet.')).toBeVisible();
+  await devices.getByRole('button', { name: 'Disconnect this PC' }).click();
+  await devices.getByRole('button', { name: 'Yes, disconnect Office PC' }).click();
+  await expect(devices.getByText('No PC is paired.')).toBeVisible();
   await expect(browsers.getByText('No PC access')).toBeVisible();
+  await openApp(page, 'File Explorer');                         // the Explorer window learns about it without a reload
+  await expect(page.getByText('No PCs are paired with this browser yet.')).toBeVisible();
+  await openApp(page, 'Devices');
   await page.screenshot({ path: join(shots, `${info.project.name}-09-pc-disconnected.png`) });
 });

@@ -191,6 +191,12 @@ host), and the re-run did not restart an already-current gateway (fixed in `3cdd
   a second Windows user, real lock/unlock (only the policy logic is unit-tested), sleep/resume, Windows high-contrast
   mode, 125–200 % DPI, clicking the tray menu, sign-in actually launching the Run entry.
 
+## `main` @ `410c3d8` (D1) — confirmed
+
+All seven workflows green on `main` for `410c3d8` (integration 44103655820, desktop-ui 44103655766, gateway
+44103655731, desktop 44103655791, contracts 44103655866, security 44103655873, web 44103656072). No `relay-release`
+run was created for this commit because nothing under the relay's paths changed; the live relay stays on 0.1.7.
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were

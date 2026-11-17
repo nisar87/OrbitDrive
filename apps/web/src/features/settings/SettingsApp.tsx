@@ -1,0 +1,43 @@
+import type { Prefs, ThemeChoice, ViewMode } from '../../prefs';
+import { AUTH_MODE, GATEWAY_URL } from '../../api';
+
+interface Props { prefs: Prefs; onPrefs: (next: Prefs) => void; account: string; onSignOut: () => void }
+
+/** Appearance and Explorer preferences (stored in this browser only) and a plain statement of how files travel. */
+export function SettingsApp({ prefs, onPrefs, account, onSignOut }: Props) {
+  return (
+    <div className="app-page settings">
+      <article className="panel" aria-labelledby="appearance-title">
+        <h2 id="appearance-title">Appearance</h2>
+        <fieldset>
+          <legend>Theme</legend>
+          {(['system', 'light', 'dark'] as ThemeChoice[]).map((theme) => (
+            <label key={theme} className="check">
+              <input type="radio" name="theme" checked={prefs.theme === theme} onChange={() => onPrefs({ ...prefs, theme })} />
+              {theme === 'system' ? 'Same as this device' : theme === 'light' ? 'Light' : 'Dark'}
+            </label>
+          ))}
+        </fieldset>
+      </article>
+      <article className="panel" aria-labelledby="explorer-title">
+        <h2 id="explorer-title">File Explorer</h2>
+        <label className="stack" htmlFor="default-view">Show folders as</label>
+        <select id="default-view" value={prefs.view} onChange={(event) => onPrefs({ ...prefs, view: event.target.value as ViewMode })}>
+          <option value="details">Details</option><option value="list">List</option><option value="icons">Icons</option>
+        </select>
+        <label className="check"><input type="checkbox" checked={prefs.showHidden} onChange={(event) => onPrefs({ ...prefs, showHidden: event.target.checked })} />Show hidden items</label>
+        <p className="hint">These choices are saved in this browser only. No file names or contents are saved.</p>
+      </article>
+      <article className="panel" aria-labelledby="account-title">
+        <h2 id="account-title">Account and connection</h2>
+        <dl>
+          <dt>Signed in as</dt><dd><bdi>{account}</bdi></dd>
+          <dt>Relay</dt><dd><bdi>{GATEWAY_URL}</bdi></dd>
+          <dt>Sign-in</dt><dd>{AUTH_MODE === 'dev' ? 'Development identities (not for real use)' : 'Email and password'}</dd>
+        </dl>
+        <p className="hint">Files travel over TLS through the OrbitDrive relay, which can process them in transit and stores nothing. This is not end-to-end encryption. Access is read-only.</p>
+        <button type="button" className="secondary" onClick={onSignOut}>Sign out of this browser</button>
+      </article>
+    </div>
+  );
+}

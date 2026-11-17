@@ -85,7 +85,8 @@ test('scan the PC\'s QR code inside the site, approve on the PC, then rename thi
     expect(uploads.some((u) => u.includes('/claim'))).toBe(true);
 
     agent.send('approve');
-    await expect(page.getByRole('button', { name: /Scan Share/ })).toBeVisible();
+    await expect(page.getByRole('region', { name: "This account's PCs" }).getByRole('button', { name: /Scan Share/ })).toBeVisible();
+    await page.getByRole('navigation', { name: 'Taskbar' }).getByRole('button', { name: 'Devices', exact: true }).click();
 
     // Rename this browser; the PC owner's device list shows the new name.
     await page.getByRole('button', { name: /^Rename/ }).click();
@@ -93,15 +94,16 @@ test('scan the PC\'s QR code inside the site, approve on the PC, then rename thi
     await field.fill('Pocket phone');
     await page.screenshot({ path: join(shots, `${info.project.name}-10-rename-device.png`) });
     await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.locator('.device-list strong', { hasText: 'Pocket phone' })).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Approved browsers' }).locator('strong', { hasText: 'Pocket phone' })).toBeVisible();
     await page.getByRole('button', { name: /^Rename/ }).click();
     await page.getByLabel(/New name for/).fill('Changed my mind');
     await page.getByLabel(/New name for/).press('Escape');
-    await expect(page.locator('.device-list strong', { hasText: 'Pocket phone' })).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Approved browsers' }).locator('strong', { hasText: 'Pocket phone' })).toBeVisible();
     await expect(page.getByText('Changed my mind')).toHaveCount(0);
     expect((await ipcDevices()).sort()).toContain('Pocket phone');
     await page.reload();
-    await expect(page.locator('.device-list strong', { hasText: 'Pocket phone' })).toBeVisible();
+    await page.getByRole('navigation', { name: 'Taskbar' }).getByRole('button', { name: 'Devices', exact: true }).click();
+    await expect(page.getByRole('article', { name: 'Approved browsers' }).locator('strong', { hasText: 'Pocket phone' })).toBeVisible();
   });
 });
 
