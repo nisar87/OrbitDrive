@@ -41,7 +41,7 @@
     "BrowserDeviceListResponse": { "devices": "BrowserDeviceSummary[]" },
     "RevokeDeviceRequest": { "deviceId": "string" },
     "Ack": { "ok": "bool" },
-    "GatewayMeta": { "protocolVersion": "int32", "minProtocolVersion": "int32", "relayTerminatesTls": "bool", "endToEndEncrypted": "bool", "environment": "string" },
+    "GatewayMeta": { "version": "string", "protocolVersion": "int32", "minProtocolVersion": "int32", "relayTerminatesTls": "bool", "endToEndEncrypted": "bool", "environment": "string" },
     "DevSignInRequest": { "email": "string" },
     "DevSignInResponse": { "idToken": "string", "uid": "string" }
   }

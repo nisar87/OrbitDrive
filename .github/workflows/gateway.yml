@@ -23,3 +23,5 @@ jobs:
         run: dotnet build services/gateway/OrbitDrive.Gateway -c Release
       - name: Unit tests
         run: dotnet test tests/gateway/OrbitDrive.Gateway.Tests -c Release --logger "console;verbosity=normal"
+      - name: Relay updater, rollback, monitor and backup scripts (real gateway builds)
+        run: node --test tests/relay/updater.test.mjs

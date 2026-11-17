@@ -210,6 +210,7 @@ export interface Ack {
 }
 
 export interface GatewayMeta {
+  version: string;
   protocolVersion: number;
   minProtocolVersion: number;
   relayTerminatesTls: boolean;
@@ -476,6 +477,7 @@ export const SCHEMA = {
       "ok": "bool"
     },
     "GatewayMeta": {
+      "version": "string",
       "protocolVersion": "int32",
       "minProtocolVersion": "int32",
       "relayTerminatesTls": "bool",

@@ -1,0 +1,41 @@
+name: relay-monitor
+# Outside-in check of the development relay every 30 minutes. Problems open (or update) a GitHub issue, which
+# GitHub emails to the repository owner; recovery closes it. No credentials for the host are involved.
+on:
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: relay-monitor
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Probe the relay
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(jq -r .enabled infra/relay/environments/dev.json)" != "true" ]; then echo "::notice::Relay monitoring is not enabled yet; nothing was checked."; exit 0; fi
+          URL=$(jq -r .url infra/relay/environments/dev.json); PROBLEMS=""
+          curl -fsS -m 15 "$URL/healthz" >/dev/null || PROBLEMS="$PROBLEMS gateway_unreachable"
+          STATUS=$(curl -fsS -m 15 "$URL/relay-status.json" || echo '{}')
+          AGE=$(( $(date -u +%s) - $(date -u -d "$(jq -r '.time // "1970-01-01T00:00:00Z"' <<<"$STATUS")" +%s) ))
+          [ "$AGE" -lt 1500 ] || PROBLEMS="$PROBLEMS host_monitor_stale"
+          PROBLEMS="$PROBLEMS $(jq -r '(.alerts // []) | join(" ")' <<<"$STATUS")"
+          PROBLEMS=$(echo $PROBLEMS | xargs)
+          OPEN=$(gh issue list --repo "${{ github.repository }}" --state open --search 'in:title "[relay-alert] Development relay"' --json number --jq '.[0].number // empty')
+          echo "status: $STATUS"; echo "problems: '$PROBLEMS'"
+          if [ -n "$PROBLEMS" ]; then
+            BODY="Problems: $PROBLEMS. Host status: $STATUS. Checked $(date -u +%FT%TZ) by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. See docs/operations/relay.md."
+            if [ -n "$OPEN" ]; then gh issue comment "$OPEN" --repo "${{ github.repository }}" --body "$BODY"; else gh issue create --repo "${{ github.repository }}" --title "[relay-alert] Development relay needs attention" --body "$BODY"; fi
+            exit 1
+          fi
+          if [ -n "$OPEN" ]; then gh issue close "$OPEN" --repo "${{ github.repository }}" --comment "Recovered: the relay is healthy again ($STATUS)."; fi

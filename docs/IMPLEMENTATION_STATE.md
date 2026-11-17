@@ -23,6 +23,14 @@ re-run. Still to do: owner confirms SSH login and
 intended final shape (migrate when capacity exists; the script and deployment stay architecture-neutral). The owner's rules:
 Always Free only, no Pay As You Go, SSH restricted to the owner's IP, do not deploy the public website until the relay is tested.
 
+Relay automation (owner request, 2026-11-17): pull-based, credential-free deployment and self-maintenance for the relay
+host — see `docs/operations/relay.md`. Owner confirmed SSH login works (so the network has internet access); the first-boot
+package installs failed as expected (no network at first boot); swap is active; 952 MB RAM, 8.7 % disk used.
+**Pending owner action:** run `infra/relay/bootstrap.sh` once on the host (command in the runbook), then set
+`"enabled": true` in `infra/relay/environments/dev.json`. Until then `relay-release` publishes development pre-releases
+but skips live verification, and `relay-monitor` checks nothing. Scripts are CI-tested; the bootstrap itself is untested
+on the real host.
+
 Hosting decision (owner, 2026-11-17): no subdomain of the AI CV Studio domain. The web app will be served from the
 `orbitdrive-dev` project's own Hosting address until the owner buys a new domain. **Nothing is deployed.** A live site
 is pointless until a public relay exists, and the relay host (possible cost) is still the owner's open decision.

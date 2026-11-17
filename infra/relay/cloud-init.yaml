@@ -1,25 +1,7 @@
 #cloud-config
-# OrbitDrive relay host, first boot. Ubuntu 24.04 on Oracle Cloud: works on the temporary x86-64
-# VM.Standard.E2.1.Micro and on the intended ARM64 VM.Standard.A1.Flex.
-# Installs only what the relay needs and opens only web ports on the host firewall. Contains no secrets.
-# NOT yet applied to any server or tested on a real host.
-package_update: true
-# A full package upgrade is left to unattended-upgrades: it is heavy for the 1 GB Always Free micro shape.
+# First boot of an OrbitDrive relay host: fetch and run the idempotent bootstrap from this repository.
+# Use only where the instance has internet access at first boot (attach the public IP at creation). Contains no secrets.
+# Replace the three values for the environment being created.
 runcmd:
-  # 2 GB swap file so package installs and the .NET runtime do not exhaust memory on a 1 GB server.
-  # Harmless on the larger Ampere A1 shape; the script is architecture-neutral (x86-64 and ARM64).
-  - fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
-  - echo '/swapfile none swap sw 0 0' >> /etc/fstab
-  # Each install is separate so one unavailable package cannot block the others; results are logged for review.
-  - apt-get install -y unattended-upgrades >> /var/log/orbitdrive-init.log 2>&1
-  - apt-get install -y aspnetcore-runtime-10.0 >> /var/log/orbitdrive-init.log 2>&1
-  - apt-get install -y caddy >> /var/log/orbitdrive-init.log 2>&1
-  # Caddy (TLS termination) stays off until the relay is configured.
-  - systemctl disable --now caddy >> /var/log/orbitdrive-init.log 2>&1
-  # Oracle's Ubuntu images ship an iptables rule set that allows only SSH. Add web ports and keep the rest closed.
-  - iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
-  - iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
-  - netfilter-persistent save >> /var/log/orbitdrive-init.log 2>&1
-  # The relay runs as its own unprivileged account with no login shell.
-  - useradd --system --home /opt/orbitdrive --shell /usr/sbin/nologin orbitdrive
-  - install -d -o orbitdrive -g orbitdrive -m 0750 /opt/orbitdrive
+  - curl -fsSL -o /root/bootstrap.sh https://raw.githubusercontent.com/nisar87/OrbitDrive/main/infra/relay/bootstrap.sh
+  - bash /root/bootstrap.sh --host REPLACE-WITH-HOSTNAME --firebase-project REPLACE-WITH-PROJECT --web-origin https://REPLACE-WITH-WEB-ORIGIN >> /var/log/orbitdrive-bootstrap.log 2>&1

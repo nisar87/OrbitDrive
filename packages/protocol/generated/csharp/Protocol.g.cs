@@ -314,6 +314,7 @@ public sealed record Ack
 
 public sealed record GatewayMeta
 {
+    [JsonPropertyName("version")] public required string Version { get; init; }
     [JsonPropertyName("protocolVersion")] public required int ProtocolVersion { get; init; }
     [JsonPropertyName("minProtocolVersion")] public required int MinProtocolVersion { get; init; }
     [JsonPropertyName("relayTerminatesTls")] public required bool RelayTerminatesTls { get; init; }

@@ -28,7 +28,11 @@ jobs:
           if grep -RnE "uses: [^@]+@(v[0-9]|main|master)" .github/workflows; then echo "unpinned action"; exit 1; fi
       - name: No deployment or elevated permissions in ordinary workflows
         run: |
-          if grep -RnE --exclude=security.yml "firebase deploy|id-token: write|contents: write" .github/workflows; then echo "unexpected privileged step"; exit 1; fi
+          # relay-release.yml may create a release with the short-lived workflow token; nothing else may write.
+          if grep -RnE --exclude=security.yml --exclude=relay-release.yml "firebase deploy|id-token: write|contents: write" .github/workflows; then echo "unexpected privileged step"; exit 1; fi
+      - name: Relay scripts never embed credentials or disable TLS checks
+        run: |
+          if grep -RnE "curl[^|]*(-k|--insecure)|StrictHostKeyChecking=no|PRIVATE KEY|password=" infra/relay; then echo "unsafe relay script"; exit 1; fi
       - name: npm audit (high and above)
         working-directory: apps/web
         run: npm ci && npm audit --audit-level=high

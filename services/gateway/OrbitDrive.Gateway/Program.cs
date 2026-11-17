@@ -107,8 +107,10 @@ app.UseCors();
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
 
 app.MapGet("/healthz", () => Results.Text("ok"));
+var gatewayVersion = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 app.MapGet("/v1/meta", (HttpContext context) => WriteJson(context, new GatewayMeta
 {
+    Version = gatewayVersion, // deployments are verified against this, not against "the process started"
     ProtocolVersion = ProtocolInfo.Version, MinProtocolVersion = ProtocolInfo.MinVersion,
     RelayTerminatesTls = true, EndToEndEncrypted = false, Environment = app.Environment.EnvironmentName,
 }));

@@ -1,0 +1,92 @@
+name: relay-release
+# Builds, tests and publishes a gateway release for the DEVELOPMENT relay. The relay host pulls releases itself
+# (infra/relay/bin/orbitdrive-update): this workflow holds no server credentials and opens no connection to the host.
+# It then checks that the live relay really reports the new version. Production has no automatic path here.
+on:
+  push:
+    branches: [main]
+    paths: ['services/gateway/**', 'packages/protocol/**', 'infra/relay/**', '.github/workflows/relay-release.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: relay-release
+  cancel-in-progress: false
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: dotnet build OrbitDrive.slnx -c Release
+      - run: dotnet test tests/gateway/OrbitDrive.Gateway.Tests -c Release
+      - run: npm ci
+        working-directory: tests/integration
+      - name: Gateway behaviour with real processes
+        run: node --test tests/integration/slice.test.mjs tests/integration/devices.test.mjs tests/integration/firebase-auth.test.mjs
+      - name: Updater, rollback, monitor and backup scripts
+        run: node --test tests/relay/updater.test.mjs
+  publish:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write   # create the release only; uses the short-lived workflow token
+    outputs:
+      version: ${{ steps.pack.outputs.version }}
+      enabled: ${{ steps.env.outputs.enabled }}
+      url: ${{ steps.env.outputs.url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+      - id: env
+        run: |
+          echo "enabled=$(jq -r .enabled infra/relay/environments/dev.json)" >> "$GITHUB_OUTPUT"
+          echo "url=$(jq -r .url infra/relay/environments/dev.json)" >> "$GITHUB_OUTPUT"
+      - id: pack
+        run: |
+          VERSION="0.1.${{ github.run_number }}"
+          dotnet publish services/gateway/OrbitDrive.Gateway -c Release -o out -p:Version="$VERSION"
+          tar -czf "gateway-$VERSION.tar.gz" -C out .
+          sha256sum "gateway-$VERSION.tar.gz" > "gateway-$VERSION.tar.gz.sha256"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Publish development pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.pack.outputs.version }}"
+          gh release create "relay-dev-$V" "gateway-$V.tar.gz" "gateway-$V.tar.gz.sha256" --prerelease --target "${{ github.sha }}" \
+            --title "Relay (development) $V" \
+            --notes "Gateway build for the development relay. Commit ${{ github.sha }}. Tests and build: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Architecture-neutral (x86-64 and ARM64); needs the ASP.NET Core 10 runtime."
+  verify-deployment:
+    needs: publish
+    if: needs.publish.outputs.enabled == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      issues: write
+    steps:
+      - name: Wait until the live relay reports this exact version
+        run: |
+          URL="${{ needs.publish.outputs.url }}"; WANT="${{ needs.publish.outputs.version }}"
+          for i in $(seq 1 80); do
+            GOT=$(curl -fsS -m 10 "$URL/v1/meta" | jq -r '.version // empty' || true)
+            echo "attempt $i: relay reports '$GOT' (want $WANT)"
+            if [ "$GOT" = "$WANT" ]; then curl -fsS -m 10 "$URL/healthz" >/dev/null && echo "DEPLOYED AND HEALTHY: $WANT" && exit 0; fi
+            sleep 12
+          done
+          echo "::error::The relay did not come up on $WANT. Host status:"; curl -fsS -m 10 "$URL/relay-status.json" || true
+          exit 1
+      - name: Open an issue when the deployment is not verified
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue create --repo "${{ github.repository }}" --title "[relay-alert] Release ${{ needs.publish.outputs.version }} was not verified on the development relay" --body "The relay did not report version ${{ needs.publish.outputs.version }} within the time limit. The host rolls back failed releases automatically; check ${{ needs.publish.outputs.url }}/relay-status.json and the run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}."

@@ -1,0 +1,6 @@
+{
+  "enabled": false,
+  "url": "https://139-185-60-75.sslip.io",
+  "channel": "dev",
+  "note": "Development relay on Oracle Cloud (temporary VM.Standard.E2.1.Micro). Set enabled to true once bootstrap.sh has run on the host; until then deployment verification and monitoring are skipped, not passed."
+}
