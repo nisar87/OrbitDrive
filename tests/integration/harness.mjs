@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 // Real-process integration harness: starts the built gateway and agent binaries and talks to them over HTTP.
 // Nothing here is mocked; fixtures are generated into a temp directory at run time.
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
@@ -279,3 +280,8 @@ export function makeFixtureRoot() {
   for (let i = 0; i < 450; i++) writeFileSync(join(root, 'Many', `item-${String(i).padStart(4, '0')}.txt`), String(i));
   return root;
 }
+
+export const waitFor = async (check, ms, what) => {
+  const start = Date.now();
+  for (;;) { const value = await check(); if (value) return value; if (Date.now() - start > ms) assert.fail(`${what} did not happen in ${ms} ms`); await sleep(100); }
+};

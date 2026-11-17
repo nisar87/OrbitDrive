@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync, mkdirSync, readFileSync, existsSync, utimesSync, statSync, rmSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { startGateway, startAgent, connectIpc, agentCli, tempDir, makeFixtureRoot, Browser, pair, sleep, sha256, freePort } from './harness.mjs';
+import { startGateway, startAgent, connectIpc, agentCli, waitFor, tempDir, makeFixtureRoot, Browser, pair, sleep, sha256, freePort } from './harness.mjs';
 
 const dataDir = tempDir('invite-data');
 const secret = randomBytes(32).toString('hex');
@@ -20,10 +20,6 @@ const send = async (receiver, paths, requestId) => {
   return reply.data.results;
 };
 const inbox = async (browser = phone) => (await browser.get('/v1/invitations')).body.invitations;
-const waitFor = async (check, ms, what) => {
-  const start = Date.now();
-  for (;;) { const value = await check(); if (value) return value; if (Date.now() - start > ms) assert.fail(`${what} did not happen in ${ms} ms`); await sleep(100); }
-};
 const write = (name, content) => { const path = join(outside, name); writeFileSync(path, content); return path; };
 
 before(async () => {

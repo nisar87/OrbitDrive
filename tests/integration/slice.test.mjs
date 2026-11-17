@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, mkdirSync, symlinkSync, linkSync, renameSy
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
-import { startGateway, startAgent, agentCli, tempDir, makeFixtureRoot, Browser, pair, sha256, sleep, rssBytes, writeLargeFile, WEB_ORIGIN, repoRoot } from './harness.mjs';
+import { startGateway, startAgent, agentCli, waitFor, tempDir, makeFixtureRoot, Browser, pair, sha256, sleep, rssBytes, writeLargeFile, WEB_ORIGIN, repoRoot } from './harness.mjs';
 
 const LARGE_MIB = Number(process.env.ORBIT_LARGE_MIB || 64);
 let gateway, agent, owner, stranger, root, outside, stateDir, pcId, rootId, pairingInfo;
@@ -369,7 +369,8 @@ describe('downloads, ranges and revisions (R18-R21, R59)', () => {
     writeFileSync(join(root, 'mutable.txt'), 'version one of the file');
     const prepared = await session(owner, 'mutable.txt');
     assert.equal((await download(prepared, { range: 'bytes=0-6' })).status, 206);
-    writeFileSync(join(root, 'mutable.txt'), 'VERSION TWO OF THE FILE'); // same size, new content and mtime
+    // Windows refuses to write a file the agent still has open; the agent closes its read handle just after the response ends.
+    await waitFor(() => { try { writeFileSync(join(root, 'mutable.txt'), 'VERSION TWO OF THE FILE'); return true; } catch (e) { if (e.code === 'EBUSY' || e.code === 'EPERM') return false; throw e; } }, 10_000, 'the agent to release the file'); // same size, new content and mtime
     utimesSync(join(root, 'mutable.txt'), new Date(), new Date(Date.now() + 5000));
     const resumed = await download(prepared, { range: 'bytes=7-', 'if-range': `"${prepared.revision}"` });
     assert.equal(resumed.status, 409);
