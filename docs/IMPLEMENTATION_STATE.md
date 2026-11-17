@@ -2,7 +2,7 @@
 
 Updated: 2026-11-18 (session 1). Branch: `feature/orbitdrive-foundation`.
 
-**Last code-verified commit: `98e29a4`** (on `main`, fast-forwarded 2026-11-18 after seven green feature-branch workflows: security 44169390489, contracts 44169390588, desktop 44169390550, desktop-ui 44169390743, gateway 44169390732, integration 44169390695, web 44169390564; the security run performed every audit incl. NuGet, see `docs/security/accepted-risks.md` AR-1, expires 2026-12-17). Earlier reference: `d21dffa` — seven workflows green; `relay-release` run 44000402541 on `main`:
+**Last code-verified commit: `a3a833e` (D6/W6 automated scope; seven workflows green on the feature branch; `main` fast-forward recorded below once done). Previously `98e29a4`** (on `main`, fast-forwarded 2026-11-18 after seven green feature-branch workflows: security 44169390489, contracts 44169390588, desktop 44169390550, desktop-ui 44169390743, gateway 44169390732, integration 44169390695, web 44169390564; the security run performed every audit incl. NuGet, see `docs/security/accepted-risks.md` AR-1, expires 2026-12-17). Earlier reference: `d21dffa` — seven workflows green; `relay-release` run 44000402541 on `main`:
 test → publish `relay-dev-0.1.3` → verify-deployment (live relay reported 0.1.3) → **live-agent on windows-2025 and
 ubuntu-24.04: a real agent connected outbound over the internet to https://139-185-60-75.sslip.io, authenticated and
 obtained a pairing code (3/3 each)**.
@@ -60,7 +60,8 @@ Firebase is back in scope (owner, 2026-11-17): project `orbitdrive-dev` was crea
 | W3 / D3 | IN_PROGRESS | Outbound control channel, generations, reconnect; file-backed durable registrations/grants (`OrbitDrive:DataDirectory`) with restart tests; heartbeat/lease liveness (ADR-12) and fault-injection suite. Missing: Firestore, idempotency keys, multi-instance leases, sleep/resume evidence on real Windows |
 | W4 / D4 | IN_PROGRESS | **W4:** desktop shell (windows, taskbar, launcher, account menu, themes, phone layout) and full Explorer (tree, history, breadcrumbs, three views, sort, filter, selection, context menu, properties) — Playwright on 5 browser projects + vitest; screenshots reviewed. Missing: Inbox/Transfers apps, virtualised 10,000-entry list, real-device and accessibility-tool evidence. **D4:** roots bound to their disk identity, owner-only hidden-items option (console + local command), listings through a validated pinned handle (race fixed), adversarial suite (encoded separators, real volumes, ancestor-swap race, hard links), 10,000-entry folder usable in five browser projects. Missing: cloud-placeholder policy, EFS/network-share behaviour, mount points inside a root, real removable-disk evidence |
 | W5 / D5 | AWAITING_DEVICE_TEST | Automated exit criteria met on `98e29a4`: relay Range/HEAD/206/416/conditional, content revisions, capabilities, 1 GiB relay checksum, 1 GiB save-to-file (slow receiver, bounded memory, resume, source mutation incl. same-size/same-time, cancel/cleanup, disk-full state), relay-observed states, owner bandwidth/concurrency limits, pause on metered connection. Still needs real hardware: the real save-location picker and disks, physical phones, a metered network on real Windows, Safari (WebKit save-to-file tests are skipped: its test sessions refuse page file writes). Not COMPLETE until those are run |
-| W6–W12, D6–D12 | NOT_STARTED | |
+| W6 / D6 | AWAITING_DEVICE_TEST | Automated scope done on `a3a833e`: sealed one-shot grants, gateway invitations (durable, idempotent, expiry, revoke, per-receiver), agent `send_files`/spool/ctl fallback/classic SendTo shortcuts, native `IExplorerCommand` (built + COM-tested on windows-2025), web Inbox, notices, opt-in local notifications, PWA manifest + static-only service worker. Missing: modern menu in real Win 11 Explorer (signing identity), real FCM push (Firebase credentials), real phones; WPF console toggle for SendTo shortcuts not built. |
+| W7–W12, D7–D12 | NOT_STARTED | |
 
 The first vertical slice (pair → browse approved root → hash-verified ranged download, across Windows agent, gateway and
 web) works end to end in CI. It is a slice through M1–M2, not completion of those milestones.
@@ -102,7 +103,7 @@ Not blocked, in order:
 3. D1 remainder needs the owner's Windows 11 PC: standard user, lock/sleep, high contrast, DPI, tray menu.
 4. D4/W4: Windows-style web shell (desktop, taskbar, windows), full Explorer (views, sort, selection, properties,
    context menus, back/forward/up), root volume binding. Visual iteration against the rubric starts here.
-5. D5/W5: only the physical-device checks listed in the phase row remain. **Next dependency-ready work: D6/W6 (Explorer "Send to my phone" + mobile Inbox).**
+5. D5/W5: only the physical-device checks listed in the phase row remain. D6/W6 automated scope is done (see phase row). **Next dependency-ready work: D7/W7 (previews).**
 6. D6/W6: native Explorer command + package identity, invitations, Inbox, FCM, PWA/service worker.
 7. D7/W7 previews; D8/W8 archives, search, favorites, multi-PC; D9/W9 uploads; D10 packaging/signing/updates;
    W10 admin and owner controls; D11/W11 hardening, soak, accessibility, visual gate; D12/W12 release candidate.

@@ -304,6 +304,27 @@ verify-deployment and both live-agent jobs.
 - Security gate: `GHSA-fc5q-39xc-vjpf` (picomatch, dev-only, not in the production bundle) is an **accepted risk, not fixed**;
   expiry 2026-12-17, rationale and removal conditions in `docs/security/accepted-risks.md`.
 
+### D6/W6 automated scope (commit `a3a833e`, seven workflows green)
+
+- Runs for `a3a833e`: security, contracts, gateway, desktop, desktop-ui, integration (ubuntu + windows) and web all succeeded
+  (run ids in IMPLEMENTATION_STATE). Candidates before it failed and were fixed, never re-run until lucky:
+  `4c4c643` desktop 44186947450 — Windows reports `\\?\C:\…` final paths, so every one-shot grant re-open failed
+  (real product defect, fixed: grant stores the drive-letter path, UNC refused); `83ce036` desktop (xunit2010 analyzer),
+  integration (a `"` cannot exist in a Windows file name → test uses a Windows-legal odd name), web (launcher now lists Inbox;
+  WebKit turns spaces into `_` in suggested download names — bytes still checked exactly); `b10dd5b` desktop (NTFS coarse
+  clock: rewrite within one tick is indistinguishable → test waits 100 ms), `c4c6895` integration (EBUSY: Windows refuses
+  to write a file the agent still holds for a moment → test retries up to 10 s). Product fix from the web run: the window
+  cascade pushed later windows off the desktop edge; now clamped. No assertion was weakened.
+- Native Explorer command: `OrbitDriveShell.dll` built with `/W4 /WX /guard:cf` on windows-2025 and exercised through COM
+  (`SHELL EXTENSION TEST PASSED (0 failures)`). **This is not the real Explorer menu.**
+- iPhone-like WebKit emulation has no `Notification` API: the Inbox shows a plain explanation and keeps working (e2e).
+
+### D6/W6 not evidenced
+
+- Modern Windows 11 menu invoked in real Explorer with the package installed (needs Windows 11 + signing identity).
+- A phone on another network downloading after tapping Accept; real push delivery (no Firebase credentials); iOS Home
+  Screen install behaviour. Local notifications were tested only against browser mocks.
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were

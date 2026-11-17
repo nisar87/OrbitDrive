@@ -1,7 +1,7 @@
 # Requirement matrix (live status)
 
 Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists for the implemented scope; hardware/device proof still required), COMPLETE, BLOCKED.
-**No requirement is COMPLETE.** Last code-verified commit: `d21dffa` (runs in `phase-evidence.md`).
+**No requirement is COMPLETE.** Last code-verified commit: `a3a833e` (D6/W6 automated scope) (runs in `phase-evidence.md`).
 
 | ID | Status | Evidence / gap |
 |---|---|---|
@@ -26,12 +26,12 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R19 | IN_PROGRESS | Changed source → 409, If-Range mismatch → full body (integration). Interrupted-then-resumed end-to-end and timestamp-restoring rewrite outstanding. **D5/W5:** change-stamp validator catches a same-size rewrite with the date restored; stale validators never produce a 206; a changed source is never appended in the browser **Update `98e29a4` (on main):** 1 GiB save-to-file with slow receiver, resume, same-size/same-time source rewrite refusal, cancel and disk-full state automated on CI; real picker, phones and Safari remain AWAITING_DEVICE_TEST. |
 | R20 | AUTOMATED_VERIFIED | SHA-256 source vs received (1 GiB, small, zero-byte); UI says 'handed to your browser', asserted not to say saved/complete. **D5/W5:** relay-observed states and PC-side bytes per transfer; browser downloads never described as saved **Update `98e29a4` (on main):** 1 GiB save-to-file with slow receiver, resume, same-size/same-time source rewrite refusal, cancel and disk-full state automated on CI; real picker, phones and Safari remain AWAITING_DEVICE_TEST. |
 | R21 | IN_PROGRESS | Capability scoped to revision+device; cross-user, revoked, expired, guessed denied (integration). Per-capability abuse limits outstanding. **D5/W5:** cancel from the browser cuts the stream, kills the link and stops the PC reading; per-browser limit on prepared downloads **Update `98e29a4` (on main):** 1 GiB save-to-file with slow receiver, resume, same-size/same-time source rewrite refusal, cancel and disk-full state automated on CI; real picker, phones and Safari remain AWAITING_DEVICE_TEST. |
-| R22 | NOT_STARTED | W6 |
-| R23 | NOT_STARTED | D6. Needs a real Windows 11 machine + package identity; GitHub runners are Windows Server (blocker recorded) |
-| R24 | NOT_STARTED | D6/W6 |
-| R25 | NOT_STARTED | W6 |
-| R26 | NOT_STARTED | D6/D8/W8 |
-| R27 | IN_PROGRESS | Offline PC → truthful 503/offline state, no cloud copy (integration, web e2e). Invitations not built |
+| R22 | AUTOMATED_VERIFIED | W6 Inbox: offers appear for the one named receiver only, live notice + badge, accept = checksum-exact download, decline/cancel, reconnect and gateway restart rebuild the list without duplicates, expiry, revoked browser loses its offers (integration `invitations.test.mjs` 13 tests; web e2e `inbox.spec.mjs` on 5 browser projects). Real phones not yet used |
+| R23 | IN_PROGRESS | Native `IExplorerCommand` DLL builds on windows-2025 and is driven through COM with real `IShellItemArray` (multi-select, Unicode, spaces, folders disabled, pipe hand-over, spool fallback). Classic SendTo shortcuts are created per receiver. **Not shown:** the modern menu in real Windows 11 Explorer — needs the sparse package signed with the owner's identity (see docs/operations/windows-shell.md). AWAITING_DEVICE_TEST |
+| R24 | AUTOMATED_VERIFIED | Paths are carried as data (JSON args / IPC), never a command line; ≤500 files per send with per-file results; idempotent retry; offline PC keeps the offer pending (integration). Phone download on another network still needs a device |
+| R25 | IN_PROGRESS | Local in-app notices + opt-in notifications (generic text, no file names) are unit/e2e tested with browser mocks. **No real push (FCM) exists** — needs Firebase service credentials. Not reported as delivered pushes |
+| R26 | IN_PROGRESS | Folders are refused with a truthful 'cannot be sent yet' state; archives arrive in D8/W8 |
+| R27 | AUTOMATED_VERIFIED | Offline PC → truthful 503/offline state, no cloud copy (integration, web e2e). Invitations: durable, pending while the PC is offline, never shown as complete without a download (integration) |
 | R28 | NOT_STARTED | D7/W7 |
 | R29 | NOT_STARTED | D7/W7 |
 | R30 | NOT_STARTED | D8/W8 |
@@ -39,7 +39,7 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R32 | IN_PROGRESS | Store test: same-named PCs with different owners cannot cross-authorise. Multi-PC UI untested with two agents |
 | R33 | IN_PROGRESS | Emulated Pixel 7 / iPhone 15 layouts pass; no physical phone, no landscape/tablet work. **W4:** windowed desktop shell with taskbar, launcher, themes; phones get one maximised window (emulation only) |
 | R34 | IN_PROGRESS | Semantic buttons/labels, focus-visible, reduced-motion, forced-colors CSS. No automated a11y audit or keyboard review yet |
-| R35 | NOT_STARTED | W6 |
+| R35 | IN_PROGRESS | PWA manifest, PNG icons, one service worker (static shell only, purged on sign-out, updates never during a managed transfer) tested in 5 browser projects; iOS Home Screen / Android install and real push AWAITING_DEVICE_TEST |
 | R36 | NOT_STARTED | D9/W9 |
 | R37 | NOT_STARTED | W10 |
 | R38 | IN_PROGRESS | Logs asserted free of pairing/device secrets, tokens, capabilities (integration). No support bundle/cache yet |
@@ -56,10 +56,10 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R49 | NOT_STARTED | D12/W12 |
 | R50 | IN_PROGRESS | Version negotiation in handshake; unsupported agent version rejected with update message (integration). No old/new matrix |
 | R51 | IN_PROGRESS | Revoke cuts an active stream and later access; sign-out revokes the browser (integration, web e2e). Account removal, PC removal outstanding |
-| R52 | NOT_STARTED | No service worker exists yet (W6) |
+| R52 | IN_PROGRESS | `sw.js` caches only same-origin static assets (`/assets/*`, `/icons/*.png`); e2e checks no API, token or file name enters any cache and that sign-out empties caches and storage |
 | R53 | IN_PROGRESS | Account/request/PC binding, substituted PC, second account refused (integration, StoreTests). Origin display + anti-phishing copy on the PC is D2 |
 | R54 | IN_PROGRESS | Empty/offline/error/paused states in web slice and owner console (asserted text; console screenshots unreviewed) |
-| R55 | NOT_STARTED | D6/W6 |
+| R55 | IN_PROGRESS | Explicit owner-picked files outside shared roots get a short-lived, file-specific sealed grant bound to path, size, mtime, change stamp and expiry; links, multi-hardlink files, UNC/ADS and folders refused; never reveals the parent (Core unit tests on Windows + integration) |
 | R56 | IN_PROGRESS | Locked file → truthful 'in use' error on Windows (Core test). Removable/placeholder/EFS not tested |
 | R57 | IN_PROGRESS | Gateway refuses Production with dev identity; web build guard (tests). No Firebase projects exist |
 | R58 | IN_PROGRESS | No deploy workflow exists; security job fails if a deploy/privileged step appears in ordinary workflows |
