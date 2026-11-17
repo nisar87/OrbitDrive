@@ -108,6 +108,9 @@ internal sealed class AgentState
         _roots = config?.Roots ?? [];
         Gateway = config?.Gateway;
         WebOrigin = config?.WebOrigin;
+        // Folders approved before disk binding existed are bound to the disk they are on now (once, when reachable).
+        if (_roots.Any(r => r.VolumeId is null && Directory.Exists(r.Path)))
+            Save([.. _roots.Select(r => r.VolumeId is null && NativeFile.GetVolumeIdentity(r.Path) is { } id ? r with { VolumeId = id } : r)]);
     }
 
     private void Save(List<SharedRoot> roots)
@@ -118,12 +121,12 @@ internal sealed class AgentState
     }
 
     /// <summary>Only ever called from the local command line / owner console — never from a remote instruction.</summary>
-    public SharedRoot AddRoot(string name, string path)
+    public SharedRoot AddRoot(string name, string path, bool showHidden = false)
     {
         var full = Path.GetFullPath(path);
         if (!Directory.Exists(full)) throw new DirectoryNotFoundException($"Folder not found: {full}");
         if (name.Length is 0 or > 64) throw new ArgumentException("Root name must be 1-64 characters.");
-        var root = new SharedRoot(Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(9)), name, full);
+        var root = new SharedRoot(Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(9)), name, full, showHidden, NativeFile.GetVolumeIdentity(full));
         Save([.. _roots, root]);
         return root;
     }
@@ -144,6 +147,14 @@ internal sealed class AgentState
         Gateway = ValidateGateway(gateway).GetLeftPart(UriPartial.Authority);
         WebOrigin = webOrigin is null ? null : new Uri(webOrigin).GetLeftPart(UriPartial.Authority);
         Save([.. _roots]);
+    }
+
+    /// <summary>Owner-only: whether hidden files and folders inside this shared folder are visible to paired devices.</summary>
+    public bool SetShowHidden(string rootId, bool showHidden)
+    {
+        if (_roots.All(r => r.RootId != rootId)) return false;
+        Save([.. _roots.Select(r => r.RootId == rootId ? r with { ShowHidden = showHidden } : r)]);
+        return true;
     }
 
     public bool RemoveRoot(string rootId)

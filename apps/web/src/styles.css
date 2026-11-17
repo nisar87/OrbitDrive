@@ -243,3 +243,8 @@ dialog.properties form { display: flex; justify-content: flex-end; margin-top: 1
   .entries tr.selected { outline: 2px solid Highlight; outline-offset: -2px; }
   button.task.current, .tree-item.current, button[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
 }
+
+/* Hidden items (shown only when the PC owner shares them and this browser asks to see them) are dimmed, as in File Explorer. */
+.entries tr.hidden-item .icon { opacity: 0.55; }
+.entries tr.hidden-item .row-button bdi { font-style: italic; }
+.more-rows { height: 48px; }

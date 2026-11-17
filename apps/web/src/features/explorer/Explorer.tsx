@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { api, ApiError, GATEWAY_URL, type Session } from '../../api';
 import type { Breadcrumb, DownloadSession, FileEntry, PcSummary, RootSummary } from '../../protocol';
@@ -9,7 +9,7 @@ import { emptySelection, filterEntries, pruneSelection, select, sortEntries, tot
 interface Location { pc: PcSummary; root: RootSummary; entryId: string | null }
 type Transfer = { name: string; phase: 'preparing' } | { name: string; phase: 'handed'; session: DownloadSession } | { name: string; phase: 'failed'; message: string };
 interface Menu { x: number; y: number; entryId: string }
-const PAGE = 200, LOAD_ALL_LIMIT = 20_000;
+const PAGE = 200, LOAD_ALL_LIMIT = 20_000, RENDER_STEP = 600;
 const SORTS: { key: SortKey; label: string }[] = [{ key: 'name', label: 'Name' }, { key: 'modified', label: 'Date modified' }, { key: 'type', label: 'Type' }, { key: 'size', label: 'Size' }];
 
 /** Two-step button for actions that end access; avoids blocking browser dialogs. */
@@ -45,6 +45,7 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion }: P
   const [cursor, setCursor] = useState<string | null>(null);
   const [skipped, setSkipped] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [loadingCount, setLoadingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [transfer, setTransfer] = useState<Transfer | null>(null);
   const [filter, setFilter] = useState('');
@@ -142,7 +143,36 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion }: P
   // First load, and whenever another app changed what this browser can reach (PC disconnected, device removed).
   useEffect(() => { void show(history.current.list[history.current.index]); }, [show, dataVersion]);
 
-  const visible = useMemo(() => sortEntries(filterEntries(entries, filter, prefs.showHidden), prefs.sortKey, prefs.sortDescending), [entries, filter, prefs.showHidden, prefs.sortKey, prefs.sortDescending]);
+  // Sort once per folder/sort change; filtering afterwards keeps the order, so typing in the filter never re-sorts.
+  const sorted = useMemo(() => sortEntries(entries, prefs.sortKey, prefs.sortDescending), [entries, prefs.sortKey, prefs.sortDescending]);
+  const visible = useMemo(() => filterEntries(sorted, filter, prefs.showHidden), [sorted, filter, prefs.showHidden]);
+  // Only part of a very large folder is put on screen at a time; more rows are added as the reader scrolls or jumps
+  // (End, Ctrl+A and the status bar always work on the whole folder).
+  const [range, setRange] = useState({ start: 0, end: RENDER_STEP });
+  useEffect(() => { setRange({ start: 0, end: RENDER_STEP }); }, [location, filter, prefs.sortKey, prefs.sortDescending, prefs.view]);
+  const rendered = useMemo(() => (range.start > 0 || visible.length > range.end ? visible.slice(range.start, range.end) : visible), [visible, range]);
+  const sentinel = useRef<HTMLDivElement>(null);
+  const topSentinel = useRef<HTMLDivElement>(null);
+  const heightBeforePrepend = useRef<number | null>(null);
+  useEffect(() => {
+    const scroller = body.current;
+    if (!scroller) return;
+    const observer = new IntersectionObserver((hits) => {
+      for (const hit of hits) {
+        if (!hit.isIntersecting) continue;
+        if (hit.target === sentinel.current) setRange((r) => ({ start: r.start, end: r.end + RENDER_STEP }));
+        else { heightBeforePrepend.current = scroller.scrollHeight; setRange((r) => ({ start: Math.max(0, r.start - RENDER_STEP), end: r.end })); }
+      }
+    }, { root: scroller, rootMargin: '600px' });
+    if (sentinel.current) observer.observe(sentinel.current);
+    if (topSentinel.current) observer.observe(topSentinel.current);
+    return () => observer.disconnect();
+  }, [range, visible.length]);
+  // Rows added above the view must not make the list jump (not every browser anchors scrolling by itself).
+  useLayoutEffect(() => {
+    const scroller = body.current;
+    if (scroller && heightBeforePrepend.current !== null) { scroller.scrollTop += scroller.scrollHeight - heightBeforePrepend.current; heightBeforePrepend.current = null; }
+  }, [range.start]);
   const order = useMemo(() => visible.map((entry) => entry.entryId), [visible]);
   useEffect(() => { setSelection((s) => pruneSelection(s, order)); }, [order]);
   const selected = useMemo(() => visible.filter((entry) => selection.ids.has(entry.entryId)), [visible, selection]);
@@ -172,22 +202,39 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion }: P
 
   async function loadAll() {
     if (!location) return;
-    let next = cursor, count = entries.length;
-    while (next && count < LOAD_ALL_LIMIT) {
-      const id = ++requestId.current;
-      setLoading(true);
-      try {
+    // Pages are collected first and shown together: updating a 10,000-row list fifty times would be far slower.
+    let next = cursor;
+    const collected: FileEntry[] = [];
+    const id = ++requestId.current;
+    setLoading(true);
+    try {
+      while (next && entries.length + collected.length < LOAD_ALL_LIMIT) {
         const page = await api.directory(session, location.pc.pcId, { rootId: location.root.rootId, entryId: location.entryId, cursor: next, pageSize: PAGE });
-        if (id !== requestId.current) return;
-        setEntries((previous) => [...previous, ...page.entries]);
-        count += page.entries.length; next = page.nextCursor ?? null;
-        setCursor(next);
-      } catch (e) { fail(e); break; }
-      finally { setLoading(false); }
+        if (id !== requestId.current) return;                    // the reader went somewhere else meanwhile
+        collected.push(...page.entries);
+        next = page.nextCursor ?? null;
+        setLoadingCount(entries.length + collected.length);
+      }
+    } catch (e) { if (id === requestId.current) fail(e); }
+    finally {
+      if (id === requestId.current) {
+        if (collected.length > 0) { setEntries((previous) => [...previous, ...collected]); setCursor(next); }
+        setLoading(false); setLoadingCount(0);
+      }
     }
   }
 
-  const focusRow = (id: string) => requestAnimationFrame(() => body.current?.querySelector<HTMLElement>(`[data-entry="${CSS.escape(id)}"] .row-button`)?.focus());
+  // The row may not be on screen yet (large folders render in steps): make sure it is, then focus it once drawn.
+  const focusRow = (id: string) => {
+    const index = order.indexOf(id);
+    if (index >= 0 && (index < range.start || index >= range.end)) setRange({ start: Math.max(0, index - RENDER_STEP / 2), end: index + RENDER_STEP / 2 });
+    let tries = 0;
+    const attempt = () => {
+      const button = body.current?.querySelector<HTMLElement>(`[data-entry="${CSS.escape(id)}"] .row-button`);
+      if (button) button.focus(); else if (tries++ < 20) requestAnimationFrame(attempt);
+    };
+    requestAnimationFrame(attempt);
+  };
 
   function onListKeyDown(event: ReactKeyboardEvent) {
     if ((event.target as HTMLElement).closest('input, select, dialog')) return;
@@ -281,6 +328,22 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion }: P
     </nav>
   );
 
+  // Rows are memoised and call back through this stable object, so selecting or moving in a 10,000-item folder
+  // re-renders only the rows that changed.
+  const latest = { onRowClick, activate, openMenu, startPress, cancelPress, setCurrent, toggle: (id: string) => setSelection((sel) => select(sel, order, id, 'toggle')), suppressClick };
+  const latestRef = useRef(latest);
+  latestRef.current = latest;
+  const rowActions = useMemo<RowActions>(() => ({
+    click: (event, entry) => latestRef.current.onRowClick(event, entry),
+    activate: (entry) => latestRef.current.activate(entry),
+    menu: (id, x, y) => latestRef.current.openMenu(id, x, y),
+    pressStart: (id, event) => latestRef.current.startPress(id)(event),
+    pressCancel: () => latestRef.current.cancelPress(),
+    focus: (id) => latestRef.current.setCurrent(id),
+    toggle: (id) => latestRef.current.toggle(id),
+    consumeSuppressedClick: () => { const was = latestRef.current.suppressClick.current; latestRef.current.suppressClick.current = false; return was; },
+  }), []);
+
   const menuEntry = menu ? visible.find((entry) => entry.entryId === menu.entryId) ?? null : null;
 
   return (
@@ -363,6 +426,7 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion }: P
             </section>
           ) : (
             <>
+              {range.start > 0 && <div ref={topSentinel} className="more-rows" aria-hidden="true" />}
               <table className="entries" data-view={prefs.view} aria-label="Files and folders" aria-multiselectable="true">
                 <thead>
                   <tr>
@@ -377,31 +441,12 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion }: P
                   </tr>
                 </thead>
                 <tbody>
-                  {visible.map((entry) => {
-                    const isSelected = selection.ids.has(entry.entryId);
-                    return (
-                      <tr key={entry.entryId} data-entry={entry.entryId} aria-selected={isSelected} className={isSelected ? 'selected' : undefined}
-                        onClick={(event) => onRowClick(event, entry)} onDoubleClick={(event) => { if (!(event.target as HTMLElement).closest('button, input')) activate(entry); }}
-                        onContextMenu={(event) => { event.preventDefault(); openMenu(entry.entryId, event.clientX, event.clientY); }}
-                        onPointerDown={startPress(entry.entryId)} onPointerUp={cancelPress} onPointerMove={cancelPress} onPointerCancel={cancelPress}>
-                        {showCheckboxes && (
-                          <td className="check"><input type="checkbox" aria-label={`Select ${entry.name}`} checked={isSelected} onChange={() => setSelection((s) => select(s, order, entry.entryId, 'toggle'))} /></td>
-                        )}
-                        <td className="name">
-                          <button type="button" className="row-button" tabIndex={entry.entryId === currentId ? 0 : -1} onFocus={() => setCurrent(entry.entryId)}
-                            onClick={() => { if (suppressClick.current) { suppressClick.current = false; return; } activate(entry); }}
-                            title={entry.name} aria-label={entry.kind === 'directory' ? `Open folder ${entry.name}` : `Download ${entry.name}`}>
-                            <span className={`icon ${entry.kind === 'directory' ? 'folder' : 'file'}`} aria-hidden="true" /><bdi>{entry.name}</bdi>
-                          </button>
-                        </td>
-                        <td className="modified">{formatTime(entry.modifiedUnixMs)}</td>
-                        <td className="type">{typeLabel(entry)}</td>
-                        <td className="size">{entry.kind === 'file' ? formatBytes(entry.size) : ''}</td>
-                      </tr>
-                    );
-                  })}
+                  {rendered.map((entry) => (
+                    <Row key={entry.entryId} entry={entry} selected={selection.ids.has(entry.entryId)} current={entry.entryId === currentId} checkbox={showCheckboxes} actions={rowActions} />
+                  ))}
                 </tbody>
               </table>
+              {range.end < visible.length && <div ref={sentinel} className="more-rows" aria-hidden="true" />}
               {!loading && !error && entries.length === 0 && <p className="empty">This folder is empty.</p>}
               {!loading && entries.length > 0 && visible.length === 0 && <p className="empty">{filter.trim() ? <>Nothing in this folder matches “<bdi>{filter.trim()}</bdi>”.</> : 'Only hidden items are here. Turn on “Show hidden items” in Settings to see them.'}</p>}
               {skipped > 0 && <p className="notice">{skipped} link{skipped === 1 ? '' : 's'} or shortcut target{skipped === 1 ? '' : 's'} not shown. OrbitDrive does not follow links out of a shared folder.</p>}
@@ -412,7 +457,7 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion }: P
                   <span className="hint">Sorting and filtering apply to the {entries.length.toLocaleString()} items loaded so far.</span>
                 </p>
               )}
-              {loading && <p className="empty" role="status">Loading…</p>}
+              {loading && <p className="empty" role="status">{loadingCount > 0 ? `Loading… ${loadingCount.toLocaleString()} items so far` : 'Loading…'}</p>}
             </>
           )}
         </div>
@@ -454,6 +499,40 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion }: P
     </div>
   );
 }
+
+interface RowActions {
+  click: (event: ReactMouseEvent, entry: FileEntry) => void;
+  activate: (entry: FileEntry) => void;
+  menu: (entryId: string, x: number, y: number) => void;
+  pressStart: (entryId: string, event: React.PointerEvent) => void;
+  pressCancel: () => void;
+  focus: (entryId: string) => void;
+  toggle: (entryId: string) => void;
+  consumeSuppressedClick: () => boolean;
+}
+
+const Row = memo(function Row({ entry, selected, current, checkbox, actions }: { entry: FileEntry; selected: boolean; current: boolean; checkbox: boolean; actions: RowActions }) {
+  return (
+    <tr data-entry={entry.entryId} aria-selected={selected} className={`${selected ? 'selected' : ''}${entry.hidden ? ' hidden-item' : ''}` || undefined}
+      onClick={(event) => actions.click(event, entry)} onDoubleClick={(event) => { if (!(event.target as HTMLElement).closest('button, input')) actions.activate(entry); }}
+      onContextMenu={(event) => { event.preventDefault(); actions.menu(entry.entryId, event.clientX, event.clientY); }}
+      onPointerDown={(event) => actions.pressStart(entry.entryId, event)} onPointerUp={actions.pressCancel} onPointerMove={actions.pressCancel} onPointerCancel={actions.pressCancel}>
+      {checkbox && (
+        <td className="check"><input type="checkbox" aria-label={`Select ${entry.name}`} checked={selected} onChange={() => actions.toggle(entry.entryId)} /></td>
+      )}
+      <td className="name">
+        <button type="button" className="row-button" tabIndex={current ? 0 : -1} onFocus={() => actions.focus(entry.entryId)}
+          onClick={() => { if (!actions.consumeSuppressedClick()) actions.activate(entry); }}
+          title={entry.name} aria-label={`${entry.kind === 'directory' ? `Open folder ${entry.name}` : `Download ${entry.name}`}${entry.hidden ? ' (hidden item)' : ''}`}>
+          <span className={`icon ${entry.kind === 'directory' ? 'folder' : 'file'}`} aria-hidden="true" /><bdi>{entry.name}</bdi>
+        </button>
+      </td>
+      <td className="modified">{formatTime(entry.modifiedUnixMs)}</td>
+      <td className="type">{typeLabel(entry)}</td>
+      <td className="size">{entry.kind === 'file' ? formatBytes(entry.size) : ''}</td>
+    </tr>
+  );
+});
 
 function ContextMenu({ x, y, onClose, children }: { x: number; y: number; onClose: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);

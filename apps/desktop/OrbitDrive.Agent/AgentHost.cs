@@ -1,3 +1,4 @@
+using OrbitDrive.Core;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using OrbitDrive.Core.Ipc;
@@ -27,9 +28,12 @@ internal sealed class AgentHost : IDisposable
 
     public CancellationToken Shutdown => _shutdown.Token;
 
+    private readonly FileAccessService _files;
+
     public AgentHost(AgentState state, string pcName, Action<string, object?> log)
     {
         _state = state; _pcName = pcName; _log = log;
+        _files = new FileAccessService(() => state.Roots, state.Tokens);
         _ipc = new LocalIpcServer(LocalIpc.PipeName(state.Directory_), HandleAsync);
     }
 
@@ -85,7 +89,7 @@ internal sealed class AgentHost : IDisposable
                 ["gateway"] = _state.Gateway,
                 ["agentVersion"] = ControlClient.AgentVersion,
                 ["activeStreams"] = _client?.ActiveStreams ?? 0,
-                ["roots"] = new JsonArray([.. _state.Roots.Select(r => (JsonNode)new JsonObject { ["rootId"] = r.RootId, ["name"] = r.Name, ["path"] = r.Path, ["available"] = Directory.Exists(r.Path), ["readOnly"] = true })]),
+                ["roots"] = new JsonArray([.. _state.Roots.Select(r => (JsonNode)new JsonObject { ["rootId"] = r.RootId, ["name"] = r.Name, ["path"] = r.Path, ["available"] = _files.IsAvailable(r), ["readOnly"] = true, ["showHidden"] = r.ShowHidden })]),
                 ["activePairing"] = _activePairing?.DeepClone(),
                 ["pendingApproval"] = _pendingApproval?.DeepClone(),
             };
@@ -140,9 +144,13 @@ internal sealed class AgentHost : IDisposable
             {
                 case "status": return Status();
                 case "add_root":
-                    var root = _state.AddRoot(Arg(args, "name", 64), Arg(args, "path", 4096));
+                    var root = _state.AddRoot(Arg(args, "name", 64), Arg(args, "path", 4096), args["showHidden"]?.GetValue<bool>() ?? false);
                     Emit("roots_changed", new { count = _state.Roots.Count });
                     return new JsonObject { ["rootId"] = root.RootId };
+                case "set_root_hidden":
+                    if (!_state.SetShowHidden(Arg(args, "rootId", 64), args["showHidden"]?.GetValue<bool>() ?? false)) throw new IpcException("That folder is not shared.");
+                    Emit("roots_changed", new { count = _state.Roots.Count });
+                    return null;
                 case "remove_root":
                     if (!_state.RemoveRoot(Arg(args, "rootId", 64))) throw new IpcException("That folder is not shared.");
                     Emit("roots_changed", new { count = _state.Roots.Count });

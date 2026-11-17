@@ -3,7 +3,11 @@ using OrbitDrive.Protocol;
 namespace OrbitDrive.Core;
 
 /// <summary>A folder the owner approved locally. Remote callers can never create or alter one.</summary>
-public sealed record SharedRoot(string RootId, string Name, string Path, bool ShowHidden = false);
+/// <summary>
+/// A folder the owner approved. <paramref name="VolumeId"/> is the identity of the disk it was on when approved: if a
+/// different disk later appears at the same path (another USB stick on E:), the approval does not carry over.
+/// </summary>
+public sealed record SharedRoot(string RootId, string Name, string Path, bool ShowHidden = false, string? VolumeId = null);
 
 public static class PathPolicy
 {

@@ -15,14 +15,29 @@ public sealed class ValidatedRead(SafeFileHandle handle, long offset, long lengt
 }
 
 /// <summary>Local, read-only filesystem policy. Applied to every instruction regardless of gateway authorisation.</summary>
-public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, SealedTokens tokens)
+public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, SealedTokens tokens, Func<string, string?>? volumeIdentity = null)
 {
+    private readonly Func<string, string?> _volumeIdentity = volumeIdentity ?? NativeFile.GetVolumeIdentity;
+    private const string DifferentDisk = "A different disk is at this location now. Share the folder again on the PC to allow access.";
+
+    /// <summary>True when the folder exists AND is still on the disk it was approved on.</summary>
+    public bool IsAvailable(SharedRoot root) => Directory.Exists(root.Path) && (root.VolumeId is null || _volumeIdentity(root.Path) == root.VolumeId);
+
+    /// <summary>Refuses a root whose path now leads to another volume than the one the owner approved.</summary>
+    private void EnsureApprovedVolume(SharedRoot root)
+    {
+        if (root.VolumeId is null) return;
+        var current = _volumeIdentity(root.Path);
+        if (current is null) throw new ProtocolException(ErrorCode.Unavailable, "The shared folder is currently unavailable.");
+        if (current != root.VolumeId) throw new ProtocolException(ErrorCode.Unavailable, DifferentDisk);
+    }
+
     public const int MaxPageSize = 200;
     public const int HashBufferBytes = 1 << 20;
 
     public RootListResponse ListRoots() => new()
     {
-        Roots = [.. roots().Select(r => new RootSummary { RootId = r.RootId, Name = r.Name, ReadOnly = true, Available = Directory.Exists(r.Path) })],
+        Roots = [.. roots().Select(r => new RootSummary { RootId = r.RootId, Name = r.Name, ReadOnly = true, Available = IsAvailable(r) })],
     };
 
     private SharedRoot FindRoot(string rootId) =>
@@ -45,6 +60,7 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
             if (body.RootId != root.RootId || !body.IsDirectory) throw new ProtocolException(ErrorCode.InvalidRequest, "Identifier does not belong to this folder.");
             segments = body.Segments;
         }
+        EnsureApprovedVolume(root);
         var path = PathPolicy.Resolve(root, segments, expectDirectory: true);
         if (segments.Length > 0)
         {
@@ -122,8 +138,9 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
     }
 
     /// <summary>Opens the file, then proves the opened handle is a single-link regular file that really lives under the root.</summary>
-    private static SafeFileHandle OpenValidated(SharedRoot root, string[] segments)
+    private SafeFileHandle OpenValidated(SharedRoot root, string[] segments)
     {
+        EnsureApprovedVolume(root);
         var path = PathPolicy.Resolve(root, segments, expectDirectory: false);
         SafeFileHandle handle;
         try { handle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.Asynchronous | FileOptions.SequentialScan); }
@@ -137,6 +154,9 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
             if (isReparse || !NativeFile.IsUnder(NativeFile.GetFinalPath(handle), RootFinalPath(root)))
                 throw new ProtocolException(ErrorCode.LinkNotAllowed, "Links and junctions are not followed.");
             if (links > 1) throw new ProtocolException(ErrorCode.LinkNotAllowed, "Files with multiple hard links are not shared.");
+            // The opened file itself must be on the approved volume (a mount point inside the folder is another disk).
+            if (root.VolumeId is not null && NativeFile.GetVolumeIdentity(handle) is { } volume && volume != root.VolumeId)
+                throw new ProtocolException(ErrorCode.Unavailable, DifferentDisk);
             return handle;
         }
         catch { handle.Dispose(); throw; }

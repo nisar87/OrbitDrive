@@ -5,7 +5,7 @@ using Microsoft.Win32.SafeHandles;
 namespace OrbitDrive.Core;
 
 /// <summary>Handle-based identity checks. The path of an opened handle, not a path string, is authoritative.</summary>
-internal static class NativeFile
+public static class NativeFile
 {
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern uint GetFinalPathNameByHandleW(SafeFileHandle hFile, [Out] char[] lpszFilePath, uint cchFilePath, uint dwFlags);
@@ -76,6 +76,42 @@ internal static class NativeFile
         if (!OperatingSystem.IsWindows()) return (1, false);
         if (!GetFileInformationByHandle(handle, out var info)) throw new Win32Exception(Marshal.GetLastWin32Error());
         return (info.NumberOfLinks, (info.FileAttributes & FileAttributeReparsePoint) != 0);
+    }
+
+    /// <summary>
+    /// Identity of the volume that currently holds a directory, or null when it cannot be read (missing folder, no
+    /// access). Windows: the volume serial number of the opened directory handle. Other systems (development hosts):
+    /// the device numbers of the mount that contains the resolved path.
+    /// </summary>
+    public static string? GetVolumeIdentity(string directory)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                using var handle = CreateFileW(directory, 0, FileShareAll, IntPtr.Zero, OpenExisting, BackupSemantics, IntPtr.Zero);
+                if (handle.IsInvalid || !GetFileInformationByHandle(handle, out var info)) return null;
+                return $"vol-{info.VolumeSerialNumber:X8}";
+            }
+            var real = GetFinalDirectoryPath(directory);
+            string? best = null, device = null;
+            foreach (var line in File.ReadLines("/proc/self/mountinfo"))
+            {
+                var fields = line.Split(' ');
+                if (fields.Length < 5) continue;
+                var mount = fields[4].Replace("\\040", " ");
+                if ((real == mount || mount == "/" || real.StartsWith(mount + "/", StringComparison.Ordinal)) && (best is null || mount.Length >= best.Length)) { best = mount; device = fields[2]; }
+            }
+            return device is null ? null : "dev-" + device;
+        }
+        catch (Exception e) when (e is IOException or Win32Exception or UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>Volume serial of an opened file (Windows); null where the check is unavailable.</summary>
+    public static string? GetVolumeIdentity(SafeFileHandle handle)
+    {
+        if (!OperatingSystem.IsWindows()) return null;
+        return GetFileInformationByHandle(handle, out var info) ? $"vol-{info.VolumeSerialNumber:X8}" : null;
     }
 
     public static bool IsUnder(string finalPath, string rootFinalPath)

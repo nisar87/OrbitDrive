@@ -3,7 +3,7 @@
 import { test, expect } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { startGateway, startAgent, agentCli, tempDir, makeFixtureRoot, repoRoot } from '../../../tests/integration/harness.mjs';
+import { startGateway, startAgent, connectIpc, agentCli, tempDir, makeFixtureRoot, repoRoot } from '../../../tests/integration/harness.mjs';
 
 let gateway, agent, root;
 const shots = join(repoRoot, 'artifacts', 'web-screenshots');
@@ -21,6 +21,9 @@ test.beforeAll(async () => {
   writeFileSync(join(root, 'Edge', xssName), 'x');
   const state = tempDir('e2e-explorer-state');
   agentCli(state, 'roots', 'add', 'Work Files', root);
+  const big = tempDir('e2e-big');
+  for (let i = 0; i < 10_000; i++) writeFileSync(join(big, `f${String(i).padStart(5, '0')}.dat`), '');
+  agentCli(state, 'roots', 'add', 'Big Archive', big);
   gateway = await startGateway({}, 5199);
   agent = await startAgent(gateway, state, 'Studio PC');
 });
@@ -301,4 +304,108 @@ test('desktop shell: windows, taskbar, launcher, account menu, theme', async ({ 
   await page.keyboard.press('Escape');
   await page.locator('.desktop-icon', { hasText: 'File Explorer' }).click();
   await expect(explorer(page)).toBeVisible();
+});
+
+test('a 10,000-item folder loads completely and stays usable', async ({ page }, info) => {
+  test.setTimeout(300_000);
+  await pairAndOpen(page, info);
+  const win = explorer(page);
+  await win.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('button').first().click();
+  await page.getByRole('region', { name: "This account's PCs" }).getByRole('button', { name: /Big Archive/ }).click();
+  await expect(rows(page)).toHaveCount(200);
+  await expect(win.getByText('200 items loaded (more available)')).toBeVisible();
+  const timings = {};
+  const timed = async (label, action) => { const start = Date.now(); await action(); timings[label] = Date.now() - start; };
+
+  await timed('loadAll', async () => {
+    await win.getByRole('button', { name: 'Load all' }).click();
+    await expect(win.getByText('10,000 items', { exact: true })).toBeVisible({ timeout: 240_000 });
+  });
+  await expect(win.getByRole('button', { name: 'Load more' })).toHaveCount(0);
+  expect(await rows(page).count(), 'only part of the folder is drawn at once').toBeLessThanOrEqual(1200);
+
+  await timed('filter', async () => {
+    await win.getByLabel('Filter this folder').fill('f09999');
+    await expect(rows(page)).toHaveCount(1, { timeout: 30_000 });
+  });
+  await timed('clearFilter', async () => {
+    await win.getByLabel('Filter this folder').fill('');
+    await expect(win.getByText('10,000 items', { exact: true })).toBeVisible({ timeout: 30_000 });
+  });
+  await timed('sortDescending', async () => {
+    await win.getByRole('button', { name: /Ascending\. Switch to descending/ }).click();
+    await expect(win.locator('tbody tr').first()).toContainText('f09999.dat', { timeout: 30_000 });
+  });
+  await win.getByRole('button', { name: /Descending\. Switch to ascending/ }).click();
+  await expect(win.locator('tbody tr').first()).toContainText('f00000.dat', { timeout: 30_000 });
+
+  if (!isPhone(info)) {
+    await win.getByRole('button', { name: 'Download f00000.dat' }).focus();
+    await timed('tenArrowKeys', async () => {
+      for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowDown');
+      await expect(win.getByRole('button', { name: 'Download f00010.dat' })).toBeFocused({ timeout: 30_000 });
+    });
+    await timed('selectOne', async () => {
+      await page.keyboard.press('Space');
+      await expect(win.getByText('1 selected', { exact: false })).toBeVisible({ timeout: 30_000 });
+    });
+    await timed('selectAll', async () => {
+      await page.keyboard.press('Control+a');
+      await expect(win.getByText('10,000 selected', { exact: false })).toBeVisible({ timeout: 30_000 });   // the whole folder, not just drawn rows
+      await page.keyboard.press('Escape');
+    });
+    await timed('endKey', async () => {
+      await page.keyboard.press('End');
+      await expect(win.getByRole('button', { name: 'Download f09999.dat' })).toBeFocused({ timeout: 30_000 });
+    });
+    await expect(win.getByRole('button', { name: 'Download f09999.dat' })).toBeInViewport();
+    await page.keyboard.press('ArrowUp');
+    await expect(win.getByRole('button', { name: 'Download f09998.dat' })).toBeFocused();
+    await timed('homeKey', async () => {
+      await page.keyboard.press('Home');
+      await expect(win.getByRole('button', { name: 'Download f00000.dat' })).toBeFocused({ timeout: 30_000 });
+    });
+    expect(await rows(page).count()).toBeLessThanOrEqual(1200);
+  } else {
+    await timed('scrollLoadsMore', async () => {
+      const before = await rows(page).count();
+      await win.locator('.content').evaluate((element) => { element.scrollTop = element.scrollHeight; });
+      await expect.poll(() => rows(page).count(), { timeout: 30_000 }).toBeGreaterThan(before);   // scrolling draws further rows
+    });
+  }
+  console.log(`LARGE-FOLDER-TIMINGS ${info.project.name} ${JSON.stringify(timings)}`);
+  info.annotations.push({ type: 'timings-ms', description: JSON.stringify(timings) });
+  // "Usable" bounds for single interactions on a 10,000-row list (load-all is network-bound and reported, not gated here).
+  for (const [label, ms] of Object.entries(timings)) if (label !== 'loadAll') expect(ms, `${label} took ${ms} ms`).toBeLessThan(6000);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+});
+
+test('hidden items: shown only when the PC owner shares them and this browser asks to see them', async ({ page }, info) => {
+  test.skip(process.platform === 'win32', 'the fixture marks the file hidden with a leading dot (Unix convention)');
+  writeFileSync(join(root, '.private-notes'), 'hidden');
+  const ipc = await connectIpc(agent.ready.pipe);
+  try {
+    const rootId = (await ipc.send('status')).data.roots.find((r) => r.name === 'Work Files').rootId;
+    await pairAndOpen(page, info);
+    const win = explorer(page);
+    await expect(win.getByRole('button', { name: /private-notes/ })).toHaveCount(0);       // the PC does not send it at all
+    await expect(win.getByText(/hidden/)).toHaveCount(0);
+
+    await ipc.send('set_root_hidden', { rootId, showHidden: true });
+    await win.getByRole('button', { name: 'Refresh' }).click();
+    await expect(win.getByText(/1 hidden/)).toBeVisible();                                   // sent, but this browser keeps hidden items out of view
+    await expect(win.getByRole('button', { name: /private-notes/ })).toHaveCount(0);
+    await taskbar(page, 'Settings').click();
+    await page.getByRole('dialog', { name: 'Settings' }).getByRole('checkbox', { name: 'Show hidden items' }).check();
+    await taskbar(page, 'File Explorer').click();
+    await expect(win.getByRole('button', { name: 'Download .private-notes (hidden item)' })).toBeVisible();
+    await page.screenshot({ path: join(shots, `${info.project.name}-28-hidden-items.png`) });
+    await page.getByRole('button', { name: 'Account', exact: true }).click();                // preference is per browser profile: reset for other tests
+    await page.keyboard.press('Escape');
+    await taskbar(page, 'Settings').click();
+    await page.getByRole('dialog', { name: 'Settings' }).getByRole('checkbox', { name: 'Show hidden items' }).uncheck();
+  } finally {
+    await ipc.send('set_root_hidden', { rootId: (await ipc.send('status')).data.roots.find((r) => r.name === 'Work Files').rootId, showHidden: false });
+    ipc.close();
+  }
 });

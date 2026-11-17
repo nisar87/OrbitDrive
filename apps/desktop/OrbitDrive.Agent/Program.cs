@@ -24,7 +24,7 @@ static int Usage()
     Console.Error.WriteLine("""
         orbitdrive-agent run [--gateway <https-url>] [--web-origin <https-url>] [--state <dir>] [--name <pc-name>]
         orbitdrive-agent ctl <status|pair|approve|deny|pause|resume|quit> [--state <dir>]      (talks to the running agent)
-        orbitdrive-agent ctl add_root <name> <folder> | remove_root <rootId> | set_gateway <https-url> [web-origin]
+        orbitdrive-agent ctl add_root <name> <folder> | remove_root <rootId> | set_root_hidden <rootId> <on|off> | set_gateway <https-url> [web-origin]
         orbitdrive-agent roots add <name> <folder> | list | remove <rootId> [--state <dir>]   (agent not running)
 
         While "run" is in the foreground you can also type: pair | approve | deny | pause | resume | reload | quit
@@ -52,6 +52,7 @@ if (args[0] == "ctl" && args.Length >= 2)
     {
         ("add_root", 2) => new JsonObject { ["name"] = positional[0], ["path"] = positional[1] },
         ("remove_root", 1) => new JsonObject { ["rootId"] = positional[0] },
+        ("set_root_hidden", 2) => new JsonObject { ["rootId"] = positional[0], ["showHidden"] = positional[1] is "on" or "true" },
         ("revoke_device", 1) => new JsonObject { ["deviceId"] = positional[0] },
         ("set_gateway", 1 or 2) => new JsonObject { ["gateway"] = positional[0], ["webOrigin"] = positional.Length == 2 ? positional[1] : null },
         (_, 0) => new JsonObject(),

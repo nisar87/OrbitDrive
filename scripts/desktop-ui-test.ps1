@@ -14,6 +14,8 @@ $work = Join-Path $env:RUNNER_TEMP ("orbit-ui-" + [guid]::NewGuid().ToString('N'
 $state = Join-Path $work 'state'; $share = Join-Path $work 'Holiday Photos'
 New-Item -ItemType Directory -Force -Path $state, $share | Out-Null
 Set-Content -Path (Join-Path $share 'itinerary.txt') -Value 'Day 1: arrive'
+Set-Content -Path (Join-Path $share 'private-diary.txt') -Value 'hidden'
+(Get-Item (Join-Path $share 'private-diary.txt')).Attributes = 'Hidden'
 $relay = 'http://127.0.0.1:5199'
 $script:win = $null; $script:shots = 0; $results = [ordered]@{}
 
@@ -153,6 +155,22 @@ try {
     Check ($roots.Count -eq 1 -and $roots[0].name -eq 'Holiday Photos' -and $roots[0].readOnly) 'the browser sees exactly the folder shared in the console'
     $page = (Api 'Post' "/v1/pcs/$pcId/directory-queries" @{ rootId = $roots[0].rootId; pageSize = 50 } $device).body
     Check (@($page.entries | Where-Object { $_.name -eq 'itinerary.txt' }).Count -eq 1) 'the real file inside it is listed'
+    # Hidden items: private unless the owner opts in for that folder, from the console.
+    Check (@($page.entries | Where-Object { $_.name -eq 'private-diary.txt' }).Count -eq 0) 'a hidden file in the shared folder is not listed by default'
+    Nav 'Shared folders'
+    $condition = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::ListItem)
+    (Find 'RootsList').FindFirst($Scope::Descendants, $condition).GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+    Click 'ToggleHiddenButton'
+    $withHidden = $null
+    for ($i = 0; $i -lt 40; $i++) { $withHidden = (Api 'Post' "/v1/pcs/$pcId/directory-queries" @{ rootId = $roots[0].rootId; pageSize = 50 } $device).body; if (@($withHidden.entries | Where-Object { $_.name -eq 'private-diary.txt' -and $_.hidden }).Count -eq 1) { break }; Start-Sleep -Milliseconds 250 }
+    Check (@($withHidden.entries | Where-Object { $_.name -eq 'private-diary.txt' -and $_.hidden }).Count -eq 1) 'after the owner opts in, the hidden file is listed and marked hidden'
+    Check ((@(ListItems 'RootsList'))[0] -match 'hidden items included') 'the console shows that hidden items are included for that folder'
+    Shot 'shared-folders-hidden-included'
+    (Find 'RootsList').FindFirst($Scope::Descendants, $condition).GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+    Click 'ToggleHiddenButton'
+    for ($i = 0; $i -lt 40; $i++) { $withHidden = (Api 'Post' "/v1/pcs/$pcId/directory-queries" @{ rootId = $roots[0].rootId; pageSize = 50 } $device).body; if (@($withHidden.entries | Where-Object { $_.name -eq 'private-diary.txt' }).Count -eq 0) { break }; Start-Sleep -Milliseconds 250 }
+    Check (@($withHidden.entries | Where-Object { $_.name -eq 'private-diary.txt' }).Count -eq 0) 'turning it off hides the file again'
+    Nav 'Overview'
 
     Nav 'Overview'
     Click 'PauseButton'

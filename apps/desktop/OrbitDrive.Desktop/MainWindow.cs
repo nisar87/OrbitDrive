@@ -68,6 +68,9 @@ public sealed class MainWindow : Window
     private readonly ListBox _devices = new() { MinHeight = 80, Margin = new Thickness(0, 8, 0, 8) };
     private readonly TextBlock _devicesEmpty = MakeText("DevicesEmpty", "No phone or browser is paired with this PC.", 13, FontWeights.Normal, Muted);
     private List<string> _rootIds = [];
+    private List<bool> _rootHidden = [];
+    private string _rootsShown = "";
+    private readonly CheckBox _newRootHidden = new() { Content = "Also show hidden files and folders from this folder", Margin = new Thickness(0, 0, 0, 6) };
     private List<string> _deviceIds = [];
     private string _qrFor = "";
     private int _tick;
@@ -293,10 +296,19 @@ public sealed class MainWindow : Window
             if (_roots.SelectedIndex < 0 || _roots.SelectedIndex >= _rootIds.Count) throw new IpcException("Select a folder first.");
             await client.SendAsync("remove_root", new JsonObject { ["rootId"] = _rootIds[_roots.SelectedIndex] });
         });
+        AutomationProperties.SetAutomationId(_newRootHidden, "NewRootHidden");
+        var toggleHidden = MakeButton("ToggleHiddenButton", "Show or hide hidden items in selected folder");
+        toggleHidden.Click += (_, _) => _ = RunAsync(_rootError, async client =>
+        {
+            var index = _roots.SelectedIndex;
+            if (index < 0 || index >= _rootIds.Count) throw new IpcException("Select a folder first.");
+            await client.SendAsync("set_root_hidden", new JsonObject { ["rootId"] = _rootIds[index], ["showHidden"] = !_rootHidden[index] });
+        });
         Page("Shared folders",
             MakeText("RootsIntro", "Only folders listed here can be seen from your paired devices. Sharing is read-only, and Windows permissions still apply.", 13, FontWeights.Normal, Muted),
-            Card("Shared now", _rootsEmpty, _roots, remove),
-            Card("Share another folder", MakeLabel("Name shown on your phone", _rootName), _rootName, MakeLabel("Folder", _rootPath), _rootPath, Row(browse, add), _rootError));
+            Card("Shared now", _rootsEmpty, _roots, Row(remove, toggleHidden)),
+            Card("Share another folder", MakeLabel("Name shown on your phone", _rootName), _rootName, MakeLabel("Folder", _rootPath), _rootPath, _newRootHidden, Row(browse, add), _rootError,
+                MakeText("HiddenHint", "Hidden items stay private unless you tick the box. Windows system files are never shared. A folder is tied to the disk it is on: another disk at the same drive letter is not shared.", 13, FontWeights.Normal, Muted)));
 
         var pair = MakeButton("PairButton", "Pair a phone or browser", accent: true);
         pair.Click += (_, _) => _ = RunAsync(_deviceError, client => client.SendAsync("pair"));
@@ -460,8 +472,8 @@ public sealed class MainWindow : Window
         if (path.Length > 0 && Path.GetPathRoot(path) == path &&
             MessageBox.Show(this, $"Share the whole drive {path}?\n\nEvery folder on it that your Windows account can read becomes visible to your paired devices.", "Share an entire drive", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
             return;
-        await client.SendAsync("add_root", new JsonObject { ["name"] = _rootName.Text.Trim(), ["path"] = path });
-        _rootName.Text = ""; _rootPath.Text = "";
+        await client.SendAsync("add_root", new JsonObject { ["name"] = _rootName.Text.Trim(), ["path"] = path, ["showHidden"] = _newRootHidden.IsChecked == true });
+        _rootName.Text = ""; _rootPath.Text = ""; _newRootHidden.IsChecked = false;
     });
 
     private Task TogglePauseAsync()
@@ -522,24 +534,30 @@ public sealed class MainWindow : Window
         _statFolders.Text = roots.Count.ToString();
         _statTransfers.Text = ((int)status["activeStreams"]!).ToString();
         var ids = roots.Select(r => r!["rootId"]!.GetValue<string>()).ToList();
-        if (!ids.SequenceEqual(_rootIds))
+        var shown = roots.ToJsonString();          // redraw when anything about a folder changes (availability, options), not only the set
+        if (shown != _rootsShown)
         {
+            var keep = _roots.SelectedIndex >= 0 && _roots.SelectedIndex < _rootIds.Count ? _rootIds[_roots.SelectedIndex] : null;
+            _rootsShown = shown;
             _rootIds = ids;
+            _rootHidden = [.. roots.Select(r => r!["showHidden"]?.GetValue<bool>() ?? false)];
             _roots.Items.Clear();
             foreach (var root in roots)
             {
                 var available = (bool)root!["available"]!;
+                var includesHidden = root["showHidden"]?.GetValue<bool>() ?? false;
                 var title = new TextBlock { Text = root["name"]!.GetValue<string>(), FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
                 var path = new TextBlock { Text = root["path"]!.GetValue<string>(), FontSize = 12.5, TextWrapping = TextWrapping.Wrap };
-                var badge = new TextBlock { Text = available ? "Read-only" : "Read-only · currently unavailable", FontSize = 12.5 };
+                var badge = new TextBlock { Text = (available ? "Read-only" : "Read-only · currently unavailable (folder missing, or a different disk is at this location)") + (includesHidden ? " · hidden items included" : ""), FontSize = 12.5, TextWrapping = TextWrapping.Wrap };
                 Mute(path);
                 if (available) Mute(badge); else badge.SetResourceReference(TextBlock.ForegroundProperty, Danger);
                 var lines = new StackPanel { Margin = new Thickness(0, 4, 0, 4) };
                 lines.Children.Add(title); lines.Children.Add(path); lines.Children.Add(badge);
                 var item = new ListBoxItem { Content = lines };
-                AutomationProperties.SetName(item, $"{root["name"]}  —  {root["path"]}  (read-only{(available ? "" : ", currently unavailable")})");
+                AutomationProperties.SetName(item, $"{root["name"]}  —  {root["path"]}  (read-only{(available ? "" : ", currently unavailable")}{(includesHidden ? ", hidden items included" : "")})");
                 _roots.Items.Add(item);
             }
+            if (keep is not null) _roots.SelectedIndex = _rootIds.IndexOf(keep);
         }
         _rootsEmpty.Visibility = roots.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
