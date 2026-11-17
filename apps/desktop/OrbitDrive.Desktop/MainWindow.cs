@@ -87,6 +87,8 @@ public sealed class MainWindow : Window
         AutomationProperties.SetAutomationId(this, "OrbitDriveMainWindow");
         AutomationProperties.SetAutomationId(_nav, "Navigation");
         AutomationProperties.SetAutomationId(_roots, "RootsList");
+        ScrollViewer.SetHorizontalScrollBarVisibility(_roots, ScrollBarVisibility.Disabled);   // long paths wrap instead of scrolling sideways
+        _roots.MinHeight = 0;
         AutomationProperties.SetAutomationId(_activity, "ActivityList");
         AutomationProperties.SetAutomationId(_pairLink, "PairLink");
         AutomationProperties.SetName(_nav, "Sections");
@@ -525,7 +527,19 @@ public sealed class MainWindow : Window
             _rootIds = ids;
             _roots.Items.Clear();
             foreach (var root in roots)
-                _roots.Items.Add($"{root!["name"]}  —  {root["path"]}  (read-only{((bool)root["available"]! ? "" : ", currently unavailable")})");
+            {
+                var available = (bool)root!["available"]!;
+                var title = new TextBlock { Text = root["name"]!.GetValue<string>(), FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
+                var path = new TextBlock { Text = root["path"]!.GetValue<string>(), FontSize = 12.5, TextWrapping = TextWrapping.Wrap };
+                var badge = new TextBlock { Text = available ? "Read-only" : "Read-only · currently unavailable", FontSize = 12.5 };
+                Mute(path);
+                if (available) Mute(badge); else badge.SetResourceReference(TextBlock.ForegroundProperty, Danger);
+                var lines = new StackPanel { Margin = new Thickness(0, 4, 0, 4) };
+                lines.Children.Add(title); lines.Children.Add(path); lines.Children.Add(badge);
+                var item = new ListBoxItem { Content = lines };
+                AutomationProperties.SetName(item, $"{root["name"]}  —  {root["path"]}  (read-only{(available ? "" : ", currently unavailable")})");
+                _roots.Items.Add(item);
+            }
         }
         _rootsEmpty.Visibility = roots.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
