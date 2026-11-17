@@ -318,22 +318,34 @@ public sealed class MainWindow : Window
         save.Click += (_, _) => _ = RunAsync(_settingsError, client =>
             client.SendAsync("set_gateway", new JsonObject { ["gateway"] = _gateway.Text.Trim(), ["webOrigin"] = _webOrigin.Text.Trim().Length == 0 ? null : _webOrigin.Text.Trim() }));
         _startAtSignIn.IsChecked = StartupRegistration.IsEnabled(_stateDirectory);
-        _startAtSignIn.Click += (_, _) =>
+        // Checked/Unchecked (not Click) so that keyboard, mouse and assistive technology all take the same path.
+        var applying = false;
+        void ApplyStartAtSignIn(object sender, RoutedEventArgs e)
         {
+            if (applying) return;
+            applying = true;
             _settingsError.Text = "";
             try { StartupRegistration.Set(_stateDirectory, _startAtSignIn.IsChecked == true); }
-            catch (Exception e) when (e is UnauthorizedAccessException or System.Security.SecurityException or IOException) { _settingsError.Text = "Windows did not allow changing the start-up setting."; }
-            _startAtSignIn.IsChecked = StartupRegistration.IsEnabled(_stateDirectory);
-        };
+            catch (Exception error) when (error is UnauthorizedAccessException or System.Security.SecurityException or IOException) { _settingsError.Text = "Windows did not allow changing the start-up setting."; }
+            _startAtSignIn.IsChecked = StartupRegistration.IsEnabled(_stateDirectory);   // show what is really registered
+            applying = false;
+        }
+        _startAtSignIn.Checked += ApplyStartAtSignIn;
+        _startAtSignIn.Unchecked += ApplyStartAtSignIn;
         _pauseWhenLocked.IsChecked = _settings.PauseWhenLocked;
-        _pauseWhenLocked.Click += (_, _) =>
+        void ApplyPauseWhenLocked(object sender, RoutedEventArgs e)
         {
+            if (applying) return;
+            applying = true;
             _settingsError.Text = "";
             try { _settings.SetPauseWhenLocked(_pauseWhenLocked.IsChecked == true); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { _settingsError.Text = "The setting could not be saved."; }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { _settingsError.Text = "The setting could not be saved."; }
             _lockPolicy.Enabled = _settings.PauseWhenLocked;
             _pauseWhenLocked.IsChecked = _settings.PauseWhenLocked;
-        };
+            applying = false;
+        }
+        _pauseWhenLocked.Checked += ApplyPauseWhenLocked;
+        _pauseWhenLocked.Unchecked += ApplyPauseWhenLocked;
         Page("Settings",
             Card("Connection", MakeLabel("Relay address (https://…)", _gateway), _gateway, MakeLabel("Web app address shown in pairing links (optional)", _webOrigin), _webOrigin, save),
             Card("This PC", _startAtSignIn,
