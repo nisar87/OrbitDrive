@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { startGateway, startAgent, startProxy, connectIpc, agentCli, tempDir, makeFixtureRoot, writeLargeFile, Browser, pair, sleep } from './harness.mjs';
 
 let gateway, agent, ipc, phone, tablet, stranger, pcId, root, rootId, bigHash, state;
-const BIG_MIB = 24;
+const BIG_MIB = 64;   // larger than every buffer between the PC and the browser, so an abandoned download cannot already be "all sent"
 
 before(async () => {
   root = makeFixtureRoot();
