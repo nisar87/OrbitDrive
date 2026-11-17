@@ -1,0 +1,20 @@
+#cloud-config
+# OrbitDrive relay host, first boot. Ubuntu 24.04 ARM64 on Oracle Cloud (VM.Standard.A1.Flex).
+# Installs only what the relay needs and opens only web ports on the host firewall. Contains no secrets.
+# NOT yet applied to any server or tested on a real host.
+package_update: true
+package_upgrade: true
+runcmd:
+  # Each install is separate so one unavailable package cannot block the others; results are logged for review.
+  - apt-get install -y unattended-upgrades >> /var/log/orbitdrive-init.log 2>&1
+  - apt-get install -y aspnetcore-runtime-10.0 >> /var/log/orbitdrive-init.log 2>&1
+  - apt-get install -y caddy >> /var/log/orbitdrive-init.log 2>&1
+  # Caddy (TLS termination) stays off until the relay is configured.
+  - systemctl disable --now caddy >> /var/log/orbitdrive-init.log 2>&1
+  # Oracle's Ubuntu images ship an iptables rule set that allows only SSH. Add web ports and keep the rest closed.
+  - iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
+  - iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+  - netfilter-persistent save >> /var/log/orbitdrive-init.log 2>&1
+  # The relay runs as its own unprivileged account with no login shell.
+  - useradd --system --home /opt/orbitdrive --shell /usr/sbin/nologin orbitdrive
+  - install -d -o orbitdrive -g orbitdrive -m 0750 /opt/orbitdrive
