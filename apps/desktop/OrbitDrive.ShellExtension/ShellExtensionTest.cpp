@@ -49,6 +49,8 @@ int wmain(int argc, wchar_t** argv) {
 
     std::vector<std::wstring> paths = { files + L"\\a b.txt", files + L"\\quote ' and unicode é 文件.txt", files + L"\\semi;colon & amp $(x).txt" };
     for (auto& p : paths) WriteFileText(p, "x");
+    // The temp folder may be spelled with 8.3 short names; Explorer hands over the long, real path, so expect that.
+    for (auto& p : paths) { wchar_t longPath[MAX_PATH * 2]; DWORD n = GetLongPathNameW(p.c_str(), longPath, ARRAYSIZE(longPath)); if (n > 0 && n < ARRAYSIZE(longPath)) p.assign(longPath, n); }
     SHCreateDirectoryExW(nullptr, (files + L"\\a folder").c_str(), nullptr);
 
     HMODULE dll = LoadLibraryW(argv[1]);
