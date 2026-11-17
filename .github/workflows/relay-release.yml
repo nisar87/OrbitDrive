@@ -90,3 +90,26 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh issue create --repo "${{ github.repository }}" --title "[relay-alert] Release ${{ needs.publish.outputs.version }} was not verified on the development relay" --body "The relay did not report version ${{ needs.publish.outputs.version }} within the time limit. The host rolls back failed releases automatically; check ${{ needs.publish.outputs.url }}/relay-status.json and the run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}."
+  live-agent:
+    # A real agent on GitHub's Windows and Linux runners talks to the live relay across the internet (outbound only).
+    needs: [publish, verify-deployment]
+    if: needs.publish.outputs.enabled == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: dotnet build OrbitDrive.slnx -c Release
+      - name: Agent against the live development relay
+        run: node --test --test-reporter=spec tests/integration/live-relay.test.mjs
+        env:
+          ORBIT_LIVE_RELAY_URL: ${{ needs.publish.outputs.url }}
