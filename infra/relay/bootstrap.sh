@@ -34,6 +34,7 @@ cat >/etc/orbitdrive/gateway.env <<ENV
 ASPNETCORE_ENVIRONMENT=Production
 OrbitDrive__Firebase__ProjectId=$PROJECT
 OrbitDrive__AllowedWebOrigins__0=$ORIGIN
+OrbitDrive__DataDirectory=/var/lib/orbitdrive-gateway
 DOTNET_gcServer=0
 DOTNET_GCHeapHardLimit=0x18000000
 ENV
@@ -50,6 +51,8 @@ StartLimitIntervalSec=0
 User=orbitdrive
 EnvironmentFile=/etc/orbitdrive/gateway.env
 WorkingDirectory=/opt/orbitdrive/current
+StateDirectory=orbitdrive-gateway
+StateDirectoryMode=0700
 ExecStart=/usr/bin/dotnet /opt/orbitdrive/current/OrbitDrive.Gateway.dll --urls http://127.0.0.1:8080
 Restart=always
 RestartSec=3

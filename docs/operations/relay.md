@@ -42,8 +42,12 @@ Then set `"enabled": true` in `infra/relay/environments/dev.json` so deployment 
 - Force an update check: `sudo systemctl start orbitdrive-update`. Retry a rolled-back version: remove it from `/opt/orbitdrive/bad-versions`.
 - Manual rollback: `sudo ln -sfn /opt/orbitdrive/releases/<version> /opt/orbitdrive/current && sudo systemctl restart orbitdrive-gateway`.
 - Restore configuration: `sudo tar -xzf /var/backups/orbitdrive/<file> --absolute-names`.
-- Total loss: create a new instance and run the bootstrap again; no state on the host is irreplaceable today (gateway
-  metadata is still in memory — W3).
+- Total loss: create a new instance and run the bootstrap again. The only state worth restoring is
+  `/var/lib/orbitdrive-gateway/registrations.json` (PCs, owners, approved/revoked browsers; secrets as hashes only),
+  which the local backup includes. Without it every PC must be paired again; nothing else is lost.
+- Durable registrations need the unit file and `gateway.env` written by the bootstrap from this commit or later
+  (`StateDirectory=orbitdrive-gateway`, `OrbitDrive__DataDirectory`). A host bootstrapped earlier keeps running in
+  memory-only mode until the bootstrap is re-run; the updater replaces the gateway binary only.
 
 ## What has and has not been proven
 

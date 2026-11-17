@@ -22,6 +22,8 @@ public sealed class GatewayOptions
     public FirebaseOptions Firebase { get; set; } = new();
     public string[] AllowedWebOrigins { get; set; } = [];
     public DevIdentityOptions DevIdentity { get; set; } = new();
+    /// <summary>Where durable registrations and grants are kept. Empty = memory only (everything is forgotten on restart).</summary>
+    public string DataDirectory { get; set; } = "";
     public int PairingTtlSeconds { get; set; } = 120;
     public int DownloadSessionTtlSeconds { get; set; } = 3600;
     public int AgentRequestTimeoutSeconds { get; set; } = 15;

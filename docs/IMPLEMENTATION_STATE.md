@@ -57,7 +57,7 @@ Firebase is back in scope (owner, 2026-11-17): project `orbitdrive-dev` was crea
 | W1 | AUTOMATED_VERIFIED (partial) | Gateway verifies Firebase ID tokens (23 real-signature cases). Web: sign-up with email verification, sign-in, password reset (no account enumeration), sign-out, optional "keep me signed in", tokens never stored by OrbitDrive; tested in 5 browser projects against the local Auth emulator with the real gateway and agent. Firebase project `orbitdrive-dev` exists (Email/Password on). Missing: **a real sign-in against `orbitdrive-dev` with real email delivery**, token-revocation check (needs service credentials), revoke-all-devices, Google sign-in, MFA decision |
 | D1 | AUTOMATED_VERIFIED (partial) | Owner console (7 pages), tray, close-to-tray, Quit, single instance (console + agent), same-user local channel with closed command set, pause, persisted settings. UI Automation 29/29 on windows-2025. Missing: start-at-sign-in, crash-restart policy, lock/sleep behaviour, dark/high-contrast themes, DPI review, standard-user and second-Windows-user evidence, tray interaction test, **visual review of screenshots (artifact `owner-console-ui`, not viewable from the build sandbox)** |
 | W2 / D2 | IN_PROGRESS | Pairing state machine, PC-side approval UI (account, browser, matching code), revocation of a browser; QR image on the PC (encoder verified against a reference encoder and a real decoder), device list + revoke on the PC, gateway device list / revoke / disconnect-PC APIs with isolation tests. Web: approved-browsers list, remove another browser, disconnect PC (two-step confirm). Missing: in-site QR scanner, rename device, per-IP rate limits, QR scan with a real phone camera |
-| W3 / D3 | IN_PROGRESS (early) | Outbound control channel, generations, reconnect; no leases/heartbeat expiry, no Firestore, no fault-injection suite |
+| W3 / D3 | IN_PROGRESS | Outbound control channel, generations, reconnect; file-backed durable registrations/grants (`OrbitDrive:DataDirectory`) with restart tests; no leases/heartbeat expiry, no Firestore, no fault-injection suite |
 | W4 / D4 | IN_PROGRESS (early) | Secure browsing core + minimal Explorer view; no shell, sorting, selection, properties, volume binding |
 | W5 / D5 | IN_PROGRESS (early) | Range relay, revisions, capabilities, 1 GiB verified; no managed save mode, interrupted-resume e2e, quotas |
 | W6–W12, D6–D12 | NOT_STARTED | |
@@ -76,7 +76,7 @@ web) works end to end in CI. It is a slice through M1–M2, not completion of th
 
 ## Known gaps in what exists
 
-- Gateway state is in memory: a restart drops pairings and grants (fails closed).
+- Gateway registrations/grants persist only when `OrbitDrive:DataDirectory` is set. The live relay's unit file predates this, so it stays memory-only until the owner re-runs the pinned bootstrap. Pending pairings and download capabilities never survive a restart (by design).
 - Device credential and dev token live in `localStorage`; no CSP yet.
 - Same-size rewrite that restores the timestamp between prepare and read is not detected.
 - Agent-side busy limits (16 requests, 4 streams) and pending-request caps have no dedicated tests yet.
@@ -95,7 +95,7 @@ Blocked on the owner (cannot be done from the build environment):
   code-signing identity, a service-account key (Firestore, FCM, token revocation), review of the console screenshots.
 
 Not blocked, in order:
-1. W3/D3: durable gateway store (file-backed until Firestore), agent leases/heartbeats, fault-injection suite, decide ADR-1.
+1. W3/D3: agent leases/heartbeats, fault-injection suite, decide ADR-1 (durable file store done).
 2. W2 remainder: in-site QR scanner + manual fallback, per-IP rate limits, device rename.
 3. D1 remainder: start at sign-in, crash-restart policy, themes/high contrast, keyboard pass, tray test.
 4. D4/W4: Windows-style web shell (desktop, taskbar, windows), full Explorer (views, sort, selection, properties,

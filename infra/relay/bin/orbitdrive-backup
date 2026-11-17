@@ -4,7 +4,7 @@
 # the repository with bootstrap.sh. Off-host backup (Oracle Object Storage, Always Free) is a later step.
 set -euo pipefail
 DEST=${ORBIT_BACKUP_DIR:-/var/backups/orbitdrive}
-SOURCES=${ORBIT_BACKUP_SOURCES:-/etc/orbitdrive /var/lib/orbitdrive /etc/caddy/Caddyfile /opt/orbitdrive/bad-versions}
+SOURCES=${ORBIT_BACKUP_SOURCES:-/etc/orbitdrive /var/lib/orbitdrive /var/lib/orbitdrive-gateway /etc/caddy/Caddyfile /opt/orbitdrive/bad-versions}
 mkdir -p "$DEST"; chmod 700 "$DEST"
 file="$DEST/orbitdrive-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 existing=(); for s in $SOURCES; do [ -e "$s" ] && existing+=("$s"); done

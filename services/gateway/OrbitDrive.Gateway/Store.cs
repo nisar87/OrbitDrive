@@ -64,23 +64,76 @@ public static class Secrets
 }
 
 /// <summary>
-/// Durable-metadata boundary. This slice keeps state in memory on the single relay instance: a restart
-/// forgets pairings and grants (fail closed). The Firestore-backed implementation is phase W3.
+/// Durable-metadata boundary. PC registrations, ownership and browser-device grants survive a restart when
+/// OrbitDrive:DataDirectory is set (an atomically replaced JSON snapshot; Firestore replaces it later). Pairing
+/// requests, download capabilities and live streams are deliberately NOT persisted: after a restart they are gone
+/// and must be re-established (fail closed). Device secrets are stored only as hashes.
 /// </summary>
-public sealed class Store(GatewayOptions options, TimeProvider time)
+public sealed class Store
 {
+    private sealed record PcDto(string PcId, string Spki, string Name, string AgentVersion, string? OwnerUid, long LastSeenUnixMs);
+    private sealed record DeviceDto(string Id, string OwnerUid, string Name, string SecretHash, bool Active, bool Revoked, string[] PcIds);
+    private sealed record Snapshot(int Version, PcDto[] Pcs, DeviceDto[] Devices);
+
+    private readonly GatewayOptions options;
+    private readonly TimeProvider time;
+    private readonly string? _file;
     private readonly Lock _gate = new();
     private readonly Dictionary<string, PcRecord> _pcs = [];
     private readonly Dictionary<string, BrowserDeviceRecord> _devices = [];
     private readonly Dictionary<string, PairingRecord> _pairings = [];
     private readonly Dictionary<string, DownloadSessionRecord> _downloads = [];
 
+    public Store(GatewayOptions options, TimeProvider time)
+    {
+        this.options = options; this.time = time;
+        if (options.DataDirectory.Length == 0) return;
+        Directory.CreateDirectory(options.DataDirectory);
+        _file = Path.Join(options.DataDirectory, "registrations.json");
+        if (!File.Exists(_file)) return;
+        try
+        {
+            var snapshot = System.Text.Json.JsonSerializer.Deserialize<Snapshot>(File.ReadAllText(_file)) ?? throw new System.Text.Json.JsonException("empty");
+            if (snapshot.Version != 1) throw new System.Text.Json.JsonException("unknown snapshot version");
+            foreach (var pc in snapshot.Pcs)
+                _pcs[pc.PcId] = new PcRecord { PcId = pc.PcId, PublicKeySpki = Convert.FromBase64String(pc.Spki), Name = pc.Name, AgentVersion = pc.AgentVersion, OwnerUid = pc.OwnerUid, LastSeen = DateTimeOffset.FromUnixTimeMilliseconds(pc.LastSeenUnixMs) };
+            foreach (var d in snapshot.Devices)
+            {
+                var device = new BrowserDeviceRecord { Id = d.Id, OwnerUid = d.OwnerUid, Name = d.Name, SecretHash = Convert.FromBase64String(d.SecretHash), Active = d.Active, Revoked = d.Revoked };
+                foreach (var pcId in d.PcIds) if (_pcs.ContainsKey(pcId)) device.PcIds.Add(pcId);
+                _devices[d.Id] = device;
+            }
+        }
+        catch (Exception e) when (e is System.Text.Json.JsonException or FormatException or ArgumentException or NullReferenceException)
+        {
+            // An unreadable snapshot never grants access: keep it aside for investigation and start with no grants.
+            _pcs.Clear(); _devices.Clear();
+            File.Move(_file, _file + ".corrupt-" + time.GetUtcNow().ToUnixTimeSeconds(), overwrite: true);
+        }
+    }
+
+    /// <summary>Writes the snapshot atomically. Called with the gate held, after every durable change.</summary>
+    private void Save()
+    {
+        if (_file is null) return;
+        var snapshot = new Snapshot(1,
+            [.. _pcs.Values.Select(p => new PcDto(p.PcId, Convert.ToBase64String(p.PublicKeySpki), p.Name, p.AgentVersion, p.OwnerUid, p.LastSeen.ToUnixTimeMilliseconds()))],
+            [.. _devices.Values.Where(d => d.Active || d.Revoked).Select(d => new DeviceDto(d.Id, d.OwnerUid, d.Name, Convert.ToBase64String(d.SecretHash), d.Active, d.Revoked, [.. d.PcIds]))]);
+        var temp = _file + ".tmp";
+        File.WriteAllText(temp, System.Text.Json.JsonSerializer.Serialize(snapshot));
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temp, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        File.Move(temp, _file, overwrite: true);
+    }
+
     public PcRecord UpsertPc(string pcId, byte[] spki, string name, string agentVersion)
     {
         lock (_gate)
         {
-            if (!_pcs.TryGetValue(pcId, out var pc)) _pcs[pcId] = pc = new PcRecord { PcId = pcId, PublicKeySpki = spki };
-            pc.Name = name; pc.AgentVersion = agentVersion; pc.LastSeen = time.GetUtcNow();
+            var known = _pcs.TryGetValue(pcId, out var pc);
+            if (!known) _pcs[pcId] = pc = new PcRecord { PcId = pcId, PublicKeySpki = spki };
+            var changed = !known || pc!.Name != name || pc.AgentVersion != agentVersion;
+            pc!.Name = name; pc.AgentVersion = agentVersion; pc.LastSeen = time.GetUtcNow();
+            if (changed || pc.OwnerUid is not null) Save(); // last-seen is kept for owned PCs so "offline since" survives a restart
             return pc;
         }
     }
@@ -170,7 +223,9 @@ public sealed class Store(GatewayOptions options, TimeProvider time)
             pc.OwnerUid ??= pairing.ClaimUid;
             device.Active = true;
             device.PcIds.Add(pcId);
-            return pairing.State = PairingState.Approved;
+            pairing.State = PairingState.Approved;
+            Save();
+            return pairing.State;
         }
     }
 
@@ -223,6 +278,7 @@ public sealed class Store(GatewayOptions options, TimeProvider time)
             if (!_devices.TryGetValue(deviceId, out var device) || !device.PcIds.Remove(pcId))
                 throw new ProtocolException(ErrorCode.NotFound, "That device is not paired with this PC.");
             foreach (var session in _downloads.Values.Where(d => d.BrowserDeviceId == deviceId && d.PcId == pcId)) session.Revoked.Cancel();
+            Save();
         }
     }
 
@@ -236,6 +292,7 @@ public sealed class Store(GatewayOptions options, TimeProvider time)
             foreach (var device in _devices.Values) device.PcIds.Remove(pcId);
             foreach (var session in _downloads.Values.Where(d => d.PcId == pcId)) session.Revoked.Cancel();
             foreach (var pairing in _pairings.Values.Where(p => p.PcId == pcId && p.State is PairingState.Issued or PairingState.Claimed)) pairing.State = PairingState.Expired;
+            Save();
         }
     }
 
@@ -274,6 +331,7 @@ public sealed class Store(GatewayOptions options, TimeProvider time)
                 throw new ProtocolException(ErrorCode.NotFound, "Device not found.");
             device.Revoked = true;
             foreach (var session in _downloads.Values.Where(d => d.BrowserDeviceId == deviceId)) session.Revoked.Cancel();
+            Save();
         }
     }
 }

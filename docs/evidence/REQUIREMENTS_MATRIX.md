@@ -10,7 +10,7 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R03 | IN_PROGRESS | Web: slice UI only, W4 shell not built. WPF console: functional 7-page console, unstyled beyond basics, screenshots unreviewed. No rubric score claimed |
 | R04 | AUTOMATED_VERIFIED | Sign-up, email verification, login, reset, logout in 5 browser projects against the Auth emulator; gateway token checks incl. wrong-project/expired/forged/unverified (web 43971788364, integration firebase-auth). Awaiting a real sign-in against the live project |
 | R05 | IN_PROGRESS | One-use expiring code + PC approval implemented and tested (integration: expiry, reuse, lockout, race in StoreTests). QR image rendered on the PC and verified by reference encoder + decoder (integration qr suite); in-site scanner and real camera scan outstanding |
-| R06 | IN_PROGRESS | Device grant persists across agent restart; unapproved/revoked browser denied (integration). Lost on gateway restart until W3 |
+| R06 | IN_PROGRESS | Device grant persists across agent restart; unapproved/revoked browser denied (integration). Grants, ownership and revocations survive a gateway restart (file store, `restart.test.mjs`); Firestore not built |
 | R07 | IN_PROGRESS | ECDSA identity, DPAPI CurrentUser via P/Invoke on Windows; restart keeps pcId (Windows integration). Rotation not built |
 | R08 | IN_PROGRESS | Roots added only by local owner action (console or CLI); remote side sees exactly those (desktop-ui, integration). Drive-root warning exists but is untested |
 | R09 | IN_PROGRESS | Traversal/ADS/reserved/symlink/junction/ancestor-swap/hard-link denied on Windows CI. Volume identity, placeholder, race fuzzing outstanding |
@@ -45,7 +45,7 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R38 | IN_PROGRESS | Logs asserted free of pairing/device secrets, tokens, capabilities (integration). No support bundle/cache yet |
 | R39 | AUTOMATED_VERIFIED | /v1/meta and web taskbar state TLS-via-relay, not E2EE (integration test); README/SECURITY agree |
 | R40 | IN_PROGRESS | Static build + production guard tested; firebase.json has no backend rewrite. Not validated with Firebase CLI |
-| R41 | NOT_STARTED | In-memory store; W3 |
+| R41 | IN_PROGRESS | File-backed registration store (atomic snapshot, hashes only, corrupt store grants nothing); restart tests on Windows+Linux. Firestore, leases and multi-instance not built |
 | R42 | IN_PROGRESS | Per-owner stream cap (429 + recovery), 64 KiB body cap (413) and control-message cap tested (integration); no relay-byte quotas yet |
 | R43 | NOT_STARTED | D10 |
 | R44 | NOT_STARTED | D10 (signing identity required) |
