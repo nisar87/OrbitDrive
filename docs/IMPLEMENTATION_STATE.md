@@ -9,7 +9,14 @@ Relay host decision (owner, 2026-11-17): Oracle Cloud, tenancy `nisar87`, home r
 Free Tier (in trial). Target: `orbitdrive-relay`, VM.Standard.A1.Flex (Always Free-eligible) 1 OCPU / 6 GB, Canonical
 Ubuntu 24.04, 50 GB boot volume, new VCN + public subnet, Oracle-generated SSH key pair held only by the owner,
 first-boot script `infra/relay/cloud-init.yaml`. **Create attempt on 2026-11-17 failed: "Out of capacity for shape
-VM.Standard.A1.Flex in availability domain AD-1".** Nothing exists in the tenancy (no instance, no VCN). The owner's rules:
+VM.Standard.A1.Flex in availability domain AD-1".** Owner then chose the temporary x86-64 Always Free shape. **Created 2026-11-17 00:27 UTC and Running:** `orbitdrive-relay`,
+VM.Standard.E2.1.Micro (Always Free-eligible, 1 OCPU / 1 GB), Canonical Ubuntu 24.04 build 2026.11.05-0, 50 GB Balanced
+boot volume, new VCN `vcn-20261117-0500` + subnet `subnet-20261117-0500` (10.0.0.0/24), private IP 10.0.0.129, **no public
+IP yet**, owner's SSH public key (`ssh-key-2026-11-17`), first-boot script = `infra/relay/cloud-init.yaml` (result not yet
+checked on the host). Instance OCID ends `...zymwlqjcq`. Still to do, in this order: restrict the security list's SSH rule
+to the owner's IP (needs the address), add ingress 80/443, attach a free ephemeral public IP, owner confirms SSH login and
+`/var/log/orbitdrive-init.log`, deploy the gateway behind Caddy, test, check the billing page. A1.Flex remains the
+intended final shape (migrate when capacity exists; the script and deployment stay architecture-neutral). The owner's rules:
 Always Free only, no Pay As You Go, SSH restricted to the owner's IP, do not deploy the public website until the relay is tested.
 
 Hosting decision (owner, 2026-11-17): no subdomain of the AI CV Studio domain. The web app will be served from the
