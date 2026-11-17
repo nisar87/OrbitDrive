@@ -111,6 +111,22 @@ windows-2025 and ubuntu-24.04 passed 3/3: verified-HTTPS meta, refusal of unauth
 production, and a real agent connecting outbound, authenticating and receiving a pairing code. Claim, browse and transfer
 through the live relay are **not** covered (no verified Firebase test account yet).
 
+## Commit `7be37ee` — durable gateway registrations (W3, part)
+
+- Feature branch: all seven workflows green for `7be37ee` (contracts 44002338760, gateway 44002338584, desktop
+  44002338561, desktop-ui 44002338562, integration 44002338605, web 44002338531, security 44002338568).
+- `integration` ran `restart.test.mjs` with real gateway and agent processes on windows-2025 (86/86) and ubuntu-24.04
+  (85 pass, 1 skipped = the Windows-only DPAPI case): after a gateway restart the agent reconnects unaided and is still
+  owned, the approved browser works without re-pairing, a revoked browser stays refused, a stranger cannot claim the PC,
+  download capabilities and pending pairing requests are gone, PC removal is durable, no usable secret is in the store
+  file (0600 on Linux), and a damaged store grants nothing and is kept as `registrations.json.corrupt-*`.
+- `main` fast-forwarded to `7be37ee`; all seven workflows green there too, and `relay-release` 44003244175 passed
+  test, publish, verify-deployment and both live-agent jobs.
+- Observation: on Linux the agent took ~30 s to notice each gateway restart (4 s on Windows). The control channel has
+  no heartbeat/lease expiry yet — next W3/D3 item.
+- **Not evidenced:** persistence on the live relay. Its systemd unit and `gateway.env` predate this change, so it still
+  runs memory-only until the owner re-runs the bootstrap pinned to this commit.
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were
