@@ -101,10 +101,16 @@ printf '/var/log/orbitdrive/*.log {\n  weekly\n  rotate 12\n  compress\n  missin
 printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' >/etc/apt/apt.conf.d/20auto-upgrades
 printf 'Unattended-Upgrade::Automatic-Reboot "true";\nUnattended-Upgrade::Automatic-Reboot-Time "22:00";\n' >/etc/apt/apt.conf.d/52orbitdrive-reboot
 
-# Host firewall: Oracle's Ubuntu images allow only SSH by default. Add the web ports once; keep everything else closed.
-for port in 80 443; do
-  iptables -C INPUT -m state --state NEW -p tcp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT 6 -m state --state NEW -p tcp --dport "$port" -j ACCEPT
-done
+# Host firewall: Oracle's Ubuntu images end the INPUT chain with a REJECT rule and allow only SSH before it.
+# The web ports must be accepted BEFORE that rule; a rule placed after it is never reached (this was the cause of
+# the first TLS failure on the development relay: the ACME challenge could not get in, so no certificate was issued).
+open_port() {
+  local rule=(INPUT -m state --state NEW -p tcp --dport "$1" -j ACCEPT)
+  while iptables -C "${rule[@]}" 2>/dev/null; do iptables -D "${rule[@]}"; done   # drop any misplaced copies
+  local reject; reject=$(iptables -L INPUT --line-numbers -n | awk '$2=="REJECT" || $2=="DROP" {print $1; exit}')
+  if [ -n "$reject" ]; then iptables -I INPUT "$reject" "${rule[@]:1}"; else iptables -A "${rule[@]}"; fi
+}
+open_port 80; open_port 443
 command -v netfilter-persistent >/dev/null && netfilter-persistent save >/dev/null
 
 systemctl daemon-reload
