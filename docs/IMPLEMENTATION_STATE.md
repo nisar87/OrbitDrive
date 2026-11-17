@@ -2,8 +2,9 @@
 
 Updated: 2026-11-17 (session 1). Branch: `feature/orbitdrive-foundation`.
 
-**Last code-verified commit: `8390f81`** — all seven workflows green: contracts 43974825117, gateway 43974825202,
-desktop 43974825184, desktop-ui 43974825160, integration 43974825234, web 43974825166, security 43974825223.
+**Last code-verified commit: `6eb6295`** (on `main`) — all seven workflows green on the feature branch, and on `main` the
+`relay-release` run 43995476025 passed test → publish (`relay-dev-0.1.2`) → **verify-deployment: the live relay
+https://139-185-60-75.sslip.io switched itself from 0.1.1 to 0.1.2 and reported it** with nobody logged in.
 
 Relay host decision (owner, 2026-11-17): Oracle Cloud, tenancy `nisar87`, home region UAE East (Dubai, `me-dubai-1`),
 Free Tier (in trial). Target: `orbitdrive-relay`, VM.Standard.A1.Flex (Always Free-eligible) 1 OCPU / 6 GB, Canonical
@@ -26,10 +27,14 @@ Always Free only, no Pay As You Go, SSH restricted to the owner's IP, do not dep
 Relay automation (owner request, 2026-11-17): pull-based, credential-free deployment and self-maintenance for the relay
 host — see `docs/operations/relay.md`. Owner confirmed SSH login works (so the network has internet access); the first-boot
 package installs failed as expected (no network at first boot); swap is active; 952 MB RAM, 8.7 % disk used.
-**Pending owner action:** run `infra/relay/bootstrap.sh` once on the host (command in the runbook), then set
-`"enabled": true` in `infra/relay/environments/dev.json`. Until then `relay-release` publishes development pre-releases
-but skips live verification, and `relay-monitor` checks nothing. Scripts are CI-tested; the bootstrap itself is untested
-on the real host.
+**Relay is live (development):** owner ran the pinned bootstrap (commit e55f1b9) and the firewall-order repair
+(`infra/relay/fix-firewall.sh`; cause: web-port ACCEPT rules sat after the image's REJECT rule, so the ACME challenge was
+blocked — fixed in `bootstrap.sh`). Verified from GitHub's network (`relay-probe`): Let's Encrypt certificate for
+`139-185-60-75.sslip.io` valid to 2027-02-15, TLS 1.3, `/v1/meta` returns the deployed version, host status file served.
+Verification and monitoring are enabled (`infra/relay/environments/dev.json`). Not yet tested through the relay:
+pairing, browsing and transfers with a real agent; behaviour under load in 1 GB; the monitor's alert → issue path;
+rollback on the real host; unattended-upgrade reboot; certificate renewal. The server's bootstrap ran from e55f1b9, so its
+installed updater/monitor/backup scripts are that version.
 
 Hosting decision (owner, 2026-11-17): no subdomain of the AI CV Studio domain. The web app will be served from the
 `orbitdrive-dev` project's own Hosting address until the owner buys a new domain. **Nothing is deployed.** A live site

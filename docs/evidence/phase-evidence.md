@@ -94,6 +94,16 @@ All seven workflows green on `8390f81`: contracts 43974825117, gateway 439748252
 security run 43973939668 was cancelled by the next push, so `258ebc3` is not counted as verified.) New browser test (5 projects): approved browsers listed,
 removing another browser needs a second confirmation and then locks it out (403), disconnecting the PC empties the list.
 
+## Commit `6eb6295` — relay automation live on the development relay
+
+- `tests/relay/updater.test.mjs` 10/10 in the gateway workflow (real scripts, real gateway builds).
+- `relay-probe` (GitHub network → relay): before the fix, ports 80/443 answered "no route to host"; after the owner ran
+  `fix-firewall.sh`: valid Let's Encrypt certificate (CN 139-185-60-75.sslip.io, to 2027-02-15), TLS 1.3 verification OK,
+  HTTP 200 JSON with `"version":"0.1.1"`.
+- `relay-release` run 43995476025 on `main`: published `relay-dev-0.1.2`; verify-deployment saw the relay report 0.1.1
+  for 15 polls, then 0.1.2 — a real pull-based, health-gated deployment with no inbound access.
+- Host output supplied by the owner: all five units active, deploy log `deployed 0.1.1`, 670 MB memory available.
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were
