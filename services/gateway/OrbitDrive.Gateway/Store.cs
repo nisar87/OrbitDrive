@@ -19,7 +19,7 @@ public sealed class BrowserDeviceRecord
 {
     public required string Id { get; init; }
     public required string OwnerUid { get; init; }
-    public required string Name { get; init; }
+    public required string Name { get; set; }
     public required byte[] SecretHash { get; init; }
     public bool Active { get; set; }
     public bool Revoked { get; set; }
@@ -331,6 +331,18 @@ public sealed class Store
                 throw new ProtocolException(ErrorCode.NotFound, "Device not found.");
             device.Revoked = true;
             foreach (var session in _downloads.Values.Where(d => d.BrowserDeviceId == deviceId)) session.Revoked.Cancel();
+            Save();
+        }
+    }
+
+    /// <summary>Renames one of the account's own approved browsers. Revoked or never-approved devices cannot be renamed.</summary>
+    public void RenameDevice(Identity identity, string deviceId, string name)
+    {
+        lock (_gate)
+        {
+            if (!_devices.TryGetValue(deviceId, out var device) || device.OwnerUid != identity.Uid || !device.Active || device.Revoked)
+                throw new ProtocolException(ErrorCode.NotFound, "Device not found.");
+            device.Name = name;
             Save();
         }
     }

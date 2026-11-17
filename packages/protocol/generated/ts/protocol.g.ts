@@ -207,6 +207,10 @@ export interface RevokeDeviceRequest {
   deviceId: string;
 }
 
+export interface RenameDeviceRequest {
+  name: string;
+}
+
 export interface Ack {
   ok: boolean;
 }
@@ -260,6 +264,7 @@ export interface ProtocolTypeMap {
   BrowserDeviceSummary: BrowserDeviceSummary;
   BrowserDeviceListResponse: BrowserDeviceListResponse;
   RevokeDeviceRequest: RevokeDeviceRequest;
+  RenameDeviceRequest: RenameDeviceRequest;
   Ack: Ack;
   GatewayMeta: GatewayMeta;
   DevSignInRequest: DevSignInRequest;
@@ -476,6 +481,9 @@ export const SCHEMA = {
     },
     "RevokeDeviceRequest": {
       "deviceId": "string"
+    },
+    "RenameDeviceRequest": {
+      "name": "string"
     },
     "Ack": {
       "ok": "bool"

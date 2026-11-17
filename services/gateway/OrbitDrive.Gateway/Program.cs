@@ -23,6 +23,7 @@ builder.WebHost.ConfigureKestrel(kestrel =>
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<Store>();
+builder.Services.AddSingleton<RateLimiter>();
 builder.Services.AddSingleton<AgentHub>();
 builder.Services.AddSingleton<StreamRegistry>();
 builder.Services.AddSingleton<DevIdentityVerifier>();
@@ -36,12 +37,13 @@ else
 }
 builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy => policy
     .WithOrigins(options.AllowedWebOrigins)
-    .WithMethods("GET", "POST", "DELETE", "HEAD")
+    .WithMethods("GET", "POST", "PATCH", "DELETE", "HEAD")
     .WithHeaders("Authorization", "Content-Type", "X-OrbitDrive-Device", "Range", "If-Range")
-    .WithExposedHeaders("Content-Range", "Accept-Ranges", "ETag", "Content-Length", "Content-Disposition")));
+    .WithExposedHeaders("Content-Range", "Accept-Ranges", "ETag", "Content-Length", "Content-Disposition", "Retry-After")));
 
 var app = builder.Build();
 var store = app.Services.GetRequiredService<Store>();
+var limiter = app.Services.GetRequiredService<RateLimiter>();
 var hub = app.Services.GetRequiredService<AgentHub>();
 app.Lifetime.ApplicationStopping.Register(hub.Shutdown);
 var streams = app.Services.GetRequiredService<StreamRegistry>();
@@ -83,6 +85,15 @@ Identity Authenticate(HttpContext context)
 {
     var header = context.Request.Headers.Authorization.ToString();
     return verifier.Verify(header.StartsWith("Bearer ", StringComparison.Ordinal) ? header[7..] : null);
+}
+
+// Refuses with 429 + Retry-After once a key has used up its attempts for the current minute.
+void Throttle(HttpContext context, string key, int perMinute, string message)
+{
+    var wait = limiter.Hit(key, perMinute);
+    if (wait == 0) return;
+    context.Response.Headers.RetryAfter = wait.ToString();
+    throw new ProtocolException(ErrorCode.LimitExceeded, message);
 }
 
 BrowserDeviceRecord AuthorizeBrowser(HttpContext context, string? pcId = null) =>
@@ -139,10 +150,14 @@ app.Map("/v1/agent-control", async (HttpContext context) =>
 
 app.MapPost("/v1/pairing-requests/{id}/claim", async (HttpContext context, string id) =>
 {
+    // Guessing defence in depth: each code dies after 5 wrong secrets (Store), and every attempt - right or wrong -
+    // is also counted per client address and per account, so cycling through codes or accounts does not help.
+    const string slowDown = "Too many pairing attempts. Wait a minute, then create a new code on the PC.";
+    Throttle(context, "claim-ip:" + ClientAddress.Of(context, options), options.PairingClaimsPerMinute, slowDown);
     var identity = Authenticate(context);
+    Throttle(context, "claim-uid:" + identity.Uid, options.PairingClaimsPerMinute, slowDown);
     var request = await ReadJson<ClaimPairingRequest>(context);
-    if (request.BrowserName.Length is < 1 or > 64) throw new ProtocolException(ErrorCode.InvalidRequest, "Give this browser a short name.");
-    var (pairing, device, deviceSecret, pc) = store.ClaimPairing(id.ToUpperInvariant(), request.Secret.ToUpperInvariant(), identity, request.BrowserName);
+    var (pairing, device, deviceSecret, pc) = store.ClaimPairing(id.ToUpperInvariant(), request.Secret.ToUpperInvariant(), identity, DeviceNames.Clean(request.BrowserName));
     var code = (BitConverter.ToUInt32(Secrets.Hash($"{pairing.Id}|{identity.Uid}|{device.Id}|{pc.PcId}")) % 1_000_000).ToString("D6");
     try
     {
@@ -161,7 +176,11 @@ app.MapPost("/v1/pairing-requests/{id}/claim", async (HttpContext context, strin
 });
 
 app.MapGet("/v1/pairing-requests/{id}", (HttpContext context, string id) =>
-    WriteJson(context, store.PairingStatus(id.ToUpperInvariant(), Authenticate(context))));
+{
+    var identity = Authenticate(context);
+    Throttle(context, "poll-uid:" + identity.Uid, options.PairingPollsPerMinute, "Checking too often. Wait a moment.");
+    return WriteJson(context, store.PairingStatus(id.ToUpperInvariant(), identity));
+});
 
 app.MapGet("/v1/pcs", (HttpContext context) =>
 {
@@ -296,6 +315,14 @@ app.MapDelete("/v1/pcs/{pcId}", (HttpContext context, string pcId) =>
     AuthorizeBrowser(context, pcId);
     store.RemovePc(pcId);
     return WriteJson(context, new Ack { Ok = true });
+});
+
+app.MapPatch("/v1/browser-devices/{deviceId}", async (HttpContext context, string deviceId) =>
+{
+    var device = AuthorizeBrowser(context);
+    var request = await ReadJson<RenameDeviceRequest>(context);
+    store.RenameDevice(Authenticate(context), deviceId == "current" ? device.Id : deviceId, DeviceNames.Clean(request.Name));
+    await WriteJson(context, new Ack { Ok = true });
 });
 
 app.MapDelete("/v1/browser-devices/{deviceId}", (HttpContext context, string deviceId) =>

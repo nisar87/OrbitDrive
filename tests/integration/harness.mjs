@@ -50,6 +50,9 @@ export async function startGateway(overrides = {}, fixedPort = 0) {
     OrbitDrive__DevIdentity__Enabled: 'true',
     OrbitDrive__DevIdentity__Secret: randomBytes(32).toString('hex'),
     OrbitDrive__AllowedWebOrigins__0: WEB_ORIGIN,
+    // Every suite shares one client address and a few accounts; the real limits are exercised in pairing-limits.test.mjs.
+    OrbitDrive__PairingClaimsPerMinute: '600',
+    OrbitDrive__PairingPollsPerMinute: '6000',
     ...overrides,
   };
   const child = spawn('dotnet', [gatewayDll, '--urls', url], { cwd: dirname(gatewayDll), env, stdio: ['ignore', 'pipe', 'pipe'] });

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.FileProviders;
 using OrbitDrive.Gateway;
@@ -82,6 +83,47 @@ public class IdentityAndConfigurationTests
 
         time.Now = time.Now.AddMinutes(6);
         Assert.Equal(ErrorCode.Unauthenticated, Assert.Throws<ProtocolException>(() => verifier.Verify(token)).Code);
+    }
+
+    [Fact]
+    public void RateLimiterCountsPerKeyPerMinuteAndReopens()
+    {
+        var time = new FakeTime();
+        var limiter = new RateLimiter(time);
+        for (var i = 0; i < 3; i++) Assert.Equal(0, limiter.Hit("a", 3));
+        Assert.InRange(limiter.Hit("a", 3), 1, 60);
+        Assert.Equal(0, limiter.Hit("b", 3));                      // another key is unaffected
+        time.Now += TimeSpan.FromSeconds(40);
+        Assert.InRange(limiter.Hit("a", 3), 1, 20);                // refused attempts do not extend the lock-out
+        time.Now += TimeSpan.FromSeconds(21);
+        Assert.Equal(0, limiter.Hit("a", 3));                      // a new minute
+    }
+
+    [Fact]
+    public void RateLimiterMemoryIsBoundedUnderAKeyFlood()
+    {
+        var time = new FakeTime();
+        var limiter = new RateLimiter(time);
+        for (var i = 0; i < 50_000; i++) Assert.Equal(0, limiter.Hit("flood-" + i, 5));
+        Assert.True(limiter.Hit("one-more", 5) > 0);               // table full: refuse rather than grow or forget counters
+        time.Now += TimeSpan.FromSeconds(61);
+        Assert.Equal(0, limiter.Hit("one-more", 5));               // stale windows are swept
+    }
+
+    [Theory]
+    [InlineData("10.0.0.9", "", "203.0.113.5", "10.0.0.9")]                                // header ignored without a trusted proxy
+    [InlineData("127.0.0.1", "127.0.0.1", "203.0.113.5", "203.0.113.5")]
+    [InlineData("127.0.0.1", "127.0.0.1", "6.6.6.6, 203.0.113.5", "203.0.113.5")]          // only the proxy's own entry counts
+    [InlineData("::ffff:127.0.0.1", "127.0.0.1", "2001:db8::7", "2001:db8::7")]
+    [InlineData("127.0.0.1", "127.0.0.1", "not-an-address", "127.0.0.1")]
+    [InlineData("127.0.0.1", "127.0.0.1", "", "127.0.0.1")]
+    [InlineData("198.51.100.1", "127.0.0.1", "203.0.113.5", "198.51.100.1")]               // a direct caller cannot pose as the proxy
+    public void ClientAddressTrustsOnlyTheConfiguredProxy(string peer, string trusted, string forwarded, string expected)
+    {
+        var context = new DefaultHttpContext();
+        context.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(peer);
+        if (forwarded.Length > 0) context.Request.Headers["X-Forwarded-For"] = forwarded;
+        Assert.Equal(expected, ClientAddress.Of(context, new GatewayOptions { TrustedProxies = trusted.Length > 0 ? [trusted] : [] }));
     }
 
     [Theory]

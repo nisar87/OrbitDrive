@@ -34,6 +34,8 @@ cat >/etc/orbitdrive/gateway.env <<ENV
 ASPNETCORE_ENVIRONMENT=Production
 OrbitDrive__Firebase__ProjectId=$PROJECT
 OrbitDrive__AllowedWebOrigins__0=$ORIGIN
+OrbitDrive__TrustedProxies__0=127.0.0.1
+OrbitDrive__TrustedProxies__1=::1
 OrbitDrive__DataDirectory=/var/lib/orbitdrive-gateway
 DOTNET_gcServer=0
 DOTNET_GCHeapHardLimit=0x18000000

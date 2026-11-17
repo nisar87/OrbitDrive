@@ -25,6 +25,12 @@ public sealed class GatewayOptions
     /// <summary>Where durable registrations and grants are kept. Empty = memory only (everything is forgotten on restart).</summary>
     public string DataDirectory { get; set; } = "";
     public int PairingTtlSeconds { get; set; } = 120;
+    /// <summary>Pairing-code attempts allowed per minute, counted separately per client address and per account.</summary>
+    public int PairingClaimsPerMinute { get; set; } = 10;
+    /// <summary>Pairing status polls allowed per minute per account (the site polls every 1.5 s while waiting for the PC).</summary>
+    public int PairingPollsPerMinute { get; set; } = 90;
+    /// <summary>Reverse proxies (IP addresses) whose X-Forwarded-For is believed. Empty = use the TCP peer address.</summary>
+    public string[] TrustedProxies { get; set; } = [];
     public int DownloadSessionTtlSeconds { get; set; } = 3600;
     public int AgentRequestTimeoutSeconds { get; set; } = 15;
     public int PrepareTimeoutSeconds { get; set; } = 900;
@@ -50,6 +56,8 @@ public sealed class GatewayOptions
         }
         if (AgentHeartbeatSeconds is < 1 or > 300 || AgentLeaseSeconds < AgentHeartbeatSeconds * 2 || AgentLeaseSeconds > 900)
             throw new InvalidOperationException("AgentLeaseSeconds must be at least twice AgentHeartbeatSeconds (1-300 s) and at most 900 s.");
+        if (PairingClaimsPerMinute < 1 || PairingPollsPerMinute < 1) throw new InvalidOperationException("Pairing rate limits must be at least 1 per minute.");
+        if (TrustedProxies.Any(p => !System.Net.IPAddress.TryParse(p, out _))) throw new InvalidOperationException("TrustedProxies must be IP addresses.");
         if (DevIdentity.Enabled && firebase) throw new InvalidOperationException("Configure either development identities or Firebase, not both.");
         if (DevIdentity.Enabled && DevIdentity.Secret.Length < 32)
             throw new InvalidOperationException("OrbitDrive:DevIdentity:Secret must be at least 32 characters.");

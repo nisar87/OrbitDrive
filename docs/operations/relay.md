@@ -58,3 +58,6 @@ to end (apt packages, systemd units, Caddy certificate issuance via sslip.io, jo
 settings), behaviour within 1 GB under load, and the two GitHub workflows against the live relay.
 - If `apt-get update` fails with 404 on `*.clouds.archive.ubuntu.com` (Oracle regional mirror), replace that host with
   `archive.ubuntu.com` in `/etc/apt/sources.list.d/ubuntu.sources`; the bootstrap stops before changing anything.
+- Pairing attempt limits are per client address. The gateway only believes `X-Forwarded-For` from `OrbitDrive__TrustedProxies`
+  (the bootstrap sets `127.0.0.1` and `::1`, i.e. Caddy on the same host). Without it every visitor shares Caddy's
+  address and the 10-per-minute pairing limit becomes a single global bucket.

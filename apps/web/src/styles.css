@@ -72,3 +72,15 @@ button.ghost.danger { background: transparent; color: var(--danger); }
 .device-list { list-style: none; margin: 0; padding: 0; }
 .device-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .device-list small { display: block; color: var(--muted); font-size: 0.8rem; }
+
+/* Pairing scanner and device rename */
+button.secondary { background: transparent; color: var(--text); border: 1px solid var(--muted); }
+button.secondary:hover:not(:disabled) { background: var(--hover); }
+.scanner { display: flex; flex-direction: column; gap: 8px; }
+.scanner video { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; background: #000; border: 1px solid var(--line); }
+.scanner .notice { margin: 0; }
+.scanner-privacy { margin: 0; color: var(--muted); font-size: 0.8rem; }
+.device-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rename { flex: 1; display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
+.rename label { flex-basis: 100%; font-size: 0.8rem; color: var(--muted); }
+.rename input { flex: 1; min-width: 160px; width: auto; }

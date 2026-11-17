@@ -310,6 +310,11 @@ public sealed record RevokeDeviceRequest
     [JsonPropertyName("deviceId")] public required string DeviceId { get; init; }
 }
 
+public sealed record RenameDeviceRequest
+{
+    [JsonPropertyName("name")] public required string Name { get; init; }
+}
+
 public sealed record Ack
 {
     [JsonPropertyName("ok")] public required bool Ok { get; init; }

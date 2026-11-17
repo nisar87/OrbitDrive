@@ -82,6 +82,9 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
                 var welcome = await HandshakeAsync(socket, cancellation);
                 _socket = socket;
                 attempt = 0;
+                // Announce only once the connection is usable: a command sent the instant "connected" appears must not
+                // be answered with "not connected".
+                emit("connected", new { pcId = welcome.PcId, generation = welcome.Generation.ToString(), ownerBound = welcome.OwnerBound });
                 using var connection = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
                 try
                 {
@@ -150,7 +153,6 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
         var welcome = await ReceiveAsync(socket, cancellation) ?? throw new IOException("Gateway closed during handshake.");
         if (welcome.Error is not null) throw new ProtocolException(welcome.Error.Code, welcome.Error.Message);
         var info = ProtocolJson.FromElement<AgentWelcome>(welcome.Payload ?? throw new JsonException());
-        emit("connected", new { pcId = info.PcId, generation = info.Generation.ToString(), ownerBound = info.OwnerBound });
         return info;
     }
 

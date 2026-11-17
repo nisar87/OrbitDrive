@@ -59,6 +59,7 @@ export const api = {
   prepareDownload: (s: Session, pcId: string, entryId: string) => call('DownloadSession', s, 'POST', '/v1/download-sessions', { pcId, entryId }),
   devices: (s: Session) => call('BrowserDeviceListResponse', s, 'GET', '/v1/browser-devices'),
   revokeDevice: (s: Session, deviceId: string) => call('Ack', s, 'DELETE', `/v1/browser-devices/${encodeURIComponent(deviceId)}`),
+  renameDevice: (s: Session, deviceId: string, name: string) => call('Ack', s, 'PATCH', `/v1/browser-devices/${encodeURIComponent(deviceId)}`, { name }),
   disconnectPc: (s: Session, pcId: string) => call('Ack', s, 'DELETE', `/v1/pcs/${encodeURIComponent(pcId)}`),
   revokeThisBrowser: (s: Session) => call('Ack', s, 'DELETE', '/v1/browser-devices/current'),
 };

@@ -40,6 +40,7 @@
     "BrowserDeviceSummary": { "deviceId": "string", "name": "string", "current": "bool", "pcIds": "string[]" },
     "BrowserDeviceListResponse": { "devices": "BrowserDeviceSummary[]" },
     "RevokeDeviceRequest": { "deviceId": "string" },
+    "RenameDeviceRequest": { "name": "string" },
     "Ack": { "ok": "bool" },
     "GatewayMeta": { "version": "string", "protocolVersion": "int32", "minProtocolVersion": "int32", "relayTerminatesTls": "bool", "endToEndEncrypted": "bool", "environment": "string" },
     "DevSignInRequest": { "email": "string" },

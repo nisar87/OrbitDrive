@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, ApiError, type Session } from '../../api';
 import type { ClaimPairingResponse, PairingState } from '../../protocol';
 import { parseManualCode, type PairingLink } from './pairingLink';
+import { QrScanner, canScan } from './QrScanner';
 
 interface Props { session: Session; link: PairingLink | null; onLinkUsed: () => void; onPaired: (device: { id: string; secret: string }) => void }
 
@@ -18,6 +19,7 @@ export function Pairing({ session, link, onLinkUsed, onPaired }: Props) {
   const [state, setState] = useState<PairingState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const started = useRef(false);
 
   async function start(target: PairingLink) {
@@ -41,7 +43,7 @@ export function Pairing({ session, link, onLinkUsed, onPaired }: Props) {
         const status = await api.pairingStatus(session, claim.pairingId);
         setState(status.state);
         if (status.state === 'approved') onPaired({ id: claim.browserDeviceId, secret: claim.deviceSecret });
-      } catch (e) { if (e instanceof ApiError && e.code !== 'network') { setError(e.message); setState('expired'); } }
+      } catch (e) { if (e instanceof ApiError && e.code !== 'network' && e.code !== 'limit_exceeded') { setError(e.message); setState('expired'); } }
     }, 1500);
     return () => clearInterval(timer);
   }, [claim, state, session, onPaired]);
@@ -67,7 +69,10 @@ export function Pairing({ session, link, onLinkUsed, onPaired }: Props) {
   return (
     <form className="card" onSubmit={submit}>
       <h2>Pair with your PC</h2>
-      <p>On your PC, open OrbitDrive and choose <strong>Pair a phone</strong>. Scan its QR code with your camera, or type the code below.</p>
+      <p>On your PC, open OrbitDrive and choose <strong>Pair a phone</strong>. Scan its QR code, or type the code below.</p>
+      {scanning
+        ? <QrScanner onScan={(found) => { setScanning(false); void start(found); }} onClose={(problem) => { setScanning(false); if (problem) setError(problem); }} />
+        : canScan() && <button type="button" className="secondary" disabled={busy} onClick={() => { setError(null); setScanning(true); }}>Scan QR code with camera</button>}
       <label htmlFor="pair-code">Pairing code</label>
       <input id="pair-code" inputMode="text" autoCapitalize="characters" autoComplete="off" spellCheck={false} placeholder="ABCDEF-GHJKLMNPQR" value={code} onChange={(e) => setCode(e.target.value)} />
       {(error ?? ended) && <p role="alert" className="notice error">{error ?? ended}</p>}

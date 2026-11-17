@@ -13,6 +13,7 @@
   "dependencies": {
     "@firebase/app": "^0.16.2",
     "@firebase/auth": "^1.13.6",
+    "jsqr": "^1.4.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
@@ -22,6 +23,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
+    "qrcode": "^1.5.4",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
     "vitest": "^5.1.0"
