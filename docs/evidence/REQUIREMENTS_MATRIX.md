@@ -22,10 +22,10 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R15 | AUTOMATED_VERIFIED | Listing compared with the real folder on Windows + Linux, through the web UI in 3 engines (integration, web 43951327095). Awaiting real-device use. **W4:** tree, history, breadcrumbs, details/list/icon views, exact sort, filter, selection, context menu and properties in the web Explorer (Playwright ×5 projects) |
 | R16 | IN_PROGRESS | Details view, click to open/download. No sort/selection/context menu/icon view yet. **D4:** hidden items only by owner opt-in per folder; system files never |
 | R17 | IN_PROGRESS | Breadcrumbs, Unicode names, real size/mtime tested. Back/forward/up, properties panel outstanding. **D4/W4:** 10,000-entry folder: agent paging plus windowed web list, timings recorded for five browser projects |
-| R18 | AUTOMATED_VERIFIED | 1 GiB with stalled receiver: <9 MiB RSS growth on Windows and Linux (integration 43951327071). Awaiting real network/phone |
-| R19 | IN_PROGRESS | Changed source → 409, If-Range mismatch → full body (integration). Interrupted-then-resumed end-to-end and timestamp-restoring rewrite outstanding |
-| R20 | AUTOMATED_VERIFIED | SHA-256 source vs received (1 GiB, small, zero-byte); UI says 'handed to your browser', asserted not to say saved/complete |
-| R21 | IN_PROGRESS | Capability scoped to revision+device; cross-user, revoked, expired, guessed denied (integration). Per-capability abuse limits outstanding |
+| R18 | AUTOMATED_VERIFIED | 1 GiB with stalled receiver: <9 MiB RSS growth on Windows and Linux (integration 43951327071). Awaiting real network/phone. **D5/W5 (feature branch `ef4b025`, not on main):** save-to-file streaming with resume verified byte-exact in Chromium and Firefox; page memory flat while 24 MB flows |
+| R19 | IN_PROGRESS | Changed source → 409, If-Range mismatch → full body (integration). Interrupted-then-resumed end-to-end and timestamp-restoring rewrite outstanding. **D5/W5:** change-stamp validator catches a same-size rewrite with the date restored; stale validators never produce a 206; a changed source is never appended in the browser |
+| R20 | AUTOMATED_VERIFIED | SHA-256 source vs received (1 GiB, small, zero-byte); UI says 'handed to your browser', asserted not to say saved/complete. **D5/W5:** relay-observed states and PC-side bytes per transfer; browser downloads never described as saved |
+| R21 | IN_PROGRESS | Capability scoped to revision+device; cross-user, revoked, expired, guessed denied (integration). Per-capability abuse limits outstanding. **D5/W5:** cancel from the browser cuts the stream, kills the link and stops the PC reading; per-browser limit on prepared downloads |
 | R22 | NOT_STARTED | W6 |
 | R23 | NOT_STARTED | D6. Needs a real Windows 11 machine + package identity; GitHub runners are Windows Server (blocker recorded) |
 | R24 | NOT_STARTED | D6/W6 |
