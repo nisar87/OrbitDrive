@@ -7,7 +7,7 @@ $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.
 if (-not $vs) { throw 'MSVC (Desktop development with C++) is not installed.' }
 $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
 New-Item -ItemType Directory -Force $Out | Out-Null
-$common = '/nologo /std:c++17 /EHsc /W4 /WX /O2 /GS /guard:cf /DUNICODE /D_UNICODE /DWIN32_LEAN_AND_MEAN'
+$common = '/nologo /std:c++17 /EHsc /W4 /WX /O2 /GS /guard:cf /DUNICODE /D_UNICODE'
 $dll = "cl $common /LD `"$PSScriptRoot\OrbitDriveCommand.cpp`" /Fo`"$Out\\`" /Fe`"$Out\OrbitDriveShell.dll`" /link /DEF:`"$PSScriptRoot\OrbitDriveShell.def`" /DYNAMICBASE /NXCOMPAT /guard:cf ole32.lib shell32.lib shlwapi.lib uuid.lib"
 $test = "cl $common `"$PSScriptRoot\ShellExtensionTest.cpp`" /Fo`"$Out\\`" /Fe`"$Out\ShellExtensionTest.exe`" /link ole32.lib shell32.lib uuid.lib"
 foreach ($command in @($dll, $test)) {
