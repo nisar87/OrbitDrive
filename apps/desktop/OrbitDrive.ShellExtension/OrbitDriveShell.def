@@ -1,0 +1,4 @@
+LIBRARY OrbitDriveShell
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow   PRIVATE

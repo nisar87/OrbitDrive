@@ -28,5 +28,13 @@ jobs:
         run: |
           dotnet build apps/desktop/OrbitDrive.Agent -c Release
           dotnet build apps/desktop/OrbitDrive.Desktop -c Release
+      - name: Build the native Explorer command and exercise it through COM (this is NOT Explorer, and not the Windows 11 menu)
+        shell: pwsh
+        run: |
+          pwsh apps/desktop/OrbitDrive.ShellExtension/build.ps1 -Out "$PWD/artifacts/shell"
+          [xml]$manifest = Get-Content apps/desktop/OrbitDrive.ShellExtension/AppxManifest.xml
+          "manifest parses: identity $($manifest.Package.Identity.Name)"
+          & "$PWD/artifacts/shell/ShellExtensionTest.exe" "$PWD/artifacts/shell/OrbitDriveShell.dll"
+          if ($LASTEXITCODE -ne 0) { throw "ShellExtensionTest failed with $LASTEXITCODE" }
       - name: Core filesystem policy tests on Windows
         run: dotnet test tests/desktop/OrbitDrive.Core.Tests -c Release --logger "console;verbosity=normal"
