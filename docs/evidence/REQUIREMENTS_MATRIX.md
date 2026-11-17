@@ -19,7 +19,7 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R12 | IN_PROGRESS | Agent is outbound-only by construction. Real agents on GitHub's Windows and Linux runners connect to the live Oracle relay over the internet and obtain pairing codes (relay-release 44000402541). No browse/transfer through the live relay yet; no mobile-data trial |
 | R13 | IN_PROGRESS | Backoff+jitter reconnect; gateway-restart tests; fault-injection suite (`faults.test.mjs`: silent network loss, agent crash, relay crash mid-download with byte-exact ranged resume, graceful shutdown). Idempotency keys for retried mutations and bounded browser-side retry not built |
 | R14 | IN_PROGRESS | Not-set-up/connecting/online/paused/offline states shown truthfully in console and web (desktop-ui, integration, web e2e). Lease/heartbeat expiry: a silent or frozen agent goes offline within the lease and requests fail fast with `pc_offline` (faults suite). Sleep/lock states on real Windows not evidenced |
-| R15 | AUTOMATED_VERIFIED | Listing compared with the real folder on Windows + Linux, through the web UI in 3 engines (integration, web 43951327095). Awaiting real-device use |
+| R15 | AUTOMATED_VERIFIED | Listing compared with the real folder on Windows + Linux, through the web UI in 3 engines (integration, web 43951327095). Awaiting real-device use. **W4:** tree, history, breadcrumbs, details/list/icon views, exact sort, filter, selection, context menu and properties in the web Explorer (Playwright ×5 projects) |
 | R16 | IN_PROGRESS | Details view, click to open/download. No sort/selection/context menu/icon view yet |
 | R17 | IN_PROGRESS | Breadcrumbs, Unicode names, real size/mtime tested. Back/forward/up, properties panel outstanding |
 | R18 | AUTOMATED_VERIFIED | 1 GiB with stalled receiver: <9 MiB RSS growth on Windows and Linux (integration 43951327071). Awaiting real network/phone |
@@ -37,7 +37,7 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R30 | NOT_STARTED | D8/W8 |
 | R31 | NOT_STARTED | D8/W8 |
 | R32 | IN_PROGRESS | Store test: same-named PCs with different owners cannot cross-authorise. Multi-PC UI untested with two agents |
-| R33 | IN_PROGRESS | Emulated Pixel 7 / iPhone 15 layouts pass; no physical phone, no landscape/tablet work |
+| R33 | IN_PROGRESS | Emulated Pixel 7 / iPhone 15 layouts pass; no physical phone, no landscape/tablet work. **W4:** windowed desktop shell with taskbar, launcher, themes; phones get one maximised window (emulation only) |
 | R34 | IN_PROGRESS | Semantic buttons/labels, focus-visible, reduced-motion, forced-colors CSS. No automated a11y audit or keyboard review yet |
 | R35 | NOT_STARTED | W6 |
 | R36 | NOT_STARTED | D9/W9 |

@@ -197,6 +197,30 @@ All seven workflows green on `main` for `410c3d8` (integration 44103655820, desk
 44103655731, desktop 44103655791, contracts 44103655866, security 44103655873, web 44103656072). No `relay-release`
 run was created for this commit because nothing under the relay's paths changed; the live relay stays on 0.1.7.
 
+## Commit `62bb432` — web desktop shell and File Explorer (W4)
+
+- All seven workflows green (web 44112037555, integration 44112037823, gateway 44112037656, contracts 44112037398,
+  desktop 44112037450, desktop-ui 44112037553, security 44112037547).
+- `web` Playwright against the real gateway and agent: 51 passed, 9 skipped (the skips are the camera-scanner tests
+  outside Chromium). `explorer.spec.mjs` ran on all five projects (Chromium, Firefox, WebKit desktop; Chromium and
+  WebKit phone emulation): sort by exact size, filter, three views persisted without storing file names; Back/
+  Forward/Up/breadcrumbs/browser Back/tree; keyboard selection (arrows, Space, Shift, Ctrl+A, Escape, Enter,
+  Backspace) and mouse selection; touch long-press and Select mode on phones; context menu fully on screen with only
+  real actions; properties with exact byte count; a ~160-character Urdu/emoji name and an HTML-looking name stay text
+  and cause no sideways overflow in any view; windows move, resize, stay reachable, maximise, minimise, come to the
+  front; phones show one maximised window; launcher lists only real apps and returns focus on Escape; dark/light/
+  system theme persisted; empty desktop usable.
+- vitest 51/51 (sorting beyond 2^53, type labels, filter in Urdu, selection ranges, hostile stored preferences).
+- Bugs found by these tests and fixed: context menu clipped inside the window frame; keyboard focus lost after
+  opening a folder; a dragged window could be left with only its buttons on screen.
+- Screenshots reviewed locally in Chrome (desktop 1280×720 and Pixel 7 emulation, light and dark); six kept in
+  `docs/evidence/screenshots/web/`.
+- **Not evidenced:** physical phones/tablets (safe areas, on-screen keyboard, real long-press), landscape tablet with
+  overlapping windows, 200 % text zoom, screen-reader pass, forced-colors rendering, a 10,000-entry folder in the
+  browser (tested to 450 entries; the table is not virtualised), hidden-file display against a real Windows volume.
+- Not built in W4 yet: Inbox and Transfers apps (their phases come later), multi-file download (needs archives, W8),
+  search across folders (W8; the current box filters the open folder and says so), keyboard move/resize of windows.
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were
