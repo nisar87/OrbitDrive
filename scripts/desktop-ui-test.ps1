@@ -207,6 +207,7 @@ try {
     Start-Sleep -Seconds 5
     Check ((Agents).Count -eq 0) 'an agent stopped elsewhere is not silently relaunched by the console'
 
+    Nav 'Overview'
     [void](WaitText 'StateText' '^Stopped$')
     Check $true 'the console says the agent was stopped (a deliberate stop is not treated as a crash)'
     Click 'StartAgentButton'
