@@ -254,6 +254,41 @@ All seven workflows green on `main` for `62bb432` (contracts 44113458195, integr
   simulated swap); mount points inside a shared folder; cloud placeholders (no policy built yet); EFS/protected
   files; network shares; real-phone performance with 10,000 items; hard-link refusal on Linux (development only).
 
+## `main` @ `8905264` (D4) — confirmed
+
+All seven workflows green on `main` for `8905264`, and `relay-release` 44124795696 passed test, publish,
+verify-deployment and both live-agent jobs.
+
+## Commit `ef4b025` — downloads, resume and Transfers (D5/W5) — NOT on `main`
+
+- Six workflows green: web 44142286306 (72 passed, 13 skipped), integration 44142286270, desktop 44142286356,
+  desktop-ui 44142286463 (71/71), gateway 44142286681, contracts 44142286450.
+- **`security` 44142286454 is red, and `main` was therefore not moved.** Cause: a new upstream advisory published
+  2026-11-17, GHSA-fc5q-39xc-vjpf (ReDoS in `picomatch`), flagged against every released version with no fixed
+  release. It enters `apps/web` only through build/test tooling (vite, vitest, tinyglobby); `npm audit --omit=dev`
+  (what is shipped to browsers) reports 0. Because the audit step fails, the later NuGet audit step in the same job
+  does not run. A dated, narrowly scoped exception mechanism was drafted but not applied: relaxing a security gate
+  is the owner's decision. `main` at `8905264` would also fail this step if re-run today.
+- Browser tests (real gateway and agent; the browser reaches the relay through a TCP proxy that can slow and drop the
+  link): a browser download is described as handed over and "left the relay", never as saved (5 projects);
+  save-to-file streams into a file with real progress, notices a connection that goes silent without closing
+  (20 s stall watch), keeps what was written, resumes and produces a file whose SHA-256 equals the source
+  (Chromium and Firefox, desktop and phone emulation); a source replaced during the interruption stops with
+  "the file changed" and Start again yields only the new content; cancel removes the partial file and the PC stops
+  reading. Page memory while 24 MB flowed through: +0.5–0.8 MB after forced GC incl. buffer storage (Chromium, via
+  the debugging protocol). WebKit: save-to-file tests skipped — its test sessions refuse page file writes.
+  The save-location picker itself is replaced by a private-file-system handle in tests (it cannot be automated).
+- Integration (both runners): relay-observed states prepared / sending / interrupted / sent / cancelled with exact
+  byte coverage; capability never returned again; other browsers cannot see or cancel a download; cancel cuts a
+  running stream; per-browser limit on prepared downloads; a rewrite that restores size and exact modified time is
+  refused (409) and a stale validator never yields a 206; PC reports bytes it really sent per transfer.
+- Core tests (61 on windows-2025): change-stamp detection of a same-size rewrite with the date put back; a second
+  hard link is refused on Windows and now on Linux too (statx).
+- Console: Transfers page lists each transfer with bytes sent to the relay (UI Automation check + screenshot).
+- **Not evidenced:** the real save-location picker and real disks; phones (most mobile browsers lack save-to-file,
+  so they use the browser download path); 1 GiB through save-to-file (tested at 24 MB; the relay path itself is
+  tested at 1 GiB); Safari; throughput figures; bandwidth limits and metered-network warnings (not built).
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were
