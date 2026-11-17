@@ -7,7 +7,7 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 |---|---|---|
 | R01 | IN_PROGRESS | One repo, generated C#/TS models, drift check + shared fixtures green (contracts 43951326845). Reproducible toolchain pinned via global.json/lockfile |
 | R02 | IN_PROGRESS | Loop followed for the slice; evidence in phase-evidence.md |
-| R03 | IN_PROGRESS | Web: slice UI only, W4 shell not built. WPF console: functional 7-page console, unstyled beyond basics, screenshots unreviewed. No rubric score claimed |
+| R03 | IN_PROGRESS | Web: slice UI only, W4 shell not built. WPF console: functional 7-page console, unstyled beyond basics, screenshots unreviewed. No rubric score claimed. **D1 pass:** start at sign-in (optional, HKCU), background start, show-existing-window, bounded crash recovery, lock policy — UIA 63/63 on windows-2025; real lock/sleep and standard-user evidence missing |
 | R04 | AUTOMATED_VERIFIED | Sign-up, email verification, login, reset, logout in 5 browser projects against the Auth emulator; gateway token checks incl. wrong-project/expired/forged/unverified (web 43971788364, integration firebase-auth). Awaiting a real sign-in against the live project |
 | R05 | IN_PROGRESS | One-use expiring code + PC approval implemented and tested (integration: expiry, reuse, lockout, race in StoreTests). QR image rendered on the PC and verified by reference encoder + decoder (integration qr suite); **Added:** in-site QR scanner (camera API → native detector or bundled jsQR; Chromium fake-camera e2e using the PC encoder's QR; foreign-site codes refused; camera-denied fallback); attempt limits per client address and per account with 429 + Retry-After, forged X-Forwarded-For ignored (`pairing-limits.test.mjs`); device rename (API, web, visible on PC, durable). Still missing: scan with a physical phone camera, Firefox/Safari scanner evidence |
 | R06 | IN_PROGRESS | Device grant persists across agent restart; unapproved/revoked browser denied (integration). Grants, ownership and revocations survive a gateway restart (file store, `restart.test.mjs`); Firestore not built |
@@ -49,7 +49,7 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R42 | IN_PROGRESS | Per-owner stream cap (429 + recovery), 64 KiB body cap (413) and control-message cap tested (integration); no relay-byte quotas yet |
 | R43 | NOT_STARTED | D10 |
 | R44 | NOT_STARTED | D10 (signing identity required) |
-| R45 | IN_PROGRESS | Transfer metrics recorded per run; 10,000-entry listing test. Budgets beyond transfer memory not set |
+| R45 | IN_PROGRESS | Transfer metrics recorded per run; 10,000-entry listing test. Budgets beyond transfer memory not set. **D1 pass:** Fluent light/dark verified by reviewed screenshots; keyboard reachability on all pages; contrast measured. High contrast, DPI scaling and screen-reader pass not evidenced |
 | R46 | IN_PROGRESS | /healthz only |
 | R47 | IN_PROGRESS | Adversarial cases run in every integration/Core run; no dedicated corpus/fuzzing yet |
 | R48 | IN_PROGRESS | Runner OS/tool versions recorded; emulation labelled; device evidence listed as missing |

@@ -171,6 +171,26 @@ host), and the re-run did not restart an already-current gateway (fixed in `3cdd
 - **Not evidenced:** scanning with a physical phone camera; Safari/Firefox scanner behaviour; per-address limiting on
   the live relay (needs `OrbitDrive__TrustedProxies`, set by re-running the bootstrap from this commit).
 
+## Commit `410c3d8` — owner console lifecycle and visual pass (D1)
+
+- All seven workflows green (desktop-ui 44102651018, desktop 44102651114 incl. 46 Core tests, integration
+  44102650955, gateway 44102650853, contracts 44102650938, web 44102650968, security 44102650854).
+- `desktop-ui` on windows-2025 drove the real WPF console through UI Automation, 63/63 checks: everything from the
+  earlier 33, plus deliberate stop shown as "Stopped"; three agent crashes (process killed) each recovered
+  automatically with exactly one agent; a fourth crash NOT restarted ("Agent keeps stopping"), explicit Start works;
+  every enabled control on all seven pages keyboard-focusable; Ctrl+3 / Ctrl+6 switch sections (real key input);
+  start at sign-in off by default, registers one HKCU Run entry with `--background` when ticked, removed when
+  unticked; pause-while-locked saved and persisted; a `--background` start runs the agent with no window; launching
+  again exits 3 and brings the running window forward; dark theme active when requested; no orphan agent at the end.
+- **Screenshots are now reviewable:** the workflow prints them into the job log and `scripts/fetch-ui-screenshots.sh`
+  extracts them. 18 real screenshots reviewed; 7 kept in `docs/evidence/screenshots/owner-console/`. Findings fixed
+  from that review: Start button shown while online; secondary text 3.2:1 contrast (now 5.5:1 light, 8.5:1 dark,
+  measured from pixels); stale numbers while the agent was down; shared-folder paths cut off with a sideways scrollbar.
+- Bug found by the test: settings checkboxes ignored toggles made through accessibility APIs (listened to Click only).
+- **Not evidenced (hosted runner is Windows Server 2025, elevated, 100 % DPI):** Windows 11 client, standard user,
+  a second Windows user, real lock/unlock (only the policy logic is unit-tested), sleep/resume, Windows high-contrast
+  mode, 125–200 % DPI, clicking the tray menu, sign-in actually launching the Run entry.
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were
