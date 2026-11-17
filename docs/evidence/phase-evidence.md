@@ -136,6 +136,23 @@ Two defects found and handled: the Oracle Dubai apt mirror returned 404 (sources
 host), and the re-run did not restart an already-current gateway (fixed in `3cdd3e4`).
 **Not evidenced:** a real registration surviving a restart on the live relay (no pairing through it yet).
 
+## Commit `d8de61a` — heartbeat leases and fault injection (W3/D3)
+
+- Feature branch and `main`: all seven workflows green (integration 44009921480 / 44010856122, gateway 44009921543,
+  contracts 44009921540, desktop 44009921519, desktop-ui 44009921487, web 44009921501, security 44009921475).
+- `integration` on windows-2025 (94/94) and ubuntu-24.04 (93 pass, 1 Windows-only skip) ran `faults.test.mjs` against
+  real processes with a 1 s heartbeat / 3 s lease: idle connection kept alive for 2.5 leases; silent network loss
+  (TCP proxy stops forwarding without closing) noticed by gateway and agent within the lease, `pc_offline` returned at
+  once, self-healing with a new generation and no re-pairing; a scripted agent that stops heartbeating is dropped at
+  lease expiry while a heartbeating one is kept; an agent without the capability is not leased; hard-killed agent
+  reported offline and restored with the same grant; relay hard-killed mid-download gives the client an error (not a
+  short "complete" file), the agent reports the transfer as not delivered, and a ranged `If-Range` resume against the
+  restarted relay reproduces the source SHA-256 exactly; graceful shutdown releases agents within 5 s.
+- Gateway-restart test on Linux fell from ~63 s to ~4 s (agents are now cut loose on shutdown).
+- `relay-release` 44010856238 on `main`: `relay-dev-0.1.6` deployed and verified on the live relay; live-agent jobs
+  passed on both runners (new agent with heartbeats against the new relay over the internet).
+- **Not evidenced:** sleep/resume, lid close or real network switching on a Windows PC; behaviour behind mobile-carrier NAT.
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were
