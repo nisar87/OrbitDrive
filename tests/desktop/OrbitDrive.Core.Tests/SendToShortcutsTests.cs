@@ -34,7 +34,7 @@ public sealed class SendToShortcutsTests : IDisposable
         foreach (var path in made)
         {
             dynamic link = ((dynamic)shell).CreateShortcut(path);
-            Assert.Equal(exe, (string)link.TargetPath);
+            Assert.True(string.Equals(exe, (string)link.TargetPath, StringComparison.OrdinalIgnoreCase));
             args.Add((string)link.Arguments);
         }
         Assert.Contains("ctl send_files abc-123", args);

@@ -196,6 +196,16 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         return new OneShotOffer(name, size, new DateTimeOffset(modified).ToUnixTimeMilliseconds(), grant);
     }
 
+    /// <summary>
+    /// Windows reports final paths in the \\?\ form. A grant stores (and later re-opens) the ordinary drive form; a network location
+    /// (\\?\UNC\...) is not a file on this PC's own drives and is refused.
+    /// </summary>
+    private static string PlainFinalPath(string finalPath)
+    {
+        if (finalPath.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase)) throw new ProtocolException(ErrorCode.InvalidRequest, "Only files on this PC's own drives can be sent.");
+        return finalPath.StartsWith(@"\\?\", StringComparison.Ordinal) && finalPath.Length > 6 && finalPath[5] == ':' ? finalPath[4..] : finalPath;
+    }
+
     /// <summary>Opens one explicitly chosen file read-only and proves the opened object is a plain single-link regular file.</summary>
     private static SafeFileHandle OpenOneShotHandle(string path, out string finalPath)
     {
@@ -215,7 +225,7 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
             var (links, isReparse) = NativeFile.GetLinkInfo(handle);
             if (isReparse) throw new ProtocolException(ErrorCode.LinkNotAllowed, "Links and junctions are not followed.");
             if (links > 1) throw new ProtocolException(ErrorCode.LinkNotAllowed, "Files with multiple hard links are not sent.");
-            finalPath = NativeFile.GetFinalPath(handle);
+            finalPath = PlainFinalPath(NativeFile.GetFinalPath(handle));
             return handle;
         }
         catch { handle.Dispose(); throw; }
