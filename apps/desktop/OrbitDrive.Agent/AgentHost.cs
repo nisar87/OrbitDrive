@@ -164,6 +164,7 @@ internal sealed class AgentHost : IDisposable
                     StartClient();
                     return null;
                 case "quit":
+                    Emit("quitting", null); // lets an attached console tell a deliberate stop from a crash
                     _ = Task.Run(async () => { await Task.Delay(100); Quit(); }, CancellationToken.None); // let the reply reach the console first
                     return null;
                 default: throw new IpcException("Unknown command.");

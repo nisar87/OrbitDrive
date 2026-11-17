@@ -49,6 +49,22 @@ function Shot([string]$name) {
     [System.Drawing.Graphics]::FromImage($bitmap).CopyFromScreen([int]$rect.X, [int]$rect.Y, 0, 0, $bitmap.Size)
     $bitmap.Save((Join-Path $OutDir ("console-{0:D2}-{1}.png" -f $script:shots, $name)), [System.Drawing.Imaging.ImageFormat]::Png)
 }
+function Toggle([string]$id) { (Find $id).GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Toggle(); Start-Sleep -Milliseconds 500 }
+function IsOn([string]$id) { (Find $id).GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Current.ToggleState -eq [System.Windows.Automation.ToggleState]::On }
+function RunEntries { $key = Get-Item 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue; if (-not $key) { return @() }; @($key.GetValueNames() | ForEach-Object { $key.GetValue($_) } | Where-Object { $_ -like "*$state*" }) }
+# Every enabled, on-screen button, field, checkbox and list item of the current page must be reachable by keyboard.
+function UnreachableControls {
+    $types = @([System.Windows.Automation.ControlType]::Button, [System.Windows.Automation.ControlType]::Edit, [System.Windows.Automation.ControlType]::CheckBox, [System.Windows.Automation.ControlType]::ListItem)
+    $bad = @()
+    foreach ($type in $types) {
+        $condition = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, $type)
+        foreach ($element in $script:win.FindAll($Scope::Descendants, $condition)) {
+            $c = $element.Current
+            if ($c.IsEnabled -and -not $c.IsOffscreen -and $c.AutomationId -notmatch '^(Minimize|Maximize|Close|Restore|TitleBar|PART_|SmallDecrease|SmallIncrease|LargeDecrease|LargeIncrease|LineUp|LineDown|PageUp|PageDown|Thumb|PairLink$)' -and -not $c.IsKeyboardFocusable) { $bad += "$($c.ControlType.ProgrammaticName):$($c.AutomationId):$($c.Name)" }
+        }
+    }
+    $bad
+}
 function AttachWindow([System.Diagnostics.Process]$process) {
     $condition = New-Object System.Windows.Automation.PropertyCondition($AE::ProcessIdProperty, $process.Id)
     for ($i = 0; $i -lt 100; $i++) {
@@ -191,15 +207,119 @@ try {
     Start-Sleep -Seconds 5
     Check ((Agents).Count -eq 0) 'an agent stopped elsewhere is not silently relaunched by the console'
 
+    [void](WaitText 'StateText' '^Stopped$')
+    Check $true 'the console says the agent was stopped (a deliberate stop is not treated as a crash)'
+    Click 'StartAgentButton'
+    [void](WaitText 'StateText' '^Online$' 60000)
+    Check ((Agents).Count -eq 1) 'Start brings the agent back'
+
+    # Crash recovery: an agent that dies unexpectedly is restarted, but only a bounded number of times.
+    for ($crash = 1; $crash -le 3; $crash++) {
+        $old = (Agents)[0].Id
+        Stop-Process -Id $old -Force
+        $back = $false
+        for ($i = 0; $i -lt 160 -and -not $back; $i++) { Start-Sleep -Milliseconds 250; $now = Agents; $back = ($now.Count -eq 1 -and $now[0].Id -ne $old) }
+        Check $back "crash $crash of 3: the console restarted the agent by itself"
+        [void](WaitText 'StateText' '^Online$' 60000)
+    }
+    Check ((Agents).Count -eq 1) 'exactly one agent after three recoveries (no duplicates)'
+    Stop-Process -Id (Agents)[0].Id -Force
+    [void](WaitText 'StateText' '^Agent keeps stopping$' 30000)
+    Start-Sleep -Seconds 6
+    Check ((Agents).Count -eq 0) 'a fourth crash in a row is NOT restarted (no launch loop)'
+    Shot 'overview-agent-keeps-stopping'
+    Click 'StartAgentButton'
+    [void](WaitText 'StateText' '^Online$' 60000)
+    Check ((Agents).Count -eq 1) 'the owner can start it again explicitly'
+    Shot 'overview-online-final'
+
+    # Keyboard reachability on every page.
+    foreach ($page in 'Overview', 'Shared folders', 'Devices', 'Transfers', 'Activity', 'Settings', 'Diagnostics') {
+        Nav $page
+        $bad = @(UnreachableControls)
+        Check ($bad.Count -eq 0) "every control on '$page' is reachable by keyboard $($bad -join ', ')"
+    }
+    Nav 'Overview'
+    $script:win.SetFocus(); Start-Sleep -Milliseconds 300
+    [System.Windows.Forms.SendKeys]::SendWait('^3'); Start-Sleep -Milliseconds 800
+    Check (-not (Find 'PairButton').Current.IsOffscreen) 'Ctrl+3 jumps to Devices from the keyboard'
+    [System.Windows.Forms.SendKeys]::SendWait('^6'); Start-Sleep -Milliseconds 800
+    Check (-not (Find 'SaveGatewayButton').Current.IsOffscreen) 'Ctrl+6 jumps to Settings from the keyboard'
+
+    # Optional start at sign-in: off by default, per-user, removable.
+    Check (-not (IsOn 'StartAtSignIn') -and @(RunEntries).Count -eq 0) 'start at sign-in is off by default and nothing is registered'
+    Toggle 'StartAtSignIn'
+    $entries = @(RunEntries)
+    Check ((IsOn 'StartAtSignIn') -and $entries.Count -eq 1 -and $entries[0] -like "*$Exe*" -and $entries[0] -like '*--background*') 'turning it on registers this console for the current user only (HKCU Run, hidden start)'
+    Check (-not (IsOn 'PauseWhenLocked')) 'pause-while-locked is off by default'
+    Toggle 'PauseWhenLocked'
+    Check ((Get-Content (Join-Path $state 'console.json') -Raw) -match '"pauseWhenLocked":\s*true') 'the lock setting is saved'
+    Shot 'settings-options'
+    Toggle 'StartAtSignIn'
+    Check (-not (IsOn 'StartAtSignIn') -and @(RunEntries).Count -eq 0) 'turning it off removes the registration'
+
+    Nav 'Overview'
+    Click 'QuitButton'
+    Check ($console.WaitForExit(15000)) 'Quit closes the console again'
+    for ($i = 0; $i -lt 50 -and (Agents).Count -gt 0; $i++) { Start-Sleep -Milliseconds 200 }
+    Check ((Agents).Count -eq 0) 'no agent is left after Quit'
+
+    # Started the way Windows starts it at sign-in: no window, agent running; launching it again shows the window.
+    $console = Start-Process -FilePath $Exe -ArgumentList '--background', '--state', "`"$state`"" -PassThru
+    for ($i = 0; $i -lt 80 -and (Agents).Count -eq 0; $i++) { Start-Sleep -Milliseconds 250 }
+    Start-Sleep -Seconds 3
+    $console.Refresh()
+    $visible = $AE::RootElement.FindFirst($Scope::Children, (New-Object System.Windows.Automation.PropertyCondition($AE::ProcessIdProperty, $console.Id)))
+    Check ((Agents).Count -eq 1 -and -not $console.HasExited -and $null -eq $visible) 'a background (sign-in) start runs the agent without opening a window'
+    $again = Start-Process -FilePath $Exe -ArgumentList '--state', "`"$state`"" -PassThru -Wait
+    Check ($again.ExitCode -eq 3) 'launching OrbitDrive again does not start a second copy'
+    AttachWindow $console
+    [void](WaitText 'StateText' '^Online$' 60000)
+    Check ((Agents).Count -eq 1) '...and instead brings the running console''s window forward'
+    Nav 'Settings'
+    Check (IsOn 'PauseWhenLocked') 'the lock setting persisted across a restart'
+    Nav 'Overview'
+    Click 'QuitButton'
+    [void]$console.WaitForExit(15000)
+    for ($i = 0; $i -lt 50 -and (Agents).Count -gt 0; $i++) { Start-Sleep -Milliseconds 200 }
+
+    # Dark theme: same real console, forced dark, for visual review.
+    $console = Start-Process -FilePath $Exe -ArgumentList '--theme', 'dark', '--state', "`"$state`"" -PassThru
+    AttachWindow $console
+    [void](WaitText 'StateText' '^Online$' 60000)
+    Shot 'dark-overview'
+    Nav 'Shared folders'; Shot 'dark-shared-folders'
+    Nav 'Devices'; Click 'PairButton'; [void](WaitText 'PairCode' '^[A-Z0-9]{6}-[A-Z0-9]{10}$'); Start-Sleep -Milliseconds 600; Shot 'dark-devices'
+    Nav 'Settings'; Shot 'dark-settings'
+    Nav 'Diagnostics'
+    Check ((WaitText 'DiagnosticsText' 'Theme: Dark') -ne '') 'the console runs with the dark theme when asked'
+    Shot 'dark-diagnostics'
+    Nav 'Overview'
+    Click 'QuitButton'
+    [void]$console.WaitForExit(15000)
+    for ($i = 0; $i -lt 50 -and (Agents).Count -gt 0; $i++) { Start-Sleep -Milliseconds 200 }
+    Check ((Agents).Count -eq 0) 'no orphan agent at the end of the run'
+
     $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
     $elevated = (New-Object System.Security.Principal.WindowsPrincipal($identity)).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
     $os = Get-CimInstance Win32_OperatingSystem
     @{ checks = $results; screenshots = $script:shots; os = $os.Caption; osVersion = $os.Version; elevated = $elevated; diagnostics = $diagnostics
-       note = 'GitHub-hosted runner: Windows Server, elevated account. Not Windows 11, standard-user, multi-DPI or tray-interaction evidence.' } |
+       note = 'GitHub-hosted runner: Windows Server, elevated account. Not Windows 11, standard-user, multi-DPI, high-contrast, lock/unlock or tray-interaction evidence.' } |
         ConvertTo-Json -Depth 4 | Set-Content (Join-Path $OutDir 'desktop-ui-test.json')
     Write-Host "ALL $($results.Count) CHECKS PASSED; $($script:shots) screenshots"
 }
+catch {
+    # Keep a picture of the whole desktop at the moment of failure, then fail the run as before.
+    try {
+        $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+        $bitmap = New-Object System.Drawing.Bitmap($screen.Width, $screen.Height)
+        [System.Drawing.Graphics]::FromImage($bitmap).CopyFromScreen(0, 0, 0, 0, $bitmap.Size)
+        $bitmap.Save((Join-Path $OutDir 'console-99-failure-desktop.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+    } catch { }
+    throw
+}
 finally {
+    Get-Item 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue | ForEach-Object { $k = $_; $k.GetValueNames() | Where-Object { $_ -like 'OrbitDrive-*' } | ForEach-Object { Remove-ItemProperty -Path $k.PSPath -Name $_ -ErrorAction SilentlyContinue } }
     if ($console -and -not $console.HasExited) { $console.Kill() }
     Agents | ForEach-Object { $_.Kill() }
     if (-not $gateway.HasExited) { $gateway.Kill() }
