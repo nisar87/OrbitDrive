@@ -132,20 +132,32 @@ test('save to a file: real progress, the connection drops mid-transfer, resume c
   await pairAndOpen(page);
   link.throttle(3 * (1 << 20));                                  // about 3 MB/s: the 24 MB file takes several seconds
   test.skip(!(await canWriteFiles(page)), 'this browser engine cannot write files from a page');
-  let peakHeap = 0;
-  const heap = async () => page.evaluate(() => performance.memory?.usedJSHeapSize ?? 0);
+  // Page memory after a forced garbage collection: JavaScript heap plus the storage behind byte buffers, read
+  // through the browser's debugging protocol (Chromium only; other engines report 0 and the check is skipped).
+  let cdp = null;
+  try { cdp = await page.context().newCDPSession(page); } catch { /* not Chromium */ }
+  const heap = async () => {
+    if (!cdp) return 0;
+    await cdp.send('HeapProfiler.collectGarbage');
+    const usage = await cdp.send('Runtime.getHeapUsage');
+    return usage.usedSize + (usage.backingStorageSize ?? 0);
+  };
   const baseline = await heap();
+  let peakHeap = baseline;
 
   await saveToFile(page, 'big.bin');
   const row = item(page, 'big.bin');
   await expect(row).toContainText('Written by OrbitDrive');
   await expect(row).toContainText(/Saving… \d/, { timeout: 30_000 });
-  await expect.poll(async () => Number(await row.getByRole('progressbar').getAttribute('value')), { timeout: 60_000 }).toBeGreaterThanOrEqual(10);
-  peakHeap = Math.max(peakHeap, await heap());
+  for (const percent of [10, 25, 40]) {
+    await expect.poll(async () => Number(await row.getByRole('progressbar').getAttribute('value')), { timeout: 60_000 }).toBeGreaterThanOrEqual(percent);
+    peakHeap = Math.max(peakHeap, await heap());                 // sampled while megabytes are flowing through the page
+  }
   await page.screenshot({ path: join(shots, `${info.project.name}-31-transfers-saving.png`) });
 
   link.blackhole();                                              // packets just stop arriving: nothing is closed, no error is raised
   await expect(row).toContainText(/Interrupted at .* of 24 MB/, { timeout: 60_000 });   // noticed by the page's own stall watch
+  peakHeap = Math.max(peakHeap, await heap());
   await expect(row).toContainText('What was saved so far is kept');
   const partial = await savedFile(page, 'big.bin');
   expect(partial.size).toBeGreaterThan(0);
@@ -160,7 +172,6 @@ test('save to a file: real progress, the connection drops mid-transfer, resume c
     if (await resume.isVisible()) await resume.click();
     await expect(row).toContainText('Saved to the place you chose (24 MB)', { timeout: 8000 });
   }).toPass({ timeout: 120_000 });
-  peakHeap = Math.max(peakHeap, await heap());
   const saved = await page.evaluate(async () => (await (await (await navigator.storage.getDirectory()).getFileHandle('big.bin')).getFile()).size);
   expect(saved).toBe(BIG_MIB * (1 << 20));
   const hashed = createHash('sha256');
@@ -176,7 +187,7 @@ test('save to a file: real progress, the connection drops mid-transfer, resume c
   });
   expect(hashed.digest('hex'), 'first part + resumed part is exactly the source file').toBe(bigHash);
   await page.screenshot({ path: join(shots, `${info.project.name}-33-transfers-saved.png`) });
-  if (baseline > 0) expect(peakHeap - baseline, 'the page does not hold the file in memory').toBeLessThan(16 * (1 << 20));
+  if (baseline > 0) expect(peakHeap - baseline, 'the page never holds more than a small part of the 24 MB file in memory').toBeLessThan(8 * (1 << 20));
   console.log(`TRANSFER-HEAP ${info.project.name} baseline=${baseline} peak=${peakHeap}`);
 });
 

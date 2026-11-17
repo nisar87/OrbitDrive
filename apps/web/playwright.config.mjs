@@ -27,10 +27,10 @@ export default defineConfig({
         { name: 'mobile-chrome-emulated', use: { ...devices['Pixel 7'], ...channel } },
       ]
     : [
-        { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'], launchOptions: { args: ['--enable-precise-memory-info'] } } },   // exact heap figures for the memory check
+        { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'] } },
         { name: 'desktop-firefox', use: { ...devices['Desktop Firefox'] } },
         { name: 'desktop-webkit', use: { ...devices['Desktop Safari'] } },
-        { name: 'mobile-chromium-emulated', use: { ...devices['Pixel 7'], launchOptions: { args: ['--enable-precise-memory-info'] } } },
+        { name: 'mobile-chromium-emulated', use: { ...devices['Pixel 7'] } },
         { name: 'mobile-webkit-emulated', use: { ...devices['iPhone 15'] } },
       ],
 });
