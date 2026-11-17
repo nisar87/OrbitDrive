@@ -315,12 +315,12 @@ public sealed class FileAccessTests : IDisposable
             File.WriteAllText(Path.Join(_root, "pagefile.sys"), "x");
             File.SetAttributes(Path.Join(_root, "pagefile.sys"), FileAttributes.Hidden | FileAttributes.System);
         }
-        Assert.False(List().Entries.Any(e => e.Name == ".private-notes"));
+        Assert.DoesNotContain(List().Entries, e => e.Name == ".private-notes");
         _roots[0] = _roots[0] with { ShowHidden = true };
         var entry = List().Entries.Single(e => e.Name == ".private-notes");
         Assert.True(entry.Hidden);
-        Assert.False(List().Entries.Any(e => e.Name == "pagefile.sys"));
-        Assert.False(List().Entries.Any(e => e.Name != ".private-notes" && e.Hidden));
+        Assert.DoesNotContain(List().Entries, e => e.Name == "pagefile.sys");
+        Assert.DoesNotContain(List().Entries, e => e.Name != ".private-notes" && e.Hidden);
     }
 
     [Fact]
