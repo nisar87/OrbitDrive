@@ -8,6 +8,7 @@ const listeners = new Set<Listener>();
 let waiting: ServiceWorker | null = null;
 let busyCheck: () => boolean = () => false;
 let reloading = false;
+let applying = false;   // the page asked for the update; only then may a controller change reload it (never on the first install)
 
 const publish = () => { for (const l of listeners) l(); };
 
@@ -19,6 +20,7 @@ export const pwa = {
   canApplyUpdate: () => waiting !== null && !busyCheck(),
   applyUpdate(): boolean {
     if (!waiting || busyCheck()) return false;
+    applying = true;
     waiting.postMessage('activate-update');
     return true;
   },
@@ -40,7 +42,7 @@ export const pwa = {
       track(registration.waiting);
       registration.addEventListener('updatefound', () => track(registration.installing));
       navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (reloading) return;
+        if (reloading || !applying) return;
         reloading = true;
         window.location.reload();
       });

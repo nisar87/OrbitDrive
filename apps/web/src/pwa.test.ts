@@ -75,3 +75,29 @@ describe('service worker', () => {
     expect(sw.stores.size).toBe(0);
   });
 });
+
+describe('page lifecycle', () => {
+  it('a worker taking control on the first install never reloads the page; an update the user applied does', async () => {
+    vi.resetModules();
+    const listeners: Record<string, () => void> = {};
+    const reload = vi.fn();
+    const registration = { waiting: null as unknown, installing: null, addEventListener: () => undefined };
+    const container = { controller: null as unknown, register: async () => registration, addEventListener: (n: string, h: () => void) => { listeners[n] = h; }, getRegistration: async () => undefined };
+    vi.stubGlobal('navigator', { serviceWorker: container });
+    vi.stubGlobal('window', { location: { reload } });
+    vi.stubEnv('VITE_REGISTER_SW', 'true');
+    const { pwa } = await import('./pwa');
+    await pwa.register();
+    listeners.controllerchange();                         // first install: clients.claim() fires this
+    expect(reload).not.toHaveBeenCalled();
+
+    const postMessage = vi.fn();
+    registration.waiting = { state: 'installed', postMessage, addEventListener: () => undefined };
+    container.controller = {};
+    await pwa.register();                                 // a later visit finds a waiting update
+    expect(pwa.applyUpdate()).toBe(true);
+    listeners.controllerchange();
+    expect(reload).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals(); vi.unstubAllEnvs();
+  });
+});
