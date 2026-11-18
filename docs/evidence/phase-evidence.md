@@ -325,6 +325,22 @@ verify-deployment and both live-agent jobs.
 - A phone on another network downloading after tapping Accept; real push delivery (no Firebase credentials); iOS Home
   Screen install behaviour. Local notifications were tested only against browser mocks.
 
+## D7/W7 previews and thumbnails (commits `8e31042` → `f79897c`, seven workflows green on `f79897c`)
+
+- Fixes found by CI, none by weakening a test: nullable collection-expression assertion (CS8631) in `PreviewTests`; the cache
+  test held an open handle while calling `Clear` (Windows cannot delete open files); `pdfjs-dist` newly appeared in the
+  production bundle and `bundle-check` refused it until it was reviewed and recorded (`docs/security/accepted-risks.md`).
+- Real decoder: integration "the real decoder handles pictures, honours rotation, and contains corrupt, truncated and oversized
+  inputs" passed on ubuntu and windows runners; Core tests passed on windows-2025; e2e `preview.spec.mjs` 6 tests x 5 projects passed.
+- Local fix found by reviewing a mobile screenshot: an enlarged picture could not be scrolled to its left/top edge (flex centring);
+  now safe-centred. Previous/next now stays within the kind opened (pictures with pictures).
+- Local runs used a **fake** helper (`fake-thumbnail-helper.sh`); only CI exercised the real Skia helper.
+
+### D7/W7 not evidenced
+
+- Real phones, non-emulated browsers, a wide codec/PDF corpus, Windows job-object limits under an adversarial memory test,
+  PDF renderer origin isolation, fuzzing, WPF console toggle for thumbnails.
+
 ## Local-only observations (not CI evidence)
 
 - Development sandbox: Ubuntu 24.04, .NET SDK 10.0.115, Node 22.23.4. nuget.org was unreachable, so xunit projects were

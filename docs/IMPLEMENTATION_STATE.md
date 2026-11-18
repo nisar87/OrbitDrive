@@ -61,7 +61,8 @@ Firebase is back in scope (owner, 2026-11-17): project `orbitdrive-dev` was crea
 | W4 / D4 | IN_PROGRESS | **W4:** desktop shell (windows, taskbar, launcher, account menu, themes, phone layout) and full Explorer (tree, history, breadcrumbs, three views, sort, filter, selection, context menu, properties) — Playwright on 5 browser projects + vitest; screenshots reviewed. Missing: Inbox/Transfers apps, virtualised 10,000-entry list, real-device and accessibility-tool evidence. **D4:** roots bound to their disk identity, owner-only hidden-items option (console + local command), listings through a validated pinned handle (race fixed), adversarial suite (encoded separators, real volumes, ancestor-swap race, hard links), 10,000-entry folder usable in five browser projects. Missing: cloud-placeholder policy, EFS/network-share behaviour, mount points inside a root, real removable-disk evidence |
 | W5 / D5 | AWAITING_DEVICE_TEST | Automated exit criteria met on `98e29a4`: relay Range/HEAD/206/416/conditional, content revisions, capabilities, 1 GiB relay checksum, 1 GiB save-to-file (slow receiver, bounded memory, resume, source mutation incl. same-size/same-time, cancel/cleanup, disk-full state), relay-observed states, owner bandwidth/concurrency limits, pause on metered connection. Still needs real hardware: the real save-location picker and disks, physical phones, a metered network on real Windows, Safari (WebKit save-to-file tests are skipped: its test sessions refuse page file writes). Not COMPLETE until those are run |
 | W6 / D6 | AWAITING_DEVICE_TEST | Automated scope done on `a3a833e`: sealed one-shot grants, gateway invitations (durable, idempotent, expiry, revoke, per-receiver), agent `send_files`/spool/ctl fallback/classic SendTo shortcuts, native `IExplorerCommand` (built + COM-tested on windows-2025), web Inbox, notices, opt-in local notifications, PWA manifest + static-only service worker. Missing: modern menu in real Win 11 Explorer (signing identity), real FCM push (Firebase credentials), real phones; WPF console toggle for SendTo shortcuts not built. |
-| W7–W12, D7–D12 | NOT_STARTED | |
+| W7 / D7 | AUTOMATED_VERIFIED (partial) | Automated scope done on `f79897c` (seven workflows green): content sniffer, image probe, thumbnail helper + cache, preview/derived read variants, inline-serving headers, preview sessions, owner controls (IPC), Preview app (image/text/PDF/media), Icons-view thumbnails, e2e on 5 browser projects, real-decoder corpus on Linux+Windows CI. Missing: WPF console thumbnail toggle/cache clear, PDF origin isolation, real phones, codec matrix, fuzzing |
+| W8–W12, D8–D12 | NOT_STARTED | |
 
 The first vertical slice (pair → browse approved root → hash-verified ranged download, across Windows agent, gateway and
 web) works end to end in CI. It is a slice through M1–M2, not completion of those milestones.
@@ -103,9 +104,9 @@ Not blocked, in order:
 3. D1 remainder needs the owner's Windows 11 PC: standard user, lock/sleep, high contrast, DPI, tray menu.
 4. D4/W4: Windows-style web shell (desktop, taskbar, windows), full Explorer (views, sort, selection, properties,
    context menus, back/forward/up), root volume binding. Visual iteration against the rubric starts here.
-5. D5/W5: only the physical-device checks listed in the phase row remain. D6/W6 automated scope is done (see phase row). **Next dependency-ready work: D7/W7 (previews).**
+5. D5/W5: only the physical-device checks listed in the phase row remain. D6/W6 automated scope is done (see phase row). D7/W7 automated scope is done (see phase row). **Next dependency-ready work: D8/W8.**
 6. D6/W6: native Explorer command + package identity, invitations, Inbox, FCM, PWA/service worker.
-7. D7/W7 previews; D8/W8 archives, search, favorites, multi-PC; D9/W9 uploads; D10 packaging/signing/updates;
+7. D8/W8 archives, search, favorites, multi-PC; D9/W9 uploads; D10 packaging/signing/updates;
    W10 admin and owner controls; D11/W11 hardening, soak, accessibility, visual gate; D12/W12 release candidate.
 8. Relay: build-provenance attestation, off-host backup, self-updating host scripts, migrate to A1.Flex when capacity
    exists, a real domain, production channel.

@@ -32,8 +32,8 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R25 | IN_PROGRESS | Local in-app notices + opt-in notifications (generic text, no file names) are unit/e2e tested with browser mocks. **No real push (FCM) exists** — needs Firebase service credentials. Not reported as delivered pushes |
 | R26 | IN_PROGRESS | Folders are refused with a truthful 'cannot be sent yet' state; archives arrive in D8/W8 |
 | R27 | AUTOMATED_VERIFIED | Offline PC → truthful 503/offline state, no cloud copy (integration, web e2e). Invitations: durable, pending while the PC is offline, never shown as complete without a download (integration) |
-| R28 | NOT_STARTED | D7/W7 |
-| R29 | NOT_STARTED | D7/W7 |
+| R28 | AUTOMATED_VERIFIED (partial) | Image, text (first 256 KiB), PDF (pdf.js), audio/video (native) preview without a transfer; fallbacks to Download. CI e2e on 5 browser projects. Not evidenced: real phones, wide codec/PDF corpus, PDF origin isolation |
+| R29 | AUTOMATED_VERIFIED (partial) | Lazy, capped, optional thumbnails (128/256/512 WebP) from a restricted helper process, quota/age-bounded private cache, owner switch + clear (IPC). Real Skia decoder tested in CI on Linux and Windows. Not built: WPF console toggle for thumbnails/cache clear; no real-Explorer or phone run |
 | R30 | NOT_STARTED | D8/W8 |
 | R31 | NOT_STARTED | D8/W8 |
 | R32 | IN_PROGRESS | Store test: same-named PCs with different owners cannot cross-authorise. Multi-PC UI untested with two agents |
