@@ -369,7 +369,9 @@ verify-deployment and both live-agent jobs.
 ### Not evidenced
 - A real >4 GiB ZIP64 archive (only forced-ZIP64 structures and a >65 534-entry directory); physical phones; large-list profile on devices; server-side favorites; WPF console toggles (thumbnails/cache clear, SendTo shortcut); Windows-specific hidden/system-attribute handling beyond the CI Windows unit tests.
 
-## D9/W9 — uploads from the phone into approved folders (status: local verification only until CI is recorded below)
+## D9/W9 — uploads from the phone into approved folders (code SHA `91be9bf`)
+
+- CI for the exact SHA `91be9bf95d526af5adcebeec6cc647a010831334`: contracts, security, gateway, desktop, desktop-ui, integration and web all **success**; `main` fast-forwarded to it. Three earlier commits failed and were fixed without weakening: `64a764a` (xUnit2029 analyzer error in `UploadTests`, real xunit only), `68fd17f` (integration: the 1 GiB CI run consumed the root's quota counter so the next test was refused `too_large`; fixed by resetting the counter after that run, reproduced locally with 250 MiB), `74c24ae` (Windows integration: an 8 MiB+1 piece is refused by closing the connection, so the sender saw ECONNRESET and the leftover upload cascaded into later tests; the test now accepts 400/413 or a reset and still requires that nothing was stored).
 
 - Added: Core `UploadTests`; integration `uploads.test.mjs` (20: enablement, forged ids, auth, multi-piece, mismatch/duplicate/skip/replay, cut-off piece, collisions, bad names, limits incl. disk-full at start, concurrency cap, device ownership, cancel, uploads off mid-upload, revocation both ways, bounded-memory 48 MiB run, crash recovery); web vitest `upload.test.ts` (12); Playwright `upload.spec.mjs` (4 × desktop and emulated mobile).
 - Local results: Core 229 pass (stand-in runner), uploads integration 20/20, regression 91 pass/0 fail, vitest 91, Playwright 69 passed/1 skipped (the 1 GiB case).
@@ -378,6 +380,6 @@ verify-deployment and both live-agent jobs.
 - Mobile screenshots (`upload-confirm-*`, `upload-done-*`) reviewed locally; the confirm panel scrolls inside the pane on a phone.
 
 ### Not evidenced
-- CI results for the D9 commit (recorded here once inspected); real xunit compile and the WPF toggle (desktop-ui) are verified only by CI.
+- The WPF upload toggle is verified by the desktop-ui workflow's build and UIA assertions only; its screenshot was not visually reviewed.
 - Windows: Mark-of-the-Web and `MoveFileEx` semantics run only in Windows CI unit tests.
 - Real 45-minute idle expiry; mid-chunk disk-full against a real full disk; resume after agent restart (not supported); folder upload and drag-and-drop (not built); the interruption e2e cuts the connection at a moment the test cannot pin to mid-file, so byte-level resume is proven by the integration and vitest suites, not that e2e alone; physical phones.
