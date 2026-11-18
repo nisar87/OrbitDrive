@@ -49,6 +49,17 @@ public sealed class GatewayOptions
     public int UploadChunkTimeoutSeconds { get; set; } = 600;
     /// <summary>Uploads one browser may start per minute (a phone sending many small photos starts many).</summary>
     public int UploadStartsPerMinute { get; set; } = 300;
+    /// <summary>
+    /// Accounts (by verified user id) that may use the operator API. This is the only way to become an operator: it is set by whoever deploys
+    /// the service, never by signing up first or by any request. Empty = nobody can administer.
+    /// </summary>
+    public string[] OperatorUids { get; set; } = [];
+    /// <summary>An operator request must come from a sign-in at most this old (the person signed in recently, not merely holds a refreshed token).</summary>
+    public int OperatorMaxAuthAgeSeconds { get; set; } = 900;
+    /// <summary>Relay bytes one account may move in a UTC day (downloads plus upload pieces). 0 = no cap.</summary>
+    public long MaxRelayBytesPerOwnerPerDay { get; set; }
+    /// <summary>PCs reporting an older OrbitDrive version are refused with an update message. Empty = no minimum. An operator can change it while running.</summary>
+    public string MinAgentVersion { get; set; } = "";
     public int MaxControlMessageBytes { get; set; } = 262144;
     /// <summary>How often a connected PC must prove it is alive, and how long silence is tolerated before it is treated as offline.</summary>
     public int AgentHeartbeatSeconds { get; set; } = 10;
@@ -77,6 +88,10 @@ public sealed class GatewayOptions
             throw new InvalidOperationException("OrbitDrive:DevIdentity:Secret must be at least 32 characters.");
         if (!DevIdentity.Enabled && !firebase) throw new InvalidOperationException("No identity verifier is configured.");
         if (firebase && !System.Text.RegularExpressions.Regex.IsMatch(Firebase.ProjectId, "^[a-z0-9-]{4,40}$")) throw new InvalidOperationException("OrbitDrive:Firebase:ProjectId is not a valid project id.");
+        if (OperatorUids.Any(u => u.Length is 0 or > 128 || u.Any(char.IsWhiteSpace))) throw new InvalidOperationException("OperatorUids must be non-empty user ids without spaces.");
+        if (OperatorMaxAuthAgeSeconds is < 60 or > 3600) throw new InvalidOperationException("OperatorMaxAuthAgeSeconds must be 60-3600.");
+        if (MaxRelayBytesPerOwnerPerDay < 0) throw new InvalidOperationException("MaxRelayBytesPerOwnerPerDay cannot be negative.");
+        if (MinAgentVersion.Length > 0 && !Version.TryParse(MinAgentVersion, out _)) throw new InvalidOperationException("MinAgentVersion must be a version such as 1.2.3.");
         foreach (var origin in AllowedWebOrigins)
             if (origin.Contains('*') || !Uri.TryCreate(origin, UriKind.Absolute, out _))
                 throw new InvalidOperationException("AllowedWebOrigins must list exact origins; wildcards are not accepted.");

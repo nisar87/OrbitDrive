@@ -327,3 +327,9 @@ dialog.properties form { display: flex; justify-content: flex-end; margin-top: 1
 .upload-collision legend { padding: 0; margin-bottom: 4px; }
 .upload-collision label { display: flex; align-items: flex-start; gap: 10px; min-height: 36px; }
 .upload-collision input[type="radio"] { width: 22px; height: 22px; min-width: 22px; margin: 0; flex: none; accent-color: var(--accent); }
+
+/* W10 owner and operator areas */
+dl.metrics { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; margin: 8px 0; }
+dl.metrics dt { color: var(--muted); }
+dl.metrics dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }
+.admin .device-list .actions { display: flex; flex-wrap: wrap; gap: 6px; }

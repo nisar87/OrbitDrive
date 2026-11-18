@@ -80,6 +80,8 @@ export function Desktop({ apps, account, prefs, onPrefs, onSignOut, openRef }: P
     apps.forEach((app, index) => { const saved = prefs.windows[app.id]; initial[app.id] = saved && saved.w >= MIN_W && saved.h >= MIN_H ? clamp(saved) : defaultLayout(index); });
     return initial;
   });
+  // An app can appear after the desktop was created (the operator area, once the service confirms the account is an operator): it gets a default window.
+  const layoutOf = (id: string): WindowLayout => layouts[id] ?? defaultLayout(Math.max(0, apps.findIndex((app) => app.id === id)));
   const [menu, setMenu] = useState<'launcher' | 'account' | null>(null);
   const zTop = useRef(1);
   const prefsRef = useRef(prefs);
@@ -129,10 +131,10 @@ export function Desktop({ apps, account, prefs, onPrefs, onSignOut, openRef }: P
 
   /** Pointer drag for moving (title bar) and resizing (edges/corner). Mouse, pen and touch on tablets. */
   const startDrag = (id: string, mode: 'move' | 'e' | 's' | 'se') => (event: ReactPointerEvent<HTMLElement>) => {
-    if (compact || layouts[id].maximized || event.button !== 0) return;
+    if (compact || layoutOf(id).maximized || event.button !== 0) return;
     if (mode === 'move' && (event.target as HTMLElement).closest('button')) return;
     event.preventDefault();
-    const start = layouts[id], startX = event.clientX, startY = event.clientY;
+    const start = layoutOf(id), startX = event.clientX, startY = event.clientY;
     let latest = start;
     const target = event.currentTarget;
     target.setPointerCapture(event.pointerId);
@@ -149,7 +151,7 @@ export function Desktop({ apps, account, prefs, onPrefs, onSignOut, openRef }: P
     target.addEventListener('pointermove', move); target.addEventListener('pointerup', end); target.addEventListener('pointercancel', end);
   };
 
-  const toggleMaximize = (id: string) => setLayout(id, { ...layouts[id], maximized: !layouts[id].maximized }, true);
+  const toggleMaximize = (id: string) => setLayout(id, { ...layoutOf(id), maximized: !layoutOf(id).maximized }, true);
   const close = (id: string) => setWindows((current) => ({ ...current, [id]: { open: false, minimized: false, z: 0 } }));
   const minimize = (id: string) => setWindows((current) => ({ ...current, [id]: { ...current[id], minimized: true } }));
   const closeMenu = useCallback(() => setMenu(null), []);
@@ -169,7 +171,7 @@ export function Desktop({ apps, account, prefs, onPrefs, onSignOut, openRef }: P
         {apps.map((app) => {
           const state = windows[app.id];
           if (!state?.open) return null;
-          const layout = layouts[app.id];
+          const layout = layoutOf(app.id);
           const maximized = compact || layout.maximized;
           const style = maximized ? { zIndex: state.z } : { zIndex: state.z, left: layout.x, top: layout.y, width: layout.w, height: layout.h };
           return (

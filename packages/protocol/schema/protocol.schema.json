@@ -70,6 +70,18 @@
     "Ack": { "ok": "bool" },
     "GatewayMeta": { "version": "string", "protocolVersion": "int32", "minProtocolVersion": "int32", "relayTerminatesTls": "bool", "endToEndEncrypted": "bool", "environment": "string" },
     "DevSignInRequest": { "email": "string" },
-    "DevSignInResponse": { "idToken": "string", "uid": "string" }
+    "DevSignInResponse": { "idToken": "string", "uid": "string" },
+    "OwnerPreferences": { "historyRetentionDays": "int32", "notifyInvitations": "bool", "diagnosticsConsent": "bool" },
+    "AccountPc": { "pcId": "string", "name": "string", "agentVersion": "string", "online": "bool", "lastSeenUnixMs": "int64?" },
+    "AccountSummary": { "devices": "BrowserDeviceSummary[]", "pcs": "AccountPc[]", "preferences": "OwnerPreferences", "isOperator": "bool", "retentionNote": "string" },
+    "AccountRevokeResult": { "devicesRevoked": "int32" },
+    "DeleteAccountRequest": { "confirm": "string" },
+    "AdminOverview": { "generatedUnixMs": "int64", "startedUnixMs": "int64", "gatewayVersion": "string", "users": "int32", "suspendedUsers": "int32", "browserDevices": "int32", "pcs": "int32", "pcsOnline": "int32", "activeStreams": "int32", "relayBytesDown": "int64", "relayBytesUp": "int64", "downloadsCompleted": "int64", "downloadsFailed": "int64", "uploadPiecesRelayed": "int64", "uploadPiecesFailed": "int64", "quotaRefusals": "int64", "minAgentVersion": "string", "relayBytesPerOwnerPerDay": "int64" },
+    "AdminUser": { "uid": "string", "devices": "int32", "pcs": "int32", "suspended": "bool", "relayBytesToday": "int64" },
+    "AdminUserList": { "users": "AdminUser[]" },
+    "AdminReasonRequest": { "reason": "string" },
+    "AdminSettings": { "minAgentVersion": "string" },
+    "AuditEntry": { "atUnixMs": "int64", "operator": "string", "action": "string", "target": "string", "detail": "string" },
+    "AuditList": { "entries": "AuditEntry[]" }
   }
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { api, ApiError, AUTH_MODE, GATEWAY_URL, loadDevice, loadSession, saveDevice, saveSession, setTokenProvider, type Session } from './api';
 import { firebaseAuth, type AuthUser } from './features/auth/firebaseAuth';
 import { AccountForms, VerifyEmail } from './features/auth/AccountForms';
@@ -16,7 +16,11 @@ import { PreviewApp } from './features/preview/PreviewApp';
 import { previewStore } from './features/preview/preview';
 import { InboxApp } from './features/inbox/InboxApp';
 import { inbox } from './features/inbox/inbox';
+import type { AccountSummary } from './protocol';
 import { pwa } from './pwa';
+
+// The operator area is a separate chunk: ordinary accounts never download it.
+const AdminApp = lazy(() => import('./features/admin/AdminApp'));
 import { applyTheme, loadPrefs, savePrefs, type Prefs } from './prefs';
 
 const initialLink = takePairingLinkFromLocation(window.location, window.history);
@@ -59,6 +63,7 @@ const ICONS = {
   preview: glyph('M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z'),
   inbox: glyph('M4 13l2.2-6.2A2 2 0 0 1 8.1 5.5h7.8a2 2 0 0 1 1.9 1.3L20 13m-16 0v4.5A1.5 1.5 0 0 0 5.5 19h13a1.5 1.5 0 0 0 1.5-1.5V13m-16 0h4l1 2h6l1-2h4'),
   transfers: glyph('M8 4v12m0 0l-4-4m4 4l4-4M16 20V8m0 0l-4 4m4-4l4 4'),
+  admin: glyph('M12 3l8 3v5c0 4.6-3.2 8.4-8 10-4.8-1.6-8-5.4-8-10V6zm-1 5v5h2V8zm0 7v2h2v-2z'),
   settings: glyph('M4 7h9m4 0h3M4 12h3m4 0h9M4 17h11m4 0h1M15 5v4M9 10v4M17 15v4'),
 };
 
@@ -66,6 +71,8 @@ const ICONS = {
 function Workbench({ session, onAuthLost, onSignOut, onPairAnother }: { session: Session; onAuthLost: (error: unknown) => void; onSignOut: () => void; onPairAnother: () => void }) {
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
   const [dataVersion, setDataVersion] = useState(0);
+  const [owner, setOwner] = useState<AccountSummary | null>(null);
+  useEffect(() => { api.account(session).then(setOwner).catch(() => undefined); }, [session]);
   const openApp = useRef<((id: string) => void) | null>(null);
   const updatePrefs = useCallback((next: Prefs) => { savePrefs(next); setPrefs(next); }, []);
   useEffect(() => { applyTheme(prefs.theme); }, [prefs.theme]);
@@ -87,13 +94,14 @@ function Workbench({ session, onAuthLost, onSignOut, onPairAnother }: { session:
     { id: 'inbox', title: 'Inbox', icon: ICONS.inbox, badge: waiting, render: () => <InboxApp session={session} /> },
     { id: 'transfers', title: 'Transfers', icon: ICONS.transfers, render: () => <TransfersApp session={session} /> },
     { id: 'devices', title: 'Devices', icon: ICONS.devices, render: () => <DevicesApp session={session} onAuthLost={onAuthLost} onPairAnother={onPairAnother} onChanged={changed} dataVersion={dataVersion} /> },
-    { id: 'settings', title: 'Settings', icon: ICONS.settings, render: () => <SettingsApp prefs={prefs} onPrefs={updatePrefs} account={session.email} onSignOut={onSignOut} /> },
-  ], [session, prefs, updatePrefs, onAuthLost, dataVersion, onPairAnother, changed, onSignOut, waiting]);
+    { id: 'settings', title: 'Settings', icon: ICONS.settings, render: () => <SettingsApp prefs={prefs} onPrefs={updatePrefs} account={session.email} onSignOut={onSignOut} session={session} onSummary={setOwner} onAuthLost={onAuthLost} /> },
+    ...(owner?.isOperator ? [{ id: 'admin', title: 'Administration', icon: ICONS.admin, render: () => <Suspense fallback={<p className="empty" role="status">Loading…</p>}><AdminApp session={session} onSignOut={onSignOut} /></Suspense> }] : []),
+  ], [session, prefs, updatePrefs, onAuthLost, dataVersion, onPairAnother, changed, onSignOut, waiting, owner?.isOperator]);
   return (
     <>
       <Desktop apps={apps} account={session.email} prefs={prefs} onPrefs={updatePrefs} onSignOut={onSignOut} openRef={openApp} />
       <div className="toast-region" role="status" aria-live="polite">
-        {announcements.slice(-1).map((text) => (
+        {(owner?.preferences.notifyInvitations ?? true) && announcements.slice(-1).map((text) => (
           <div className="toast" key={text} data-testid="inbox-toast">
             <span>{text}</span>
             <span><button type="button" onClick={() => { openApp.current?.('inbox'); inbox.dismissAnnouncements(); }}>Open Inbox</button> <button type="button" className="ghost" aria-label="Dismiss" onClick={() => inbox.dismissAnnouncements()}>✕</button></span>

@@ -114,5 +114,17 @@ export const api = {
   revokeDevice: (s: Session, deviceId: string) => call('Ack', s, 'DELETE', `/v1/browser-devices/${encodeURIComponent(deviceId)}`),
   renameDevice: (s: Session, deviceId: string, name: string) => call('Ack', s, 'PATCH', `/v1/browser-devices/${encodeURIComponent(deviceId)}`, { name }),
   disconnectPc: (s: Session, pcId: string) => call('Ack', s, 'DELETE', `/v1/pcs/${encodeURIComponent(pcId)}`),
+  account: (s: Session) => call('AccountSummary', s, 'GET', '/v1/account'),
+  setPreferences: (s: Session, preferences: { historyRetentionDays: number; notifyInvitations: boolean; diagnosticsConsent: boolean }) => call('Ack', s, 'PUT', '/v1/account/preferences', preferences),
+  revokeAllBrowsers: (s: Session) => call('AccountRevokeResult', s, 'POST', '/v1/account/revoke-all'),
+  exportAccount: (s: Session) => call('AccountSummary', s, 'GET', '/v1/account/export'),
+  deleteAccount: (s: Session, confirm: string) => call('Ack', s, 'DELETE', '/v1/account', { confirm }),
+  adminOverview: (s: Session) => call('AdminOverview', s, 'GET', '/v1/admin/overview'),
+  adminUsers: (s: Session) => call('AdminUserList', s, 'GET', '/v1/admin/users'),
+  adminAudit: (s: Session) => call('AuditList', s, 'GET', '/v1/admin/audit'),
+  adminSettings: (s: Session) => call('AdminSettings', s, 'GET', '/v1/admin/settings'),
+  setAdminSettings: (s: Session, minAgentVersion: string) => call('Ack', s, 'PUT', '/v1/admin/settings', { minAgentVersion }),
+  adminUserAction: (s: Session, uid: string, action: 'suspend' | 'unsuspend' | 'revoke-all' | 'reset-relay-allowance', reason: string) =>
+    call(action === 'revoke-all' ? 'AccountRevokeResult' : 'Ack', s, 'POST', `/v1/admin/users/${encodeURIComponent(uid)}/${action}`, { reason }),
   revokeThisBrowser: (s: Session) => call('Ack', s, 'DELETE', '/v1/browser-devices/current'),
 };

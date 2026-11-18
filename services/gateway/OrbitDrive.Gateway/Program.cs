@@ -26,6 +26,8 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<Store>();
 builder.Services.AddSingleton<Invitations>();
 builder.Services.AddSingleton<RateLimiter>();
+builder.Services.AddSingleton<Metrics>();
+builder.Services.AddSingleton<AdminLog>();
 builder.Services.AddSingleton<AgentHub>();
 builder.Services.AddSingleton<StreamRegistry>();
 builder.Services.AddSingleton<DevIdentityVerifier>();
@@ -47,6 +49,8 @@ var app = builder.Build();
 var store = app.Services.GetRequiredService<Store>();
 var limiter = app.Services.GetRequiredService<RateLimiter>();
 var invitations = app.Services.GetRequiredService<Invitations>();
+var metrics = app.Services.GetRequiredService<Metrics>();
+var adminLog = app.Services.GetRequiredService<AdminLog>();
 var hub = app.Services.GetRequiredService<AgentHub>();
 app.Lifetime.ApplicationStopping.Register(hub.Shutdown);
 var streams = app.Services.GetRequiredService<StreamRegistry>();
@@ -140,7 +144,9 @@ if (options.DevIdentity.Enabled)
     {
         var request = await ReadJson<DevSignInRequest>(context);
         if (request.Email.Length is < 3 or > 200 || !request.Email.Contains('@')) throw new ProtocolException(ErrorCode.InvalidRequest, "Enter an email address.");
-        var token = dev.Issue(request.Email, TimeSpan.FromHours(8));
+        // Test control: pretend the person signed in this many seconds ago (a long-lived refreshed token), to exercise recent-sign-in checks.
+        var ago = int.TryParse(context.Request.Query["signedInAgoSeconds"], out var seconds) && seconds is > 0 and < 86400 * 30 ? TimeSpan.FromSeconds(seconds) : (TimeSpan?)null;
+        var token = dev.Issue(request.Email, TimeSpan.FromHours(8), ago);
         await WriteJson(context, new DevSignInResponse { IdToken = token, Uid = DevIdentityVerifier.UidFor(token) });
     });
 }
@@ -304,9 +310,11 @@ app.MapPut("/v1/pcs/{pcId}/uploads/{uploadId}/chunk", async (HttpContext context
     context.Features.Get<IHttpMaxRequestBodySizeFeature>()!.MaxRequestBodySize = length;
     context.Features.Get<IHttpMinRequestBodyDataRateFeature>()?.MinDataRate = null;          // slow phones are throttled, not dropped
 
+    metrics.RequireRelayAllowance(device.OwnerUid);
     var (stream, uplinkToken) = streams.Create(device.OwnerUid);
     using var cancel = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
     var success = false;
+    var stored = false;
     Task<WriteChunkResult>? agentTask = null;
     try
     {
@@ -332,11 +340,14 @@ app.MapPut("/v1/pcs/{pcId}/uploads/{uploadId}/chunk", async (HttpContext context
         await downlink.Body.FlushAsync(cancel.Token);
         success = true;
         streams.Remove(stream, true);                                                       // lets the PC's fetch finish
-        await WriteJson(context, await agentTask.WaitAsync(TimeSpan.FromSeconds(options.UploadChunkTimeoutSeconds), cancel.Token));
+        var answer = await agentTask.WaitAsync(TimeSpan.FromSeconds(options.UploadChunkTimeoutSeconds), cancel.Token);
+        stored = answer.Accepted;
+        await WriteJson(context, answer);
     }
     catch (TimeoutException) { throw new ProtocolException(ErrorCode.Timeout, "The PC did not take this piece in time."); }
     finally
     {
+        metrics.PieceRelayed(device.OwnerUid, length, stored);
         streams.Remove(stream, success);
         if (!success && agentTask is not null)
         {
@@ -499,6 +510,7 @@ app.MapMethods("/v1/downloads/{capability}", ["GET", "HEAD"], async (HttpContext
 
     if (HttpMethods.IsHead(context.Request.Method)) { WriteHeaders(); return; }
 
+    metrics.RequireRelayAllowance(session.OwnerUid);
     var (stream, uplinkToken) = streams.Create(session.OwnerUid, session.IsPreview);
     using var cancel = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, session.Revoked.Token);
     var success = false;
@@ -529,6 +541,7 @@ app.MapMethods("/v1/downloads/{capability}", ["GET", "HEAD"], async (HttpContext
     finally
     {
         session.StreamEnded(selected.Start, relayed);
+        if (!session.IsPreview) metrics.Downloaded(session.OwnerUid, relayed, success);
         streams.Remove(stream, success);
         if (!success && hub.IsOnline(session.PcId))
             _ = hub.Get(session.PcId).RequestAsync<Ack>(Actions.CancelStream, new CancelStreamRequest { StreamId = stream.Id }, TimeSpan.FromSeconds(5), CancellationToken.None)
@@ -585,6 +598,168 @@ app.MapDelete("/v1/browser-devices/{deviceId}", (HttpContext context, string dev
     store.RevokeDevice(Authenticate(context), targetId);
     if (target is not null) DiscardUploads(target.Id, target.PcIds);
     return WriteJson(context, new Ack { Ok = true });
+});
+
+// ---- Owner controls: the signed-in person's own browsers, PCs and choices. Every call needs an approved browser. ----
+AccountSummary Summarize(Identity identity, BrowserDeviceRecord current) => new()
+{
+    Devices = [.. store.DevicesForOwner(current.OwnerUid).Select(d => new BrowserDeviceSummary { DeviceId = d.Id, Name = d.Name, Current = d.Id == current.Id, PcIds = [.. d.PcIds], LastSeenUnixMs = d.LastSeenUnixMs })],
+    Pcs = [.. store.PcsOwnedBy(current.OwnerUid).Select(p => new AccountPc { PcId = p.PcId, Name = p.Name, AgentVersion = p.AgentVersion, Online = hub.IsOnline(p.PcId), LastSeenUnixMs = p.LastSeen.ToUnixTimeMilliseconds() })],
+    Preferences = store.Preferences(current.OwnerUid),
+    IsOperator = IsOperator(identity),
+    RetentionNote = "The service keeps a transfer in memory for at most an hour after it is prepared, so this choice can only shorten how long finished transfers stay listed. It never keeps file contents or paths.",
+};
+
+app.MapGet("/v1/account", (HttpContext context) =>
+{
+    var identity = Authenticate(context);
+    return WriteJson(context, Summarize(identity, store.Authorize(identity, context.Request.Headers["X-OrbitDrive-Device"].ToString())));
+});
+
+app.MapPut("/v1/account/preferences", async (HttpContext context) =>
+{
+    var current = AuthorizeBrowser(context);
+    store.SetPreferences(current.OwnerUid, await ReadJson<OwnerPreferences>(context));
+    await WriteJson(context, new Ack { Ok = true });
+});
+
+void EndAllWork(IEnumerable<BrowserDeviceRecord> devices) { foreach (var device in devices) DiscardUploads(device.Id, [.. device.PcIds]); }
+
+app.MapPost("/v1/account/revoke-all", (HttpContext context) =>
+{
+    var current = AuthorizeBrowser(context);
+    var revoked = store.RevokeAllDevices(current.OwnerUid);
+    EndAllWork(revoked);
+    return WriteJson(context, new AccountRevokeResult { DevicesRevoked = revoked.Count });
+});
+
+// What the service holds about this account, as a file the person keeps. Never includes secrets, file names or file contents.
+app.MapGet("/v1/account/export", (HttpContext context) =>
+{
+    var identity = Authenticate(context);
+    var current = store.Authorize(identity, context.Request.Headers["X-OrbitDrive-Device"].ToString());
+    context.Response.Headers.ContentDisposition = "attachment; filename=\"orbitdrive-account.json\"";
+    return WriteJson(context, Summarize(identity, current));
+});
+
+app.MapDelete("/v1/account", async (HttpContext context) =>
+{
+    var identity = Authenticate(context);
+    var current = store.Authorize(identity, context.Request.Headers["X-OrbitDrive-Device"].ToString());
+    RequireRecentSignIn(identity, "Sign out and sign in again before deleting your account.");
+    var request = await ReadJson<DeleteAccountRequest>(context);
+    if (request.Confirm != "delete my account") throw new ProtocolException(ErrorCode.InvalidRequest, "Type the confirmation phrase exactly to delete your account.");
+    var (devices, pcs) = store.DeleteAccount(current.OwnerUid);
+    EndAllWork(devices);
+    metrics.Forget(current.OwnerUid);
+    adminLog.Record(current.OwnerUid, "account-deleted", current.OwnerUid, $"{devices.Count} browsers revoked, {pcs.Count} PCs released");
+    await WriteJson(context, new Ack { Ok = true });
+});
+
+// ---- Operator administration. The operator list comes from deployment configuration, checked on every call; being signed in as an operator
+// is not enough: the sign-in must also be recent. There is no endpoint that lists files, folders or paths, or acts as a user. ----
+bool IsOperator(Identity identity) => options.OperatorUids.Contains(identity.Uid, StringComparer.Ordinal);
+
+void RequireRecentSignIn(Identity identity, string message)
+{
+    if (identity.AuthTime is not { } at || TimeProvider.System.GetUtcNow() - at > TimeSpan.FromSeconds(options.OperatorMaxAuthAgeSeconds))
+        throw new ProtocolException(ErrorCode.Unauthenticated, message);
+}
+
+Identity AuthorizeOperator(HttpContext context)
+{
+    var identity = Authenticate(context);
+    if (!IsOperator(identity)) throw new ProtocolException(ErrorCode.Forbidden, "This area is for the people who run the service.");
+    RequireRecentSignIn(identity, "Sign in again to use administration. It needs a recent sign-in.");
+    Throttle(context, "admin:" + identity.Uid, 120, "Too many administration requests. Wait a moment.");
+    return identity;
+}
+
+app.MapGet("/v1/admin/overview", (HttpContext context) =>
+{
+    AuthorizeOperator(context);
+    var owners = store.Owners();
+    return WriteJson(context, new AdminOverview
+    {
+        GeneratedUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), StartedUnixMs = metrics.StartedAt.ToUnixTimeMilliseconds(), GatewayVersion = gatewayVersion,
+        Users = owners.Count, SuspendedUsers = owners.Count(o => o.Suspended), BrowserDevices = store.DeviceCount(), Pcs = store.PcCount(),
+        PcsOnline = store.PcsOnlineCount(hub), ActiveStreams = streams.Count,
+        RelayBytesDown = metrics.Down, RelayBytesUp = metrics.Up, DownloadsCompleted = metrics.DownloadsCompleted, DownloadsFailed = metrics.DownloadsFailed,
+        UploadPiecesRelayed = metrics.PiecesRelayed, UploadPiecesFailed = metrics.PiecesFailed, QuotaRefusals = metrics.QuotaRefusals,
+        MinAgentVersion = adminLog.MinAgentVersion, RelayBytesPerOwnerPerDay = options.MaxRelayBytesPerOwnerPerDay,
+    });
+});
+
+app.MapGet("/v1/admin/users", (HttpContext context) =>
+{
+    AuthorizeOperator(context);
+    return WriteJson(context, new AdminUserList { Users = [.. store.Owners().Take(500).Select(o => new AdminUser { Uid = o.Uid, Devices = o.Devices, Pcs = o.Pcs, Suspended = o.Suspended, RelayBytesToday = metrics.RelayBytesToday(o.Uid) })] });
+});
+
+static string CleanUid(string uid) => uid.Length is > 0 and <= 128 && uid.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' or ':') ? uid : throw new ProtocolException(ErrorCode.InvalidRequest, "That is not an account id.");
+
+app.MapPost("/v1/admin/users/{uid}/suspend", async (HttpContext context, string uid) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    uid = CleanUid(uid);
+    if (options.OperatorUids.Contains(uid, StringComparer.Ordinal)) throw new ProtocolException(ErrorCode.Conflict, "An operator account cannot be suspended here. Remove it from the operator list first.");
+    var request = await ReadJson<AdminReasonRequest>(context);
+    var affected = store.SetSuspended(uid, true);
+    EndAllWork(affected);
+    adminLog.Record(operatorIdentity.Uid, "suspend", uid, request.Reason);
+    await WriteJson(context, new Ack { Ok = true });
+});
+
+app.MapPost("/v1/admin/users/{uid}/unsuspend", async (HttpContext context, string uid) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    uid = CleanUid(uid);
+    var request = await ReadJson<AdminReasonRequest>(context);
+    store.SetSuspended(uid, false);
+    adminLog.Record(operatorIdentity.Uid, "unsuspend", uid, request.Reason);
+    await WriteJson(context, new Ack { Ok = true });
+});
+
+app.MapPost("/v1/admin/users/{uid}/revoke-all", async (HttpContext context, string uid) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    uid = CleanUid(uid);
+    var request = await ReadJson<AdminReasonRequest>(context);
+    var revoked = store.RevokeAllDevices(uid);
+    EndAllWork(revoked);
+    adminLog.Record(operatorIdentity.Uid, "revoke-all", uid, request.Reason);
+    await WriteJson(context, new AccountRevokeResult { DevicesRevoked = revoked.Count });
+});
+
+app.MapPost("/v1/admin/users/{uid}/reset-relay-allowance", async (HttpContext context, string uid) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    uid = CleanUid(uid);
+    var request = await ReadJson<AdminReasonRequest>(context);
+    metrics.Forget(uid);                                  // an operator's way to give one account its day's allowance back before midnight UTC
+    adminLog.Record(operatorIdentity.Uid, "reset-relay-allowance", uid, request.Reason);
+    await WriteJson(context, new Ack { Ok = true });
+});
+
+app.MapGet("/v1/admin/settings", (HttpContext context) =>
+{
+    AuthorizeOperator(context);
+    return WriteJson(context, new AdminSettings { MinAgentVersion = adminLog.MinAgentVersion });
+});
+
+app.MapPut("/v1/admin/settings", async (HttpContext context) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    var request = await ReadJson<AdminSettings>(context);
+    adminLog.SetMinAgentVersion(request.MinAgentVersion);
+    adminLog.Record(operatorIdentity.Uid, "set-min-agent-version", "service", request.MinAgentVersion.Length == 0 ? "none" : request.MinAgentVersion);
+    await WriteJson(context, new Ack { Ok = true });
+});
+
+app.MapGet("/v1/admin/audit", (HttpContext context) =>
+{
+    AuthorizeOperator(context);
+    return WriteJson(context, new AuditList { Entries = adminLog.Recent(200) });
 });
 
 app.Run();

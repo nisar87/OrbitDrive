@@ -41,21 +41,21 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R34 | IN_PROGRESS | Semantic buttons/labels, focus-visible, reduced-motion, forced-colors CSS. No automated a11y audit or keyboard review yet |
 | R35 | IN_PROGRESS | PWA manifest, PNG icons, one service worker (static shell only, purged on sign-out, updates never during a managed transfer) tested in 5 browser projects; iOS Home Screen / Android install and real push AWAITING_DEVICE_TEST |
 | R36 | AUTOMATED_VERIFIED (partial) | Phone upload UI: system picker, confirmation (destination, sizes, limits, collision choice), separate "stored on PC" vs "Saved" states, resume, errors. Desktop + emulated mobile only; AWAITING_DEVICE_TEST on real phones |
-| R37 | NOT_STARTED | W10 |
+| R37 | AUTOMATED_VERIFIED (partial) | Operators come from deployment config; every admin endpoint enforced server-side with recent sign-in; role/suspension/revocation enforced (integration admin.test.mjs, Playwright admin.spec.mjs). Firebase `auth_time` path covered by code only, not by a live Firebase run |
 | R38 | IN_PROGRESS | Logs asserted free of pairing/device secrets, tokens, capabilities (integration). No support bundle/cache yet |
 | R39 | AUTOMATED_VERIFIED | /v1/meta and web taskbar state TLS-via-relay, not E2EE (integration test); README/SECURITY agree |
 | R40 | IN_PROGRESS | Static build + production guard tested; firebase.json has no backend rewrite. Not validated with Firebase CLI |
 | R41 | IN_PROGRESS | File-backed registration store (atomic snapshot, hashes only, corrupt store grants nothing); restart tests on Windows+Linux. Firestore, leases and multi-instance not built |
-| R42 | IN_PROGRESS | Per-owner stream cap (429 + recovery), 64 KiB body cap (413) and control-message cap tested (integration); no relay-byte quotas yet |
-| R43 | NOT_STARTED | D10 |
-| R44 | NOT_STARTED | D10 (signing identity required) |
+| R42 | AUTOMATED_VERIFIED (partial) | Per-owner stream cap, body caps, upload size/quota/slots, plus a per-account daily relay-byte cap with operator restore (integration + MetricsTests). No archive-preparation or database-operation quota; no cost monitoring |
+| R43 | NOT_STARTED (blocked on owner: Windows 11 machine and signing identity) | Installer, repair, upgrade, uninstall need MSIX/installer packaging on Windows 11; not started. The update engine's staging/recovery is tested, installation is not |
+| R44 | AUTOMATED_VERIFIED (partial) | Signed manifest verification, tamper/rollback/expiry/host rejection, interrupted-download and interrupted-apply recovery (UpdateTests). No real signing identity, no installer, no end-to-end update on Windows |
 | R45 | IN_PROGRESS | Transfer metrics recorded per run; 10,000-entry listing test. Budgets beyond transfer memory not set. **D1 pass:** Fluent light/dark verified by reviewed screenshots; keyboard reachability on all pages; contrast measured. High contrast, DPI scaling and screen-reader pass not evidenced |
-| R46 | IN_PROGRESS | /healthz only |
+| R46 | IN_PROGRESS | /healthz plus an operator overview of measured relay counters and an audit log. No log redaction/rotation, correlation ids or PC diagnostics yet (D11) |
 | R47 | IN_PROGRESS | Adversarial cases run in every integration/Core run, now including upload traversal, forged ids, hostile names and damaged pieces (T27–T31); no dedicated corpus/fuzzing yet |
 | R48 | IN_PROGRESS | Runner OS/tool versions recorded; emulation labelled; device evidence listed as missing |
 | R49 | NOT_STARTED | D12/W12 |
-| R50 | IN_PROGRESS | Version negotiation in handshake; unsupported agent version rejected with update message (integration). No old/new matrix |
-| R51 | IN_PROGRESS | Revoke cuts an active stream and later access; sign-out revokes the browser (integration, web e2e). Account removal, PC removal outstanding |
+| R50 | IN_PROGRESS | Version negotiation in handshake; operator-set minimum PC version refuses older PCs with an update message (integration); update manifests carry a protocol range. No old/new capability matrix |
+| R51 | AUTOMATED_VERIFIED (partial) | Revoke, sign-out, suspension, revoke-all and account deletion cut live transfers and later access (integration, web e2e). Firebase token revocation at the identity provider is not exercised |
 | R52 | IN_PROGRESS | `sw.js` caches only same-origin static assets (`/assets/*`, `/icons/*.png`); e2e checks no API, token or file name enters any cache and that sign-out empties caches and storage |
 | R53 | IN_PROGRESS | Account/request/PC binding, substituted PC, second account refused (integration, StoreTests). Origin display + anti-phishing copy on the PC is D2 |
 | R54 | IN_PROGRESS | Empty/offline/error/paused states in web slice and owner console (asserted text; console screenshots unreviewed) |

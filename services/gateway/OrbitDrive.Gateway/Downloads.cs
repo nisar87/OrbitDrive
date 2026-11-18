@@ -76,6 +76,8 @@ public sealed class StreamRegistry(GatewayOptions options)
         return (stream, token);
     }
 
+    public int Count => _streams.Count;
+
     public PendingStream? Find(string id) => _streams.GetValueOrDefault(id);
 
     public void Remove(PendingStream stream, bool success)

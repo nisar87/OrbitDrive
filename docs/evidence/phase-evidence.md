@@ -383,3 +383,18 @@ verify-deployment and both live-agent jobs.
 - The WPF upload toggle is verified by the desktop-ui workflow's build and UIA assertions only; its screenshot was not visually reviewed.
 - Windows: Mark-of-the-Web and `MoveFileEx` semantics run only in Windows CI unit tests.
 - Real 45-minute idle expiry; mid-chunk disk-full against a real full disk; resume after agent restart (not supported); folder upload and drag-and-drop (not built); the interruption e2e cuts the connection at a moment the test cannot pin to mid-file, so byte-level resume is proven by the integration and vitest suites, not that e2e alone; physical phones.
+
+## D10/W10 — administration, owner controls and update verification (status: local verification only until CI is recorded)
+
+- Added: gateway `Operations.cs` (Metrics, AdminLog), Store suspension/preferences/account deletion, `/v1/admin/*` and `/v1/account*` routes, protocol types; web `AccountPanel`, lazy `AdminApp`, desktop windows for late-added apps; Core `Updates.cs` (UpdateVerifier, UpdateStager), `tools/release/sign-update-manifest.mjs`, a fixture signed with a throwaway test key.
+- Tests: integration `admin.test.mjs` (19), gateway `OperationsTests` and Core `UpdateTests` (stand-in runner 287 pass), Playwright `admin.spec.mjs` (3 × desktop and emulated mobile), full regression: integration 178 pass/0 fail (ORBIT_LARGE_MIB=64), vitest 91, Playwright 74 pass/1 skip.
+- Defects found by these tests and fixed: the desktop shell crashed when an app (Administration) appeared after start (layout lookup undefined); test-gateway restarts invalidate dev tokens (test fixed); int64 counters are decimal strings (test fixed).
+- Flake, recorded honestly: `transfers.spec.mjs` large-file test failed once while the stand-in unit runner ran at the same time (CPU contention made the "slow receiver" not slow) and passed alone and in the earlier D9 full run. Not investigated further.
+- Screenshots reviewed: admin overview on a phone (readable, numbers measured). The first account-panel screenshot did not show the panel; the test now scrolls it into view.
+
+### Not evidenced for D10/W10
+- Installer/MSIX packaging, repair/upgrade/uninstall, rollback, multi-profile and standard-user operation, modern-menu registration on Windows 11 (R43, R23): not started; need the owner's Windows 11 machine and signing identity.
+- A real signing key and a real signed release (R44): only a throwaway test key exists; no update is wired into the agent's UI/CLI yet, so nothing downloads updates.
+- Firebase `auth_time` handling for operators is exercised only through the dev identity and code review, not a live or emulator Firebase run.
+- Dashboards show counters since the last service start only; no history, no cost or billing metrics, no spend caps (never provisioned billing).
+- Retention preference can only shorten the relay's one-hour in-memory list; diagnostics consent records a choice for features that do not exist yet.

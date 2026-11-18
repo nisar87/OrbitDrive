@@ -166,7 +166,8 @@ export function agentCli(stateDir, ...args) {
   return result.stdout;
 }
 
-export async function startAgent(gateway, stateDir, name = 'Test PC', webOrigin = WEB_ORIGIN) {
+/** `refused: true` returns the agent even if the service never accepts it (to test refusals); `agent.identity` is then undefined. */
+export async function startAgent(gateway, stateDir, name = 'Test PC', webOrigin = WEB_ORIGIN, { refused = false } = {}) {
   const connection = gateway ? ['--gateway', gateway.url, '--web-origin', webOrigin] : [];
   const child = spawn('dotnet', [agentDll, 'run', ...connection, '--state', stateDir, '--name', name], { stdio: ['pipe', 'pipe', 'pipe'] });
   const events = [];
@@ -203,7 +204,7 @@ export async function startAgent(gateway, stateDir, name = 'Test PC', webOrigin 
   });
   child.stderr.on('data', (d) => { agent.log += d; });
   agent.ready = await agent.next('ready');
-  if (gateway) agent.identity = await agent.next('connected');
+  if (gateway) agent.identity = refused ? await agent.next('connected', 6000).catch(() => undefined) : await agent.next('connected');
   return agent;
 }
 

@@ -1,9 +1,11 @@
 import { useSyncExternalStore } from 'react';
 import { pwa } from '../../pwa';
 import type { Prefs, ThemeChoice, ViewMode } from '../../prefs';
-import { AUTH_MODE, GATEWAY_URL } from '../../api';
+import { AUTH_MODE, GATEWAY_URL, type Session } from '../../api';
+import type { AccountSummary } from '../../protocol';
+import { AccountPanel } from '../account/AccountPanel';
 
-interface Props { prefs: Prefs; onPrefs: (next: Prefs) => void; account: string; onSignOut: () => void }
+interface Props { prefs: Prefs; onPrefs: (next: Prefs) => void; account: string; onSignOut: () => void; session: Session; onSummary: (summary: AccountSummary) => void; onAuthLost: (error: unknown) => void }
 
 /** Appearance and Explorer preferences (stored in this browser only) and a plain statement of how files travel. */
 function AppPanel() {
@@ -28,7 +30,7 @@ function AppPanel() {
   );
 }
 
-export function SettingsApp({ prefs, onPrefs, account, onSignOut }: Props) {
+export function SettingsApp({ prefs, onPrefs, account, onSignOut, session, onSummary, onAuthLost }: Props) {
   return (
     <div className="app-page settings">
       <article className="panel" aria-labelledby="appearance-title">
@@ -53,6 +55,7 @@ export function SettingsApp({ prefs, onPrefs, account, onSignOut }: Props) {
         <p className="hint">These choices are saved in this browser only. No file names or contents are saved.</p>
       </article>
       <AppPanel />
+      <AccountPanel session={session} onSummary={onSummary} onAuthLost={onAuthLost} onSignedOut={async () => onSignOut()} />
       <article className="panel" aria-labelledby="account-title">
         <h2 id="account-title">Account and connection</h2>
         <dl>

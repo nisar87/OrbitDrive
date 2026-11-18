@@ -66,7 +66,7 @@ public sealed class AgentConnection(WebSocket socket, string pcId, long generati
 }
 
 /// <summary>Tracks the single authoritative connection generation per PC and runs the control protocol.</summary>
-public sealed class AgentHub(Store store, Invitations invitations, GatewayOptions options, ILogger<AgentHub> logger)
+public sealed class AgentHub(Store store, Invitations invitations, GatewayOptions options, AdminLog admin, ILogger<AgentHub> logger)
 {
     private readonly ConcurrentDictionary<string, AgentConnection> _connections = new();
     private long _generation;
@@ -136,6 +136,8 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
         byte[] spki = [];
         if (agent.ProtocolVersion < ProtocolInfo.MinVersion || agent.ProtocolVersion > ProtocolInfo.Version)
             rejection = new ProtocolException(ErrorCode.UnsupportedVersion, $"Update required: this service speaks protocol {ProtocolInfo.MinVersion}-{ProtocolInfo.Version}.");
+        else if (admin.IsBelowMinimum(agent.AgentVersion))
+            rejection = new ProtocolException(ErrorCode.UnsupportedVersion, $"Update required: OrbitDrive on this PC must be version {admin.MinAgentVersion} or newer.");
         else
         {
             try

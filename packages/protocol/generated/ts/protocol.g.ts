@@ -429,6 +429,89 @@ export interface DevSignInResponse {
   uid: string;
 }
 
+export interface OwnerPreferences {
+  historyRetentionDays: number;
+  notifyInvitations: boolean;
+  diagnosticsConsent: boolean;
+}
+
+export interface AccountPc {
+  pcId: string;
+  name: string;
+  agentVersion: string;
+  online: boolean;
+  lastSeenUnixMs?: Int64String | null;
+}
+
+export interface AccountSummary {
+  devices: BrowserDeviceSummary[];
+  pcs: AccountPc[];
+  preferences: OwnerPreferences;
+  isOperator: boolean;
+  retentionNote: string;
+}
+
+export interface AccountRevokeResult {
+  devicesRevoked: number;
+}
+
+export interface DeleteAccountRequest {
+  confirm: string;
+}
+
+export interface AdminOverview {
+  generatedUnixMs: Int64String;
+  startedUnixMs: Int64String;
+  gatewayVersion: string;
+  users: number;
+  suspendedUsers: number;
+  browserDevices: number;
+  pcs: number;
+  pcsOnline: number;
+  activeStreams: number;
+  relayBytesDown: Int64String;
+  relayBytesUp: Int64String;
+  downloadsCompleted: Int64String;
+  downloadsFailed: Int64String;
+  uploadPiecesRelayed: Int64String;
+  uploadPiecesFailed: Int64String;
+  quotaRefusals: Int64String;
+  minAgentVersion: string;
+  relayBytesPerOwnerPerDay: Int64String;
+}
+
+export interface AdminUser {
+  uid: string;
+  devices: number;
+  pcs: number;
+  suspended: boolean;
+  relayBytesToday: Int64String;
+}
+
+export interface AdminUserList {
+  users: AdminUser[];
+}
+
+export interface AdminReasonRequest {
+  reason: string;
+}
+
+export interface AdminSettings {
+  minAgentVersion: string;
+}
+
+export interface AuditEntry {
+  atUnixMs: Int64String;
+  operator: string;
+  action: string;
+  target: string;
+  detail: string;
+}
+
+export interface AuditList {
+  entries: AuditEntry[];
+}
+
 export interface ProtocolTypeMap {
   ErrorInfo: ErrorInfo;
   ErrorResponse: ErrorResponse;
@@ -489,6 +572,18 @@ export interface ProtocolTypeMap {
   GatewayMeta: GatewayMeta;
   DevSignInRequest: DevSignInRequest;
   DevSignInResponse: DevSignInResponse;
+  OwnerPreferences: OwnerPreferences;
+  AccountPc: AccountPc;
+  AccountSummary: AccountSummary;
+  AccountRevokeResult: AccountRevokeResult;
+  DeleteAccountRequest: DeleteAccountRequest;
+  AdminOverview: AdminOverview;
+  AdminUser: AdminUser;
+  AdminUserList: AdminUserList;
+  AdminReasonRequest: AdminReasonRequest;
+  AdminSettings: AdminSettings;
+  AuditEntry: AuditEntry;
+  AuditList: AuditList;
 }
 
 export const SCHEMA = {
@@ -908,6 +1003,77 @@ export const SCHEMA = {
     "DevSignInResponse": {
       "idToken": "string",
       "uid": "string"
+    },
+    "OwnerPreferences": {
+      "historyRetentionDays": "int32",
+      "notifyInvitations": "bool",
+      "diagnosticsConsent": "bool"
+    },
+    "AccountPc": {
+      "pcId": "string",
+      "name": "string",
+      "agentVersion": "string",
+      "online": "bool",
+      "lastSeenUnixMs": "int64?"
+    },
+    "AccountSummary": {
+      "devices": "BrowserDeviceSummary[]",
+      "pcs": "AccountPc[]",
+      "preferences": "OwnerPreferences",
+      "isOperator": "bool",
+      "retentionNote": "string"
+    },
+    "AccountRevokeResult": {
+      "devicesRevoked": "int32"
+    },
+    "DeleteAccountRequest": {
+      "confirm": "string"
+    },
+    "AdminOverview": {
+      "generatedUnixMs": "int64",
+      "startedUnixMs": "int64",
+      "gatewayVersion": "string",
+      "users": "int32",
+      "suspendedUsers": "int32",
+      "browserDevices": "int32",
+      "pcs": "int32",
+      "pcsOnline": "int32",
+      "activeStreams": "int32",
+      "relayBytesDown": "int64",
+      "relayBytesUp": "int64",
+      "downloadsCompleted": "int64",
+      "downloadsFailed": "int64",
+      "uploadPiecesRelayed": "int64",
+      "uploadPiecesFailed": "int64",
+      "quotaRefusals": "int64",
+      "minAgentVersion": "string",
+      "relayBytesPerOwnerPerDay": "int64"
+    },
+    "AdminUser": {
+      "uid": "string",
+      "devices": "int32",
+      "pcs": "int32",
+      "suspended": "bool",
+      "relayBytesToday": "int64"
+    },
+    "AdminUserList": {
+      "users": "AdminUser[]"
+    },
+    "AdminReasonRequest": {
+      "reason": "string"
+    },
+    "AdminSettings": {
+      "minAgentVersion": "string"
+    },
+    "AuditEntry": {
+      "atUnixMs": "int64",
+      "operator": "string",
+      "action": "string",
+      "target": "string",
+      "detail": "string"
+    },
+    "AuditList": {
+      "entries": "AuditEntry[]"
     }
   }
 } as const;

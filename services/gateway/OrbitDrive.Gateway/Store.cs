@@ -135,7 +135,8 @@ public sealed class Store
 {
     private sealed record PcDto(string PcId, string Spki, string Name, string AgentVersion, string? OwnerUid, long LastSeenUnixMs);
     private sealed record DeviceDto(string Id, string OwnerUid, string Name, string SecretHash, bool Active, bool Revoked, string[] PcIds);
-    private sealed record Snapshot(int Version, PcDto[] Pcs, DeviceDto[] Devices);
+    private sealed record PrefDto(string OwnerUid, int HistoryRetentionDays, bool NotifyInvitations, bool DiagnosticsConsent);
+    private sealed record Snapshot(int Version, PcDto[] Pcs, DeviceDto[] Devices, string[]? Suspended = null, PrefDto[]? Prefs = null);
 
     private readonly GatewayOptions options;
     private readonly TimeProvider time;
@@ -145,6 +146,8 @@ public sealed class Store
     private readonly Dictionary<string, BrowserDeviceRecord> _devices = [];
     private readonly Dictionary<string, PairingRecord> _pairings = [];
     private readonly Dictionary<string, DownloadSessionRecord> _downloads = [];
+    private readonly HashSet<string> _suspended = [];
+    private readonly Dictionary<string, OwnerPreferences> _prefs = [];
 
     public Store(GatewayOptions options, TimeProvider time)
     {
@@ -165,11 +168,13 @@ public sealed class Store
                 foreach (var pcId in d.PcIds) if (_pcs.ContainsKey(pcId)) device.PcIds.Add(pcId);
                 _devices[d.Id] = device;
             }
+            foreach (var uid in snapshot.Suspended ?? []) _suspended.Add(uid);
+            foreach (var pref in snapshot.Prefs ?? []) _prefs[pref.OwnerUid] = new OwnerPreferences { HistoryRetentionDays = pref.HistoryRetentionDays, NotifyInvitations = pref.NotifyInvitations, DiagnosticsConsent = pref.DiagnosticsConsent };
         }
         catch (Exception e) when (e is System.Text.Json.JsonException or FormatException or ArgumentException or NullReferenceException)
         {
             // An unreadable snapshot never grants access: keep it aside for investigation and start with no grants.
-            _pcs.Clear(); _devices.Clear();
+            _pcs.Clear(); _devices.Clear(); _suspended.Clear(); _prefs.Clear();
             File.Move(_file, _file + ".corrupt-" + time.GetUtcNow().ToUnixTimeSeconds(), overwrite: true);
         }
     }
@@ -180,7 +185,8 @@ public sealed class Store
         if (_file is null) return;
         var snapshot = new Snapshot(1,
             [.. _pcs.Values.Select(p => new PcDto(p.PcId, Convert.ToBase64String(p.PublicKeySpki), p.Name, p.AgentVersion, p.OwnerUid, p.LastSeen.ToUnixTimeMilliseconds()))],
-            [.. _devices.Values.Where(d => d.Active || d.Revoked).Select(d => new DeviceDto(d.Id, d.OwnerUid, d.Name, Convert.ToBase64String(d.SecretHash), d.Active, d.Revoked, [.. d.PcIds]))]);
+            [.. _devices.Values.Where(d => d.Active || d.Revoked).Select(d => new DeviceDto(d.Id, d.OwnerUid, d.Name, Convert.ToBase64String(d.SecretHash), d.Active, d.Revoked, [.. d.PcIds]))],
+            [.. _suspended], [.. _prefs.Select(e => new PrefDto(e.Key, e.Value.HistoryRetentionDays, e.Value.NotifyInvitations, e.Value.DiagnosticsConsent))]);
         var temp = _file + ".tmp";
         File.WriteAllText(temp, System.Text.Json.JsonSerializer.Serialize(snapshot));
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temp, UnixFileMode.UserRead | UnixFileMode.UserWrite);
@@ -233,6 +239,7 @@ public sealed class Store
     {
         lock (_gate)
         {
+            if (_suspended.Contains(identity.Uid)) throw Suspension;
             var pairing = LivePairing(id);
             if (pairing.State == PairingState.Expired) throw new ProtocolException(ErrorCode.Expired, "This pairing code has expired. Create a new one on the PC.");
             if (pairing.State != PairingState.Issued) throw new ProtocolException(ErrorCode.Conflict, "This pairing code was already used.");
@@ -324,6 +331,7 @@ public sealed class Store
         {
             if (!_devices.TryGetValue(parts[0], out var device) || !Secrets.Matches(device.SecretHash, parts[1]) ||
                 device.OwnerUid != identity.Uid || !device.Active || device.Revoked) throw denied;
+            if (_suspended.Contains(identity.Uid)) throw Suspension;
             if (pcId is not null && (!_pcs.TryGetValue(pcId, out var pc) || pc.OwnerUid != identity.Uid || !device.PcIds.Contains(pcId)))
                 throw new ProtocolException(ErrorCode.NotFound, "PC not found.");
             device.LastSeenUnixMs = time.GetUtcNow().ToUnixTimeMilliseconds();
@@ -378,7 +386,14 @@ public sealed class Store
     public List<DownloadSessionSummary> ListDownloads(string deviceId)
     {
         lock (_gate)
-            return [.. _downloads.Values.Where(d => d.BrowserDeviceId == deviceId && !d.IsPreview && d.ExpiresAt > time.GetUtcNow()).OrderByDescending(d => d.CreatedAt).Select(d => d.Summarize())];
+        {
+            var now = time.GetUtcNow();
+            return [.. _downloads.Values.Where(d => d.BrowserDeviceId == deviceId && !d.IsPreview && d.ExpiresAt > now).OrderByDescending(d => d.CreatedAt)
+                .Select(d => (Session: d, Summary: d.Summarize()))
+                // The owner's retention choice: a transfer that has ended is listed only for that many days (0 = only transfers still going or waiting).
+                .Where(e => e.Summary.State is DownloadState.Sending or DownloadState.Prepared || now - e.Session.CreatedAt <= TimeSpan.FromDays(Preferences(e.Session.OwnerUid).HistoryRetentionDays))
+                .Select(e => e.Summary)];
+        }
     }
 
     /// <summary>Cancels one of this browser's download sessions: its link stops working and running streams end.</summary>
@@ -446,4 +461,92 @@ public sealed class Store
             Save();
         }
     }
+
+    private static ProtocolException Suspension => new(ErrorCode.Forbidden, "This account is suspended. Contact the person who runs this service.");
+
+    public bool IsSuspended(string uid) { lock (_gate) return _suspended.Contains(uid); }
+
+    /// <summary>
+    /// Blocks an account without deleting anything (reversible). Live downloads end now; the caller ends uploads and PC-side work.
+    /// Returns the browser devices that were affected, so their uploads can be cancelled.
+    /// </summary>
+    public List<BrowserDeviceRecord> SetSuspended(string uid, bool suspended)
+    {
+        lock (_gate)
+        {
+            var owned = _devices.Values.Where(d => d.OwnerUid == uid && d.Active && !d.Revoked).ToList();
+            if (suspended)
+            {
+                _suspended.Add(uid);
+                foreach (var session in _downloads.Values.Where(d => owned.Any(o => o.Id == d.BrowserDeviceId))) session.Revoked.Cancel();
+            }
+            else _suspended.Remove(uid);
+            Save();
+            return owned;
+        }
+    }
+
+    /// <summary>Every approved browser of this account stops working at once, and the account's live downloads end. Nothing on any PC is touched.</summary>
+    public List<BrowserDeviceRecord> RevokeAllDevices(string uid)
+    {
+        lock (_gate)
+        {
+            var owned = _devices.Values.Where(d => d.OwnerUid == uid && d.Active && !d.Revoked).ToList();
+            foreach (var device in owned) device.Revoked = true;
+            foreach (var session in _downloads.Values.Where(d => owned.Any(o => o.Id == d.BrowserDeviceId))) session.Revoked.Cancel();
+            Save();
+            return owned;
+        }
+    }
+
+    public List<PcRecord> PcsOwnedBy(string uid) { lock (_gate) return [.. _pcs.Values.Where(p => p.OwnerUid == uid)]; }
+
+    public OwnerPreferences Preferences(string uid)
+    {
+        lock (_gate) return _prefs.TryGetValue(uid, out var saved) ? saved : new OwnerPreferences { HistoryRetentionDays = 7, NotifyInvitations = true, DiagnosticsConsent = false };
+    }
+
+    public static readonly int[] RetentionChoices = [0, 1, 7, 30];
+
+    public void SetPreferences(string uid, OwnerPreferences preferences)
+    {
+        if (!RetentionChoices.Contains(preferences.HistoryRetentionDays)) throw new ProtocolException(ErrorCode.InvalidRequest, "Choose 0, 1, 7 or 30 days for transfer history.");
+        lock (_gate) { _prefs[uid] = preferences; Save(); }
+    }
+
+    /// <summary>
+    /// Account removal: every browser is revoked, every PC is released (its link to the account is cut, it keeps all of its own files and settings),
+    /// and what the relay kept about the account is erased. A suspension stays, so deleting an account cannot undo a block.
+    /// </summary>
+    public (List<BrowserDeviceRecord> Devices, List<PcRecord> Pcs) DeleteAccount(string uid)
+    {
+        lock (_gate)
+        {
+            var devices = _devices.Values.Where(d => d.OwnerUid == uid).ToList();
+            var pcs = _pcs.Values.Where(p => p.OwnerUid == uid).ToList();
+            foreach (var session in _downloads.Values.Where(d => devices.Any(o => o.Id == d.BrowserDeviceId) || pcs.Any(p => p.PcId == d.PcId))) session.Revoked.Cancel();
+            foreach (var device in devices) _devices.Remove(device.Id);
+            foreach (var pc in pcs) pc.OwnerUid = null;
+            foreach (var pairing in _pairings.Values.Where(p => p.ClaimUid == uid || pcs.Any(pc => pc.PcId == p.PcId) && p.State is PairingState.Issued or PairingState.Claimed)) pairing.State = PairingState.Expired;
+            _prefs.Remove(uid);
+            Save();
+            return (devices.Where(d => d.Active).ToList(), pcs);
+        }
+    }
+
+    public record OwnerCounts(string Uid, int Devices, int Pcs, bool Suspended);
+
+    /// <summary>Aggregate, per account: ids and counts only. Names of browsers, PCs, folders and files are not part of this.</summary>
+    public List<OwnerCounts> Owners()
+    {
+        lock (_gate)
+        {
+            var uids = _devices.Values.Where(d => d.Active && !d.Revoked).Select(d => d.OwnerUid).Concat(_pcs.Values.Where(p => p.OwnerUid is not null).Select(p => p.OwnerUid!)).Concat(_suspended).Distinct();
+            return [.. uids.Select(u => new OwnerCounts(u, _devices.Values.Count(d => d.OwnerUid == u && d.Active && !d.Revoked), _pcs.Values.Count(p => p.OwnerUid == u), _suspended.Contains(u))).OrderBy(o => o.Uid, StringComparer.Ordinal)];
+        }
+    }
+
+    public int PcsOnlineCount(AgentHub hub) { List<string> ids; lock (_gate) ids = [.. _pcs.Values.Where(p => p.OwnerUid is not null).Select(p => p.PcId)]; return ids.Count(hub.IsOnline); }
+    public int PcCount() { lock (_gate) return _pcs.Values.Count(p => p.OwnerUid is not null); }
+    public int DeviceCount() { lock (_gate) return _devices.Values.Count(d => d.Active && !d.Revoked); }
 }

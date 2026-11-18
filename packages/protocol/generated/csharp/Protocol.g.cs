@@ -595,3 +595,98 @@ public sealed record DevSignInResponse
     [JsonPropertyName("idToken")] public required string IdToken { get; init; }
     [JsonPropertyName("uid")] public required string Uid { get; init; }
 }
+
+public sealed record OwnerPreferences
+{
+    [JsonPropertyName("historyRetentionDays")] public required int HistoryRetentionDays { get; init; }
+    [JsonPropertyName("notifyInvitations")] public required bool NotifyInvitations { get; init; }
+    [JsonPropertyName("diagnosticsConsent")] public required bool DiagnosticsConsent { get; init; }
+}
+
+public sealed record AccountPc
+{
+    [JsonPropertyName("pcId")] public required string PcId { get; init; }
+    [JsonPropertyName("name")] public required string Name { get; init; }
+    [JsonPropertyName("agentVersion")] public required string AgentVersion { get; init; }
+    [JsonPropertyName("online")] public required bool Online { get; init; }
+    [JsonPropertyName("lastSeenUnixMs")] [JsonConverter(typeof(NullableInt64StringConverter))] public long? LastSeenUnixMs { get; init; }
+}
+
+public sealed record AccountSummary
+{
+    [JsonPropertyName("devices")] public required IReadOnlyList<BrowserDeviceSummary> Devices { get; init; }
+    [JsonPropertyName("pcs")] public required IReadOnlyList<AccountPc> Pcs { get; init; }
+    [JsonPropertyName("preferences")] public required OwnerPreferences Preferences { get; init; }
+    [JsonPropertyName("isOperator")] public required bool IsOperator { get; init; }
+    [JsonPropertyName("retentionNote")] public required string RetentionNote { get; init; }
+}
+
+public sealed record AccountRevokeResult
+{
+    [JsonPropertyName("devicesRevoked")] public required int DevicesRevoked { get; init; }
+}
+
+public sealed record DeleteAccountRequest
+{
+    [JsonPropertyName("confirm")] public required string Confirm { get; init; }
+}
+
+public sealed record AdminOverview
+{
+    [JsonPropertyName("generatedUnixMs")] [JsonConverter(typeof(Int64StringConverter))] public required long GeneratedUnixMs { get; init; }
+    [JsonPropertyName("startedUnixMs")] [JsonConverter(typeof(Int64StringConverter))] public required long StartedUnixMs { get; init; }
+    [JsonPropertyName("gatewayVersion")] public required string GatewayVersion { get; init; }
+    [JsonPropertyName("users")] public required int Users { get; init; }
+    [JsonPropertyName("suspendedUsers")] public required int SuspendedUsers { get; init; }
+    [JsonPropertyName("browserDevices")] public required int BrowserDevices { get; init; }
+    [JsonPropertyName("pcs")] public required int Pcs { get; init; }
+    [JsonPropertyName("pcsOnline")] public required int PcsOnline { get; init; }
+    [JsonPropertyName("activeStreams")] public required int ActiveStreams { get; init; }
+    [JsonPropertyName("relayBytesDown")] [JsonConverter(typeof(Int64StringConverter))] public required long RelayBytesDown { get; init; }
+    [JsonPropertyName("relayBytesUp")] [JsonConverter(typeof(Int64StringConverter))] public required long RelayBytesUp { get; init; }
+    [JsonPropertyName("downloadsCompleted")] [JsonConverter(typeof(Int64StringConverter))] public required long DownloadsCompleted { get; init; }
+    [JsonPropertyName("downloadsFailed")] [JsonConverter(typeof(Int64StringConverter))] public required long DownloadsFailed { get; init; }
+    [JsonPropertyName("uploadPiecesRelayed")] [JsonConverter(typeof(Int64StringConverter))] public required long UploadPiecesRelayed { get; init; }
+    [JsonPropertyName("uploadPiecesFailed")] [JsonConverter(typeof(Int64StringConverter))] public required long UploadPiecesFailed { get; init; }
+    [JsonPropertyName("quotaRefusals")] [JsonConverter(typeof(Int64StringConverter))] public required long QuotaRefusals { get; init; }
+    [JsonPropertyName("minAgentVersion")] public required string MinAgentVersion { get; init; }
+    [JsonPropertyName("relayBytesPerOwnerPerDay")] [JsonConverter(typeof(Int64StringConverter))] public required long RelayBytesPerOwnerPerDay { get; init; }
+}
+
+public sealed record AdminUser
+{
+    [JsonPropertyName("uid")] public required string Uid { get; init; }
+    [JsonPropertyName("devices")] public required int Devices { get; init; }
+    [JsonPropertyName("pcs")] public required int Pcs { get; init; }
+    [JsonPropertyName("suspended")] public required bool Suspended { get; init; }
+    [JsonPropertyName("relayBytesToday")] [JsonConverter(typeof(Int64StringConverter))] public required long RelayBytesToday { get; init; }
+}
+
+public sealed record AdminUserList
+{
+    [JsonPropertyName("users")] public required IReadOnlyList<AdminUser> Users { get; init; }
+}
+
+public sealed record AdminReasonRequest
+{
+    [JsonPropertyName("reason")] public required string Reason { get; init; }
+}
+
+public sealed record AdminSettings
+{
+    [JsonPropertyName("minAgentVersion")] public required string MinAgentVersion { get; init; }
+}
+
+public sealed record AuditEntry
+{
+    [JsonPropertyName("atUnixMs")] [JsonConverter(typeof(Int64StringConverter))] public required long AtUnixMs { get; init; }
+    [JsonPropertyName("operator")] public required string Operator { get; init; }
+    [JsonPropertyName("action")] public required string Action { get; init; }
+    [JsonPropertyName("target")] public required string Target { get; init; }
+    [JsonPropertyName("detail")] public required string Detail { get; init; }
+}
+
+public sealed record AuditList
+{
+    [JsonPropertyName("entries")] public required IReadOnlyList<AuditEntry> Entries { get; init; }
+}

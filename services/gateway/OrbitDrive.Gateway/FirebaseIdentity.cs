@@ -89,7 +89,7 @@ public sealed class FirebaseIdentityVerifier(GatewayOptions options, TimeProvide
             var verified = claims.TryGetProperty("email_verified", out var verifiedClaim) && verifiedClaim.ValueKind == JsonValueKind.True;
             if (options.Firebase.RequireVerifiedEmail && (!verified || email.Length == 0))
                 throw new ProtocolException(ErrorCode.Forbidden, "Verify your email address to continue. Check your inbox for the verification link.");
-            return new Identity(subject, email);
+            return new Identity(subject, email, Time("auth_time"));
         }
         catch (Exception e) when (e is FormatException or JsonException or KeyNotFoundException or InvalidOperationException or ArgumentOutOfRangeException or CryptographicException) { throw fail; }
     }
