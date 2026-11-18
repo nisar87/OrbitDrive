@@ -3,6 +3,9 @@ name: release-candidate
 # The result is a workflow artifact (zip, SHA256SUMS, THIRD_PARTY_NOTICES.md, release-manifest.json) that the owner can download and verify.
 on:
   workflow_dispatch:
+  push:
+    branches: ['feature/**']
+    paths: ['tools/release/**', 'docs/release/**', 'apps/desktop/**', 'Directory.*', '.github/workflows/release-candidate.yml']
 permissions:
   contents: read
 concurrency:
