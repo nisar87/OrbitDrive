@@ -275,11 +275,13 @@ public sealed record CreateDownloadSessionRequest
 {
     [JsonPropertyName("pcId")] public required string PcId { get; init; }
     [JsonPropertyName("entryId")] public required string EntryId { get; init; }
+    [JsonPropertyName("variant")] public string? Variant { get; init; }
 }
 
 public sealed record PrepareReadRequest
 {
     [JsonPropertyName("entryId")] public required string EntryId { get; init; }
+    [JsonPropertyName("variant")] public string? Variant { get; init; }
 }
 
 public sealed record PrepareReadResult
@@ -289,10 +291,13 @@ public sealed record PrepareReadResult
     [JsonPropertyName("modifiedUnixMs")] [JsonConverter(typeof(Int64StringConverter))] public required long ModifiedUnixMs { get; init; }
     [JsonPropertyName("revision")] public required string Revision { get; init; }
     [JsonPropertyName("readToken")] public required string ReadToken { get; init; }
+    [JsonPropertyName("contentType")] public string? ContentType { get; init; }
 }
 
 public sealed record DownloadSession
 {
+    [JsonPropertyName("contentType")] public string? ContentType { get; init; }
+    [JsonPropertyName("variant")] public string? Variant { get; init; }
     [JsonPropertyName("capability")] public required string Capability { get; init; }
     [JsonPropertyName("urlPath")] public required string UrlPath { get; init; }
     [JsonPropertyName("name")] public required string Name { get; init; }

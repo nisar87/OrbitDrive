@@ -5,6 +5,7 @@
   <Folder Name="/desktop/">
     <Project Path="apps/desktop/OrbitDrive.Core/OrbitDrive.Core.csproj" />
     <Project Path="apps/desktop/OrbitDrive.Agent/OrbitDrive.Agent.csproj" />
+    <Project Path="apps/desktop/OrbitDrive.ThumbnailHelper/OrbitDrive.ThumbnailHelper.csproj" />
   </Folder>
   <Folder Name="/services/">
     <Project Path="services/gateway/OrbitDrive.Gateway/OrbitDrive.Gateway.csproj" />

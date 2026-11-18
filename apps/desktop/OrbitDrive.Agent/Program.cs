@@ -55,6 +55,7 @@ if (args[0] == "ctl" && args.Length >= 2)
         ("set_limits", 2) => new JsonObject { ["maxUploadKBps"] = int.Parse(positional[0]), ["maxConcurrentTransfers"] = int.Parse(positional[1]) },
         ("set_root_hidden", 2) => new JsonObject { ["rootId"] = positional[0], ["showHidden"] = positional[1] is "on" or "true" },
         ("set_sendto", 1) => new JsonObject { ["enabled"] = positional[0] is "on" or "true" },
+        ("set_thumbnails", 1) => new JsonObject { ["enabled"] = positional[0] is "on" or "true" },
         ("cancel_invitation", 1) => new JsonObject { ["invitationId"] = positional[0] },
         ("revoke_device", 1) => new JsonObject { ["deviceId"] = positional[0] },
         ("set_gateway", 1 or 2) => new JsonObject { ["gateway"] = positional[0], ["webOrigin"] = positional.Length == 2 ? positional[1] : null },

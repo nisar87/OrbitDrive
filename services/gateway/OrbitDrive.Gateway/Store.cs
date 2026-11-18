@@ -49,6 +49,10 @@ public sealed class DownloadSessionRecord
     public required long Size { get; init; }
     public required string Revision { get; init; }
     public required string ReadToken { get; init; }
+    /// <summary>"preview" or "thumb:N" for in-page previews; null for an ordinary download. Previews are never listed as transfers.</summary>
+    public string? Variant { get; init; }
+    public string? ContentType { get; init; }
+    public bool IsPreview => Variant is not null;
     public required DateTimeOffset ExpiresAt { get; init; }
     public CancellationTokenSource Revoked { get; } = new();
 
@@ -359,7 +363,7 @@ public sealed class Store
     public List<DownloadSessionSummary> ListDownloads(string deviceId)
     {
         lock (_gate)
-            return [.. _downloads.Values.Where(d => d.BrowserDeviceId == deviceId && d.ExpiresAt > time.GetUtcNow()).OrderByDescending(d => d.CreatedAt).Select(d => d.Summarize())];
+            return [.. _downloads.Values.Where(d => d.BrowserDeviceId == deviceId && !d.IsPreview && d.ExpiresAt > time.GetUtcNow()).OrderByDescending(d => d.CreatedAt).Select(d => d.Summarize())];
     }
 
     /// <summary>Cancels one of this browser's download sessions: its link stops working and running streams end.</summary>
@@ -380,8 +384,9 @@ public sealed class Store
         lock (_gate)
         {
             foreach (var key in _downloads.Where(d => d.Value.ExpiresAt <= time.GetUtcNow()).Select(d => d.Key).ToList()) _downloads.Remove(key);
-            if (_downloads.Values.Count(d => d.BrowserDeviceId == session.BrowserDeviceId) >= options.MaxDownloadSessionsPerDevice)
-                throw new ProtocolException(ErrorCode.LimitExceeded, "This browser has too many downloads waiting. Cancel some in Transfers or wait for them to expire.");
+            var preview = session.IsPreview;
+            if (_downloads.Values.Count(d => d.BrowserDeviceId == session.BrowserDeviceId && d.IsPreview == preview) >= (preview ? options.MaxPreviewSessionsPerDevice : options.MaxDownloadSessionsPerDevice))
+                throw new ProtocolException(ErrorCode.LimitExceeded, preview ? "Too many previews are open in this browser. Close some and try again." : "This browser has too many downloads waiting. Cancel some in Transfers or wait for them to expire.");
             _downloads[Secrets.HashHex(capability)] = session;
         }
         return capability;

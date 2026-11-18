@@ -161,10 +161,12 @@ export interface DirectoryPage {
 export interface CreateDownloadSessionRequest {
   pcId: string;
   entryId: string;
+  variant?: string | null;
 }
 
 export interface PrepareReadRequest {
   entryId: string;
+  variant?: string | null;
 }
 
 export interface PrepareReadResult {
@@ -173,9 +175,12 @@ export interface PrepareReadResult {
   modifiedUnixMs: Int64String;
   revision: string;
   readToken: string;
+  contentType?: string | null;
 }
 
 export interface DownloadSession {
+  contentType?: string | null;
+  variant?: string | null;
   capability: string;
   urlPath: string;
   name: string;
@@ -516,19 +521,24 @@ export const SCHEMA = {
     },
     "CreateDownloadSessionRequest": {
       "pcId": "string",
-      "entryId": "string"
+      "entryId": "string",
+      "variant": "string?"
     },
     "PrepareReadRequest": {
-      "entryId": "string"
+      "entryId": "string",
+      "variant": "string?"
     },
     "PrepareReadResult": {
       "name": "string",
       "size": "int64",
       "modifiedUnixMs": "int64",
       "revision": "string",
-      "readToken": "string"
+      "readToken": "string",
+      "contentType": "string?"
     },
     "DownloadSession": {
+      "contentType": "string?",
+      "variant": "string?",
       "capability": "string",
       "urlPath": "string",
       "name": "string",

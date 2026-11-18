@@ -37,6 +37,9 @@ public sealed class GatewayOptions
     public int MaxConcurrentStreamsPerOwner { get; set; } = 4;
     /// <summary>Unexpired download sessions one browser may hold (each is a prepared file on a PC).</summary>
     public int MaxDownloadSessionsPerDevice { get; set; } = 64;
+    public int MaxPreviewSessionsPerDevice { get; set; } = 512;
+    public int PreviewSessionTtlSeconds { get; set; } = 900;      // thumbnails; media previews use the download lifetime
+    public int MaxConcurrentPreviewStreamsPerOwner { get; set; } = 6;
     /// <summary>How long a "send to my phone" invitation stays open before it expires.</summary>
     public int InvitationTtlSeconds { get; set; } = 86400;
     /// <summary>Open invitations one receiver may have at a time (a hostile or buggy PC cannot flood an Inbox).</summary>

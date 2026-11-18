@@ -54,6 +54,7 @@ public sealed class PendingStream
     public required string Id { get; init; }
     public required byte[] UplinkTokenHash { get; init; }
     public required string OwnerUid { get; init; }
+    public bool Preview { get; init; }
     public TaskCompletionSource<HttpContext> Arrival { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TaskCompletionSource<bool> Done { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public int Claimed;
@@ -64,12 +65,13 @@ public sealed class StreamRegistry(GatewayOptions options)
     public const int RelayBufferBytes = 64 * 1024;
     private readonly ConcurrentDictionary<string, PendingStream> _streams = new();
 
-    public (PendingStream Stream, string UplinkToken) Create(string ownerUid)
+    public (PendingStream Stream, string UplinkToken) Create(string ownerUid, bool preview = false)
     {
-        if (_streams.Values.Count(s => s.OwnerUid == ownerUid) >= options.MaxConcurrentStreamsPerOwner)
+        // Previews have a separate allowance so a page full of thumbnails can neither starve a download nor be starved by one.
+        if (_streams.Values.Count(s => s.OwnerUid == ownerUid && s.Preview == preview) >= (preview ? options.MaxConcurrentPreviewStreamsPerOwner : options.MaxConcurrentStreamsPerOwner))
             throw new ProtocolException(ErrorCode.LimitExceeded, "Too many transfers are running. Wait for one to finish.");
         var token = Secrets.Token();
-        var stream = new PendingStream { Id = Secrets.Token(16), UplinkTokenHash = Secrets.Hash(token), OwnerUid = ownerUid };
+        var stream = new PendingStream { Id = Secrets.Token(16), UplinkTokenHash = Secrets.Hash(token), OwnerUid = ownerUid, Preview = preview };
         _streams[stream.Id] = stream;
         return (stream, token);
     }

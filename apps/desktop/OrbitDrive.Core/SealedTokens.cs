@@ -9,7 +9,7 @@ namespace OrbitDrive.Core;
 /// <summary>Contents of an opaque entry/read/cursor token. Only the agent can read or mint these.</summary>
 internal sealed record TokenBody
 {
-    [JsonPropertyName("t")] public required string Type { get; init; }          // "e" entry, "r" read, "c" cursor, "o" one-shot grant
+    [JsonPropertyName("t")] public required string Type { get; init; }          // "e" entry, "r" read, "c" cursor, "o" one-shot grant, "p" derived (thumbnail) read
     [JsonPropertyName("r")] public required string RootId { get; init; }
     [JsonPropertyName("s")] public required string[] Segments { get; init; }
     [JsonPropertyName("d")] public bool IsDirectory { get; init; }
@@ -19,6 +19,8 @@ internal sealed record TokenBody
     [JsonPropertyName("h")] public string? Sha256 { get; init; }
     [JsonPropertyName("o")] public int Offset { get; init; }
     [JsonPropertyName("x")] public long ExpiresUnixMs { get; init; }   // one-shot grants only
+    [JsonPropertyName("k")] public string? CacheKey { get; init; }     // derived ("p") tokens: which cached thumbnail
+    [JsonPropertyName("q")] public long DerivedSize { get; init; }     // derived ("p") tokens: its size
 }
 
 /// <summary>

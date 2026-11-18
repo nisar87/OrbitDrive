@@ -67,7 +67,7 @@ internal static class LocalProtection
 /// <summary>Per-user agent state: device identity key, token-sealing key and the owner's approved roots.</summary>
 internal sealed class AgentState
 {
-    private sealed record Config(List<SharedRoot> Roots, string? Gateway = null, string? WebOrigin = null, int MaxUploadKBps = 0, int MaxConcurrentTransfers = 4, bool SendToShortcuts = false);
+    private sealed record Config(List<SharedRoot> Roots, string? Gateway = null, string? WebOrigin = null, int MaxUploadKBps = 0, int MaxConcurrentTransfers = 4, bool SendToShortcuts = false, bool ThumbnailsEnabled = true);
     private readonly string _configPath;
     private volatile IReadOnlyList<SharedRoot> _roots = [];
 
@@ -84,6 +84,9 @@ internal sealed class AgentState
     public int MaxConcurrentTransfers { get; private set; } = 4;
     /// <summary>Owner choice: keep one classic Explorer "Send to" shortcut per paired receiver (the fallback beside the modern menu).</summary>
     public bool SendToShortcuts { get; private set; }
+    /// <summary>Owner switch for generating thumbnails (D7). Previews of the original file are separate and always allowed to the paired browser.</summary>
+    public bool ThumbnailsEnabled { get; private set; } = true;
+    public ThumbnailService Thumbnails { get; private set; } = null!;
     public string Directory_ { get; }
 
     public AgentState(string directory)
@@ -104,6 +107,9 @@ internal sealed class AgentState
 
         if (!File.Exists(tokenPath)) LocalProtection.Write(tokenPath, RandomNumberGenerator.GetBytes(32));
         Tokens = new SealedTokens(LocalProtection.Read(tokenPath));
+        var thumbnailOptions = new ThumbnailOptions();
+        var helper = ProcessThumbnailRunner.Locate(AppContext.BaseDirectory);
+        Thumbnails = new ThumbnailService(new ThumbnailCache(Path.Join(directory, "thumbnails"), thumbnailOptions), helper is null ? null : new ProcessThumbnailRunner(helper, thumbnailOptions), thumbnailOptions);
         ReloadRoots();
     }
 
@@ -117,6 +123,8 @@ internal sealed class AgentState
         MaxUploadKBps = Math.Clamp(config?.MaxUploadKBps ?? 0, 0, 10_000_000);
         MaxConcurrentTransfers = Math.Clamp(config?.MaxConcurrentTransfers ?? 4, 1, 16);
         SendToShortcuts = config?.SendToShortcuts ?? false;
+        ThumbnailsEnabled = config?.ThumbnailsEnabled ?? true;
+        if (Thumbnails is not null) Thumbnails.Enabled = ThumbnailsEnabled;
         // Folders approved before disk binding existed are bound to the disk they are on now (once, when reachable).
         if (_roots.Any(r => r.VolumeId is null && Directory.Exists(r.Path)))
             Save([.. _roots.Select(r => r.VolumeId is null && NativeFile.GetVolumeIdentity(r.Path) is { } id ? r with { VolumeId = id } : r)]);
@@ -124,7 +132,7 @@ internal sealed class AgentState
 
     private void Save(List<SharedRoot> roots)
     {
-        File.WriteAllText(_configPath + ".tmp", JsonSerializer.Serialize(new Config(roots, Gateway, WebOrigin, MaxUploadKBps, MaxConcurrentTransfers, SendToShortcuts), new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(_configPath + ".tmp", JsonSerializer.Serialize(new Config(roots, Gateway, WebOrigin, MaxUploadKBps, MaxConcurrentTransfers, SendToShortcuts, ThumbnailsEnabled), new JsonSerializerOptions { WriteIndented = true }));
         File.Move(_configPath + ".tmp", _configPath, overwrite: true);
         _roots = roots;
     }
@@ -168,6 +176,7 @@ internal sealed class AgentState
     }
 
     public void SetSendToShortcuts(bool enabled) { SendToShortcuts = enabled; Save([.. _roots]); }
+    public void SetThumbnailsEnabled(bool enabled) { ThumbnailsEnabled = enabled; Thumbnails.Enabled = enabled; if (!enabled) Thumbnails.Cache.Clear(); Save([.. _roots]); }
 
     /// <summary>Owner-only: whether hidden files and folders inside this shared folder are visible to paired devices.</summary>
     public bool SetShowHidden(string rootId, bool showHidden)
@@ -182,6 +191,7 @@ internal sealed class AgentState
         var remaining = _roots.Where(r => r.RootId != rootId).ToList();
         if (remaining.Count == _roots.Count) return false;
         Save(remaining);
+        Thumbnails.Cache.Clear();      // derived content never outlives a permission change
         return true;
     }
 }

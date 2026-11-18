@@ -206,27 +206,45 @@ app.MapPost("/v1/pcs/{pcId}/directory-queries", async (HttpContext context, stri
     await WriteJson(context, await hub.Get(pcId).RequestAsync<DirectoryPage>(Actions.ListDirectory, query, agentTimeout, context.RequestAborted));
 });
 
-async Task<DownloadSession> StartDownload(BrowserDeviceRecord device, string pcId, string entryId, CancellationToken cancellation)
+// What a browser may ask the PC for besides the original bytes. Anything else is refused before it reaches the PC.
+static string? NormalizeVariant(string? variant) => variant switch
 {
-    var prepared = await hub.Get(pcId).RequestAsync<PrepareReadResult>(Actions.PrepareRead, new PrepareReadRequest { EntryId = entryId },
+    null or "" or "original" => null,
+    "preview" or "thumb:128" or "thumb:256" or "thumb:512" => variant,
+    _ => throw new ProtocolException(ErrorCode.InvalidRequest, "That kind of preview is not offered."),
+};
+
+// Types the gateway will ever mark as displayable inline. The PC judges the type from the file's bytes; this list is the second lock.
+var InlineTypes = new HashSet<string>(StringComparer.Ordinal)
+{
+    "image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "application/pdf",
+    "audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/flac", "audio/webm", "video/mp4", "video/webm", "video/ogg", "text/plain; charset=utf-8",
+};
+
+async Task<DownloadSession> StartDownload(BrowserDeviceRecord device, string pcId, string entryId, string? requestedVariant, CancellationToken cancellation)
+{
+    var variant = NormalizeVariant(requestedVariant);
+    var prepared = await hub.Get(pcId).RequestAsync<PrepareReadResult>(Actions.PrepareRead, new PrepareReadRequest { EntryId = entryId, Variant = variant },
         TimeSpan.FromSeconds(options.PrepareTimeoutSeconds), cancellation);
     if (prepared.Size < 0 || !prepared.Revision.StartsWith("sha256-", StringComparison.Ordinal) || prepared.Revision.Length != 71 || prepared.Name.Length is 0 or > 255)
         throw new ProtocolException(ErrorCode.Internal, "The PC sent an answer this service does not understand.");
-    var expires = DateTimeOffset.UtcNow.AddSeconds(options.DownloadSessionTtlSeconds);
+    if (variant is not null && (prepared.ContentType is null || !InlineTypes.Contains(prepared.ContentType)))
+        throw new ProtocolException(ErrorCode.InvalidRequest, "This kind of file has no preview. Download it instead.");
+    var expires = DateTimeOffset.UtcNow.AddSeconds(variant is not null && variant.StartsWith("thumb:", StringComparison.Ordinal) ? options.PreviewSessionTtlSeconds : options.DownloadSessionTtlSeconds);
     var record = new DownloadSessionRecord
     {
         OwnerUid = device.OwnerUid, BrowserDeviceId = device.Id, PcId = pcId, Name = prepared.Name, Size = prepared.Size,
-        Revision = prepared.Revision, ReadToken = prepared.ReadToken, ExpiresAt = expires, CreatedAt = DateTimeOffset.UtcNow,
+        Revision = prepared.Revision, ReadToken = prepared.ReadToken, Variant = variant, ContentType = variant is null ? null : prepared.ContentType, ExpiresAt = expires, CreatedAt = DateTimeOffset.UtcNow,
     };
     var capability = store.AddDownload(record);
-    return new DownloadSession { SessionId = record.Id, Capability = capability, UrlPath = $"/v1/downloads/{capability}", Name = prepared.Name, Size = prepared.Size, Revision = prepared.Revision, ExpiresAtUnixMs = expires.ToUnixTimeMilliseconds() };
+    return new DownloadSession { SessionId = record.Id, Capability = capability, UrlPath = $"/v1/downloads/{capability}", Name = prepared.Name, Size = prepared.Size, Revision = prepared.Revision, Variant = variant, ContentType = variant is null ? null : prepared.ContentType, ExpiresAtUnixMs = expires.ToUnixTimeMilliseconds() };
 }
 
 app.MapPost("/v1/download-sessions", async (HttpContext context) =>
 {
     var request = await ReadJson<CreateDownloadSessionRequest>(context);
     var device = AuthorizeBrowser(context, request.PcId);
-    await WriteJson(context, await StartDownload(device, request.PcId, request.EntryId, context.RequestAborted), 201);
+    await WriteJson(context, await StartDownload(device, request.PcId, request.EntryId, request.Variant, context.RequestAborted), 201);
 });
 
 // "Send to my phone": the Inbox of this browser (never another browser's, never the PC's grant), and its decisions.
@@ -247,7 +265,7 @@ app.MapPost("/v1/invitations/{id}/accept", async (HttpContext context, string id
     AuthorizeBrowser(context, item.PcId);   // the grant for that PC must still stand
     try
     {
-        var session = await StartDownload(device, item.PcId, item.Grant, context.RequestAborted);
+        var session = await StartDownload(device, item.PcId, item.Grant, null, context.RequestAborted);
         invitations.Accepted(item);
         await WriteJson(context, session, 201);
     }
@@ -297,17 +315,25 @@ app.MapMethods("/v1/downloads/{capability}", ["GET", "HEAD"], async (HttpContext
     void WriteHeaders()
     {
         response.StatusCode = selected.Partial ? 206 : 200;
-        response.ContentType = "application/octet-stream";
         response.ContentLength = selected.Length;
-        var disposition = new ContentDispositionHeaderValue("attachment");
+        // An ordinary download is always an attachment of opaque bytes. A preview is shown inline only when the PC judged the bytes to be
+        // one of the closed list of passive types; even then the response may not run or load anything of its own.
+        var inline = session.IsPreview && session.ContentType is not null && InlineTypes.Contains(session.ContentType);
+        response.ContentType = inline ? session.ContentType : "application/octet-stream";
+        var disposition = new ContentDispositionHeaderValue(inline ? "inline" : "attachment");
         disposition.SetHttpFileName(session.Name); // ASCII fallback + RFC 5987 filename*
         response.Headers.ContentDisposition = disposition.ToString();
+        if (inline)
+        {
+            response.Headers.ContentSecurityPolicy = "default-src 'none'; sandbox";
+            response.Headers["Cross-Origin-Resource-Policy"] = "cross-origin";   // shown by the app's origin; nothing else gets credentials from it
+        }
         if (selected.Partial) response.Headers.ContentRange = $"bytes {selected.Start}-{selected.Start + selected.Length - 1}/{session.Size}";
     }
 
     if (HttpMethods.IsHead(context.Request.Method)) { WriteHeaders(); return; }
 
-    var (stream, uplinkToken) = streams.Create(session.OwnerUid);
+    var (stream, uplinkToken) = streams.Create(session.OwnerUid, session.IsPreview);
     using var cancel = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, session.Revoked.Token);
     var success = false;
     long relayed = 0;

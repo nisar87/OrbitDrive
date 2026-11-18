@@ -24,6 +24,8 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
     /// <summary>Marks a read token whose file is one the owner picked in Explorer rather than one under a shared folder.</summary>
     public const string OneShotRoot = "~oneshot";
     private readonly Func<string, string?> _volumeIdentity = volumeIdentity ?? NativeFile.GetVolumeIdentity;
+    /// <summary>Thumbnail generation (D7); null leaves previews of pictures unavailable and everything else unchanged.</summary>
+    public ThumbnailService? Thumbnails { get; set; }
     private const string DifferentDisk = "A different disk is at this location now. Share the folder again on the PC to allow access.";
 
     /// <summary>True when the folder exists AND is still on the disk it was approved on.</summary>
@@ -259,6 +261,8 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         var size = RandomAccess.GetLength(handle);
         var modified = File.GetLastWriteTimeUtc(handle);
         var changeStamp = NativeFile.GetChangeStamp(handle);
+        var variant = request.Variant ?? "original";
+        if (variant != "original") return await PrepareDerivedAsync(variant, body, oneShot, root, handle, size, modified, changeStamp, cancellation).ConfigureAwait(false);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var buffer = ArrayPool<byte>.Shared.Rent(HashBufferBytes);
         try
@@ -286,13 +290,57 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         };
     }
 
+    /// <summary>
+    /// Preview variants. "preview" answers quickly for any size (a media file can be gigabytes): its revision is derived from size,
+    /// modified time and the filesystem change stamp instead of reading the content, and the type is judged from the first bytes.
+    /// "thumb:N" returns a read token for a generated thumbnail; every later read re-checks the source file first.
+    /// </summary>
+    private async Task<PrepareReadResult> PrepareDerivedAsync(string variant, TokenBody body, bool oneShot, SharedRoot? root, SafeFileHandle handle, long size, DateTime modified, long changeStamp, CancellationToken cancellation)
+    {
+        var name = oneShot ? Path.GetFileName(body.Segments[0]) : body.Segments[^1];
+        var head = new byte[(int)Math.Min(size, ContentSniffer.HeadBytes)];
+        var got = 0;
+        while (got < head.Length) { var n = RandomAccess.Read(handle, head.AsSpan(got), got); if (n == 0) break; got += n; }
+        var sniffed = ContentSniffer.Classify(head.AsSpan(0, got), name);
+        var rootId = oneShot ? OneShotRoot : root!.RootId;
+        var unix = new DateTimeOffset(modified).ToUnixTimeMilliseconds();
+        if (variant == "preview")
+        {
+            if (!sniffed.Inlineable) throw new ProtocolException(ErrorCode.InvalidRequest, "This kind of file has no preview. Download it instead.");
+            var revision = Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"meta-v1|{size}|{modified.Ticks}|{changeStamp}")));
+            return new PrepareReadResult
+            {
+                Name = name, Size = size, ModifiedUnixMs = unix, Revision = "sha256-" + revision, ContentType = sniffed.ContentType,
+                ReadToken = tokens.Seal(new TokenBody { Type = "r", RootId = rootId, Segments = body.Segments, Size = size, ModifiedTicks = modified.Ticks, ChangeStamp = changeStamp, Sha256 = revision, ExpiresUnixMs = body.ExpiresUnixMs }),
+            };
+        }
+        if (!variant.StartsWith("thumb:", StringComparison.Ordinal) || !int.TryParse(variant.AsSpan(6), out var edge) || !ThumbnailOptions.Edges.Contains(edge))
+            throw new ProtocolException(ErrorCode.InvalidRequest, "That kind of preview is not offered.");
+        if (Thumbnails is null) throw new ProtocolException(ErrorCode.Unavailable, "Thumbnails are not available on this PC.");
+        var key = ThumbnailCache.KeyFor(edge, rootId, body.Segments, size, modified.Ticks, changeStamp);
+        var (derived, derivedSize) = await Thumbnails.GetAsync(handle, size, key, edge, name, cancellation).ConfigureAwait(false);
+        using (derived)
+        {
+            var bytes = new byte[derivedSize];
+            RandomAccess.Read(derived, bytes, 0);
+            var sha = Convert.ToHexStringLower(SHA256.HashData(bytes));
+            return new PrepareReadResult
+            {
+                Name = Path.GetFileNameWithoutExtension(name) + ".thumb.webp", Size = derivedSize, ModifiedUnixMs = unix, Revision = "sha256-" + sha, ContentType = "image/webp",
+                ReadToken = tokens.Seal(new TokenBody { Type = "p", RootId = rootId, Segments = body.Segments, Size = size, ModifiedTicks = modified.Ticks, ChangeStamp = changeStamp, Sha256 = sha, CacheKey = key, DerivedSize = derivedSize, ExpiresUnixMs = body.ExpiresUnixMs }),
+            };
+        }
+    }
+
     /// <summary>Re-validates root, path, handle and revision for one byte range. The root must still be approved now.</summary>
     public ValidatedRead OpenRead(string readToken, long offset, long length)
     {
-        var body = tokens.Unseal(readToken, "r");
+        var derivedRead = tokens.TryUnseal(readToken, "p", out var derivedBody);
+        var body = derivedRead ? derivedBody : tokens.Unseal(readToken, "r");
         var oneShot = body.RootId == OneShotRoot;
+        var servedSize = derivedRead ? body.DerivedSize : body.Size;
         var root = oneShot ? null : FindRoot(body.RootId);
-        if (offset < 0 || length < 0 || offset > body.Size || length > body.Size - offset)
+        if (offset < 0 || length < 0 || offset > servedSize || length > servedSize - offset)
             throw new ProtocolException(ErrorCode.RangeNotSatisfiable, "Requested range is outside the file.");
         var handle = oneShot ? OpenGranted(body) : OpenValidated(root!, body.Segments);
         // Size and modified time can be put back by whoever rewrites a file; the filesystem change stamp cannot.
@@ -301,6 +349,14 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         {
             handle.Dispose();
             throw new ProtocolException(ErrorCode.RevisionChanged, "The file changed after this download was prepared.");
+        }
+        if (derivedRead)
+        {
+            // The source was just proven unchanged and still shared; only then is its derived thumbnail handed out.
+            handle.Dispose();
+            var cached = Thumbnails?.Cache.TryOpen(body.CacheKey ?? "") ?? throw new ProtocolException(ErrorCode.NotFound, "The preview is no longer stored. Ask for it again.");
+            if (RandomAccess.GetLength(cached) != body.DerivedSize) { cached.Dispose(); throw new ProtocolException(ErrorCode.RevisionChanged, "The preview changed."); }
+            return new ValidatedRead(cached, offset, length, "thumbnail.webp");
         }
         return new ValidatedRead(handle, offset, length, oneShot ? Path.GetFileName(body.Segments[0]) : body.Segments[^1]);
     }

@@ -49,7 +49,7 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
 {
     public const string AgentVersion = "0.1.0";
     private const int MaxMessageBytes = 262144;
-    private readonly FileAccessService _files = new(() => state.Roots, state.Tokens);
+    private readonly FileAccessService _files = new(() => state.Roots, state.Tokens) { Thumbnails = state.Thumbnails };
     private readonly HttpClient _http = new(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) }) { Timeout = Timeout.InfiniteTimeSpan };
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _streams = new();
     private readonly ConcurrentDictionary<string, TaskCompletionSource<Envelope>> _pending = new();
@@ -173,7 +173,7 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
             Payload = ProtocolJson.ToElement(new AgentHello
             {
                 ProtocolVersion = ProtocolInfo.Version, PcId = state.PcId, PublicKeySpki = state.PublicKeySpki, Signature = Base64Url.EncodeToString(signature),
-                Name = pcName, AgentVersion = AgentVersion, Capabilities = ["browse", "range-read", "heartbeat"],
+                Name = pcName, AgentVersion = AgentVersion, Capabilities = state.Thumbnails.HasHelper ? ["browse", "range-read", "heartbeat", "preview", "thumbnails"] : ["browse", "range-read", "heartbeat", "preview"],
             }),
         }, cancellation);
         var welcome = await ReceiveAsync(socket, cancellation) ?? throw new IOException("Gateway closed during handshake.");

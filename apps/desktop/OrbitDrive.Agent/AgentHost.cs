@@ -42,9 +42,15 @@ internal sealed class AgentHost : IDisposable
     public AgentHost(AgentState state, string pcName, Action<string, object?> log)
     {
         _state = state; _pcName = pcName; _log = log;
-        _files = new FileAccessService(() => state.Roots, state.Tokens);
+        _files = new FileAccessService(() => state.Roots, state.Tokens) { Thumbnails = state.Thumbnails };
         _receiverCache = Path.Join(state.Directory_, "receivers.json");
         _ipc = new LocalIpcServer(LocalIpc.PipeName(state.Directory_), HandleAsync);
+    }
+
+    private JsonObject ThumbnailStatus()
+    {
+        var (files, bytes) = _state.Thumbnails.Cache.Stats();
+        return new JsonObject { ["enabled"] = _state.ThumbnailsEnabled, ["available"] = _state.Thumbnails.Available, ["files"] = files, ["bytes"] = bytes };
     }
 
     private void Emit(string name, object? data)
@@ -177,6 +183,13 @@ internal sealed class AgentHost : IDisposable
                     var devices = await Client.ListDevicesAsync(cancellation);
                     WriteReceiverCache(devices);
                     return new JsonArray([.. devices.Devices.Select(d => (JsonNode)new JsonObject { ["deviceId"] = d.DeviceId, ["name"] = d.Name, ["lastSeenUnixMs"] = d.LastSeenUnixMs?.ToString(System.Globalization.CultureInfo.InvariantCulture) })]);
+                case "thumbnails": return ThumbnailStatus();
+                case "set_thumbnails":
+                    _state.SetThumbnailsEnabled(args["enabled"]?.GetValue<bool>() ?? false);
+                    return ThumbnailStatus();
+                case "clear_thumbnails":
+                    _state.Thumbnails.Cache.Clear();
+                    return ThumbnailStatus();
                 case "set_sendto":
                     _state.SetSendToShortcuts(args["enabled"]?.GetValue<bool>() ?? false);
                     await SyncSendToAsync(cancellation);

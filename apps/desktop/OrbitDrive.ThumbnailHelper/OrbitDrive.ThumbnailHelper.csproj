@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The only place that parses untrusted image bytes. It runs as a separate, restricted process (see ProcessThumbnailRunner)
+       and is not referenced by the agent: the agent starts it by path, so a decoder crash can never take the agent with it. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>OrbitDrive.ThumbnailHelper</AssemblyName>
+    <RootNamespace>OrbitDrive.ThumbnailHelper</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
+  </ItemGroup>
+</Project>
