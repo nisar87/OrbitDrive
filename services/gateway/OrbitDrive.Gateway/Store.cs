@@ -38,6 +38,8 @@ public sealed class PairingRecord
     public int FailedAttempts { get; set; }
     public string? ClaimUid { get; set; }
     public string? BrowserDeviceId { get; set; }
+    /// <summary>The claim reused this browser's existing device (it is being paired with one more PC) rather than creating one.</summary>
+    public bool ReusedDevice { get; set; }
 }
 
 public sealed class DownloadSessionRecord
@@ -223,7 +225,11 @@ public sealed class Store
     }
 
     /// <summary>Atomically claims a one-use pairing request for an account and creates a pending (inactive) browser device.</summary>
-    public (PairingRecord Pairing, BrowserDeviceRecord Device, string DeviceSecret, PcRecord Pc) ClaimPairing(string id, string secret, Identity identity, string browserName)
+    /// <param name="existing">
+    /// This browser's own approved device, already proven by its secret and owned by the same account. Pairing it with another PC adds that
+    /// PC to the SAME device, so one browser keeps working with every PC it was paired with. The secret is not issued again.
+    /// </param>
+    public (PairingRecord Pairing, BrowserDeviceRecord Device, string DeviceSecret, PcRecord Pc) ClaimPairing(string id, string secret, Identity identity, string browserName, BrowserDeviceRecord? existing = null)
     {
         lock (_gate)
         {
@@ -241,9 +247,18 @@ public sealed class Store
                 pairing.State = PairingState.Expired;
                 throw new ProtocolException(ErrorCode.Forbidden, "This PC belongs to a different account.");
             }
-            var deviceSecret = Secrets.Token();
-            var device = new BrowserDeviceRecord { Id = Secrets.Token(12), OwnerUid = identity.Uid, Name = browserName, SecretHash = Secrets.Hash(deviceSecret) };
-            _devices[device.Id] = device;
+            string deviceSecret;
+            BrowserDeviceRecord device;
+            if (existing is not null && existing.OwnerUid == identity.Uid && existing.Active && !existing.Revoked && _devices.ContainsKey(existing.Id))
+            {
+                device = existing; deviceSecret = ""; pairing.ReusedDevice = true;
+            }
+            else
+            {
+                deviceSecret = Secrets.Token();
+                device = new BrowserDeviceRecord { Id = Secrets.Token(12), OwnerUid = identity.Uid, Name = browserName, SecretHash = Secrets.Hash(deviceSecret) };
+                _devices[device.Id] = device;
+            }
             pairing.State = PairingState.Claimed;
             pairing.ClaimUid = identity.Uid;
             pairing.BrowserDeviceId = device.Id;
@@ -258,7 +273,7 @@ public sealed class Store
         {
             if (!_pairings.TryGetValue(id, out var pairing) || pairing.State != PairingState.Claimed) return;
             pairing.State = PairingState.Expired;
-            if (pairing.BrowserDeviceId is not null) _devices.Remove(pairing.BrowserDeviceId);
+            if (pairing.BrowserDeviceId is not null && !pairing.ReusedDevice) _devices.Remove(pairing.BrowserDeviceId);
         }
     }
 
@@ -276,7 +291,7 @@ public sealed class Store
             if (!approve || (pc.OwnerUid is not null && pc.OwnerUid != pairing.ClaimUid))
             {
                 pairing.State = PairingState.Denied;
-                _devices.Remove(device.Id);
+                if (!pairing.ReusedDevice) _devices.Remove(device.Id);       // a device that already worked with other PCs stays
                 if (approve) throw new ProtocolException(ErrorCode.Conflict, "This PC belongs to a different account.");
                 return pairing.State;
             }

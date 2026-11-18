@@ -7,6 +7,10 @@ import { formatBytes, formatTime } from '../../format';
 import type { Prefs, SortKey, ViewMode } from '../../prefs';
 import { opensOnActivate, previewKindOf } from '../preview/kinds';
 import { previewStore, thumbnails } from '../preview/preview';
+import { archives } from '../archive/archive';
+import { ArchivePanel } from '../archive/ArchivePanel';
+import { SearchPanel, type OpenHit } from '../search/SearchPanel';
+import { addRecent, clearPlaces, groupByPc, isFavorite, loadPlaces, removeFavorite, removeRecent, savePlaces, toggleFavorite, type Availability, type Place, type Places } from './places';
 import { emptySelection, filterEntries, pruneSelection, select, sortEntries, totalSize, typeLabel, type Selection } from './model';
 
 interface Location { pc: PcSummary; root: RootSummary; entryId: string | null }
@@ -27,13 +31,14 @@ export function ConfirmButton({ label, confirmLabel, onConfirm }: { label: strin
   );
 }
 
-const Icon = ({ name }: { name: 'back' | 'forward' | 'up' | 'refresh' | 'tree' }) => (
+const Icon = ({ name }: { name: 'back' | 'forward' | 'up' | 'refresh' | 'tree' | 'search' }) => (
   <svg className="tool-icon" viewBox="0 0 16 16" aria-hidden="true">
     {name === 'back' && <path d="M9.5 3L4.5 8l5 5M4.5 8h8" />}
     {name === 'forward' && <path d="M6.5 3l5 5-5 5M11.5 8h-8" />}
     {name === 'up' && <path d="M3 7.5l5-5 5 5M8 2.5v11" />}
     {name === 'refresh' && <path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v3h-3" />}
     {name === 'tree' && <path d="M2.5 3.5h11M2.5 8h11M2.5 12.5h11" />}
+    {name === 'search' && <path d="M6.8 11.6a4.8 4.8 0 1 1 0-9.6 4.8 4.8 0 0 1 0 9.6zM10.3 10.3l3.7 3.7" />}
   </svg>
 );
 
@@ -58,6 +63,10 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
   const [menu, setMenu] = useState<Menu | null>(null);
   const [properties, setProperties] = useState<FileEntry[] | null>(null);
   const [treeDrawer, setTreeDrawer] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [places, setPlacesState] = useState<Places>(() => loadPlaces(session.email));
+  const [availability, setAvailability] = useState<Record<string, Availability>>({});
+  const setPlaces = useCallback((update: (p: Places) => Places) => setPlacesState((previous) => { const next = update(previous); savePlaces(session.email, next); return next; }), [session.email]);
   // Visit history for Back/Forward. Browser Back is wired to the same list through history.state.
   const history = useRef<{ list: (Location | null)[]; index: number }>({ list: [null], index: 0 });
   const [, bump] = useState(0);
@@ -183,7 +192,42 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
   const hiddenCount = useMemo(() => (prefs.showHidden ? 0 : entries.filter((entry) => entry.hidden).length), [entries, prefs.showHidden]);
   const currentId = current !== null && order.includes(current) ? current : order[0] ?? null;
 
+  // Ask each PC whether the favorites and recents it owns are still shared. Ids are only ever sent to the PC they came from.
+  useEffect(() => {
+    if (!pcs) return;
+    const everything = [...places.favorites, ...places.recents];
+    let cancelled = false;
+    const mark = (patch: Record<string, Availability>) => { if (!cancelled) setAvailability((previous) => ({ ...previous, ...patch })); };
+    for (const [pcId, list] of groupByPc(everything)) {
+      const pc = pcs.find((candidate) => candidate.pcId === pcId);
+      const ids = [...new Set(list.map((place) => place.entryId))];
+      if (!pc) { mark(Object.fromEntries(ids.map((id) => [id, { state: 'gone', reason: 'This PC is no longer connected to your account.' } as Availability]))); continue; }
+      if (!pc.online) { mark(Object.fromEntries(ids.map((id) => [id, { state: 'offline' } as Availability]))); continue; }
+      for (let i = 0; i < ids.length; i += 50) {
+        const batch = ids.slice(i, i + 50);
+        api.checkEntries(session, pcId, batch).then((result) => {
+          mark(Object.fromEntries(result.entries.map((check) => [check.entryId, check.available && check.entry ? { state: 'available', name: check.entry.name, size: check.entry.size } as Availability : { state: 'gone', reason: check.reason ?? 'No longer shared.' } as Availability])));
+        }).catch((e: unknown) => {
+          onAuthLost(e);
+          mark(Object.fromEntries(batch.map((id) => [id, { state: e instanceof ApiError && e.code === 'pc_offline' ? 'offline' : 'unknown' } as Availability])));
+        });
+      }
+    }
+    return () => { cancelled = true; };
+  }, [places, pcs, session, onAuthLost, dataVersion]);
+
+  const crumbPath = useMemo(() => breadcrumbs.slice(1).map((crumb) => crumb.name), [breadcrumbs]);
+  const placeOf = useCallback((entry: FileEntry): Place | null => (location ? { pcId: location.pc.pcId, rootId: location.root.rootId, entryId: entry.entryId, name: entry.name, kind: entry.kind, path: crumbPath, at: Date.now() } : null), [location, crumbPath]);
+  const remember = useCallback((entry: FileEntry) => { const place = placeOf(entry); if (place) setPlaces((p) => addRecent(p, place)); }, [placeOf, setPlaces]);
+
+  async function archiveSelection(entries: FileEntry[]) {
+    if (!location || entries.length === 0) return;
+    archives.start(session, location.pc, entries.map((entry) => ({ entryId: entry.entryId, name: entry.name })));
+    setSelection(emptySelection); setSelectMode(false);
+  }
+
   async function download(entry: FileEntry) {
+    remember(entry);
     if (!location) return;
     setTransfer({ name: entry.name, phase: 'preparing' });
     try {
@@ -206,6 +250,7 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
   /** Opens the Preview window on this file; the other previewable files of the folder become its previous/next. */
   const preview = (entry: FileEntry) => {
     if (!location || entry.kind !== 'file') return;
+    remember(entry);
     // Previous/next stay within the kind that was opened (pictures with pictures, text with text, audio and video together).
     const group = (name: string) => { const k = previewKindOf(name); return k === 'audio' || k === 'video' ? 'media' : k; };
     const items = visible.filter((e) => e.kind === 'file' && group(e.name) !== null && group(e.name) === group(entry.name)).map((e) => ({ entryId: e.entryId, name: e.name, size: Number(e.size ?? 0n) }));
@@ -215,7 +260,7 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
 
   const activate = (entry: FileEntry) => {
     if (!location) return;
-    if (entry.kind === 'directory') void navigate({ ...location, entryId: entry.entryId });
+    if (entry.kind === 'directory') { remember(entry); void navigate({ ...location, entryId: entry.entryId }); }
     else if (opensOnActivate(previewKindOf(entry.name))) preview(entry);
     else void download(entry);
   };
@@ -323,6 +368,48 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
   const showCheckboxes = selectMode || selection.ids.size > 1;
   const h = history.current;
 
+  const openFromSearch = {
+    folder: ({ pc, hit }: OpenHit) => {
+      const root = (Array.isArray(roots[pc.pcId]) ? (roots[pc.pcId] as RootSummary[]) : []).find((r) => r.rootId === hit.rootId);
+      if (!root) { setError('That shared folder is not available right now.'); return; }
+      setSearchOpen(false);
+      void navigate({ pc, root, entryId: hit.entry.entryId || null });
+    },
+    file: ({ pc, hit }: OpenHit) => {
+      const entry = hit.entry;
+      setPlaces((p) => addRecent(p, { pcId: pc.pcId, rootId: hit.rootId, entryId: entry.entryId, name: entry.name, kind: 'file', path: hit.path, at: Date.now() }));
+      if (opensOnActivate(previewKindOf(entry.name))) { previewStore.open(pc.pcId, [{ entryId: entry.entryId, name: entry.name, size: Number(entry.size ?? 0n) }], 0); onOpenApp('preview'); }
+      else { setTransfer({ name: entry.name, phase: 'preparing' }); void transfers.toBrowser(session, pc.pcId, entry).then((started) => setTransfer({ name: entry.name, phase: 'handed', size: (started.size ?? 0n).toString() })).catch((e: unknown) => { onAuthLost(e); setTransfer({ name: entry.name, phase: 'failed', message: e instanceof ApiError ? e.message : 'Download could not start.' }); }); }
+    },
+  };
+
+  /** A favorite or recent item. It opens only if the PC just confirmed it is still shared (the check runs whenever the lists or PCs change). */
+  const openPlace = (place: Place) => {
+    const pc = pcs?.find((candidate) => candidate.pcId === place.pcId);
+    if (!pc) return;
+    if (place.kind === 'directory') {
+      const root = (Array.isArray(roots[pc.pcId]) ? (roots[pc.pcId] as RootSummary[]) : []).find((r) => r.rootId === place.rootId);
+      if (root) { setTreeDrawer(false); void navigate({ pc, root, entryId: place.entryId }); }
+      return;
+    }
+    const known = availability[place.entryId];
+    openFromSearch.file({ pc, hit: { entry: { entryId: place.entryId, name: place.name, kind: 'file', size: known?.state === 'available' ? known.size : '0', modifiedUnixMs: '0', hidden: false }, rootId: place.rootId, rootName: '', path: place.path, parentEntryId: null } });
+  };
+  const placeItem = (place: Place, list: 'favorite' | 'recent') => {
+    const state = availability[place.entryId] ?? { state: 'unknown' as const };
+    const pcName = pcs?.find((candidate) => candidate.pcId === place.pcId)?.name ?? 'a PC that is no longer connected';
+    const usable = state.state === 'available' || state.state === 'unknown';
+    const note = state.state === 'offline' ? 'PC offline' : state.state === 'gone' ? 'Unavailable' : null;
+    return (
+      <li key={place.pcId + place.entryId} className="place" data-state={state.state}>
+        <button type="button" className="tree-item place-open" disabled={!usable} onClick={() => openPlace(place)} aria-label={`${place.name} on ${pcName}${note ? ` (${note})` : ''}`}>
+          <span className={`icon ${place.kind === 'directory' ? 'folder' : 'file'}`} aria-hidden="true" /><span className="place-text"><bdi>{place.name}</bdi><small><bdi>{pcName}</bdi>{note ? ` · ${note}` : ''}</small></span>
+        </button>
+        <button type="button" className="ghost icon-button place-remove" aria-label={`Remove ${place.name} from ${list === 'favorite' ? 'favorites' : 'recent items'}`} onClick={() => setPlaces((p) => (list === 'favorite' ? removeFavorite(p, place) : removeRecent(p, place)))}>×</button>
+      </li>
+    );
+  };
+
   const tree = (
     <nav className={`tree${treeDrawer ? ' drawer-open' : ''}`} aria-label="PCs and shared folders">
       <button type="button" className={`tree-item home${location === null ? ' current' : ''}`} aria-current={location === null ? 'true' : undefined} onClick={() => { setTreeDrawer(false); void navigate(null); }}>
@@ -345,6 +432,18 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
           </div>
         );
       })}
+      {places.favorites.length > 0 && (
+        <div className="tree-group" role="group" aria-label="Favorites">
+          <p className="tree-pc">Favorites</p>
+          <ul className="places">{places.favorites.map((place) => placeItem(place, 'favorite'))}</ul>
+        </div>
+      )}
+      {places.recents.length > 0 && (
+        <div className="tree-group" role="group" aria-label="Recent">
+          <p className="tree-pc">Recent <button type="button" className="ghost linklike" onClick={() => { clearPlaces(session.email); setPlacesState((p) => ({ ...p, recents: [] })); }}>Clear</button></p>
+          <ul className="places">{places.recents.map((place) => placeItem(place, 'recent'))}</ul>
+        </div>
+      )}
     </nav>
   );
 
@@ -374,6 +473,7 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
         <button type="button" className="ghost icon-button" aria-label="Forward" disabled={h.index >= h.list.length - 1} onClick={() => void go(h.index + 1)}><Icon name="forward" /></button>
         <button type="button" className="ghost icon-button" aria-label="Up one level" disabled={location === null} onClick={goUp}><Icon name="up" /></button>
         <button type="button" className="ghost icon-button" aria-label="Refresh" onClick={() => void show(location)}><Icon name="refresh" /></button>
+        <button type="button" className="ghost icon-button" aria-label="Search" aria-pressed={searchOpen} onClick={() => setSearchOpen((open) => !open)}><Icon name="search" /></button>
         <nav className="breadcrumbs" aria-label="Breadcrumb" ref={crumbs}>
           <button type="button" className="ghost" onClick={() => void navigate(null)} aria-current={location === null ? 'page' : undefined}>{location ? location.pc.name : 'This account’s PCs'}</button>
           {location && breadcrumbs.map((crumb, index) => (
@@ -409,6 +509,11 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
         {treeDrawer && <button type="button" className="scrim" aria-label="Close folders" onClick={() => setTreeDrawer(false)} />}
         <div className="content" ref={body} tabIndex={-1} onKeyDown={onListKeyDown}>
           {error && <p role="alert" className="notice error">{error}</p>}
+          {searchOpen && pcs && (
+            <SearchPanel session={session} pcs={pcs} onClose={() => setSearchOpen(false)} onOpenFolder={openFromSearch.folder} onOpenFile={openFromSearch.file}
+              here={location ? { pc: location.pc, root: location.root, entryId: location.entryId, folderName: breadcrumbs[breadcrumbs.length - 1]?.name ?? location.root.name } : null} />
+          )}
+          {location && <ArchivePanel session={session} pcId={location.pc.pcId} onOpenTransfers={() => onOpenApp('transfers')} />}
           {transfer && (
             <p role="status" className={transfer.phase === 'failed' ? 'notice error' : 'notice'} data-testid="transfer-status">
               {transfer.phase === 'preparing' && <>Checking <strong><bdi>{transfer.name}</bdi></strong> on the PC…</>}
@@ -489,6 +594,8 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
           <span>{visible.length.toLocaleString()} item{visible.length === 1 ? '' : 's'}{cursor ? ' loaded (more available)' : ''}{hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ''}</span>
           {selected.length > 0 && <span>{selected.length.toLocaleString()} selected{selected.some((entry) => entry.kind === 'file') ? ` · ${formatBytes(totalSize(selected).toString())}` : ''}</span>}
           {selected.length === 1 && selected[0].kind === 'file' && previewKindOf(selected[0].name) !== null && <button type="button" className="ghost" onClick={() => preview(selected[0])}>Preview</button>}
+          {selected.length === 1 && (() => { const place = placeOf(selected[0]); return place && <button type="button" className="ghost" aria-pressed={isFavorite(places, place)} onClick={() => setPlaces((p) => toggleFavorite(p, place))}>{isFavorite(places, place) ? 'Remove from favorites' : 'Add to favorites'}</button>; })()}
+          {selected.length > 0 && (selected.length > 1 || selected[0].kind === 'directory') && <button type="button" className="ghost" onClick={() => void archiveSelection(selected)}>Download as ZIP</button>}
           {selected.length > 0 && <button type="button" className="ghost" onClick={() => setProperties(selected)}>Properties</button>}
         </p>
       )}
@@ -498,6 +605,8 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
           {selected.length <= 1 && menuEntry.kind === 'file' && previewKindOf(menuEntry.name) !== null && <button type="button" role="menuitem" onClick={() => { setMenu(null); preview(menuEntry); }}>Preview</button>}
           {selected.length <= 1 && <button type="button" role="menuitem" onClick={() => { setMenu(null); if (menuEntry.kind === 'directory') activate(menuEntry); else void download(menuEntry); }}>{menuEntry.kind === 'directory' ? 'Open' : 'Download'}</button>}
           {selected.length <= 1 && menuEntry.kind === 'file' && transfers.canSaveToFile() && <button type="button" role="menuitem" onClick={() => { setMenu(null); void saveToFile(menuEntry); }}>Save to a file…</button>}
+          {(selected.length > 1 || menuEntry.kind === 'directory') && <button type="button" role="menuitem" onClick={() => { setMenu(null); void archiveSelection(selected.length > 1 ? selected : [menuEntry]); }}>{selected.length > 1 ? `Download ${selected.length} items as ZIP` : 'Download as ZIP'}</button>}
+          {selected.length <= 1 && (() => { const place = placeOf(menuEntry); return place && <button type="button" role="menuitem" onClick={() => { setMenu(null); setPlaces((p) => toggleFavorite(p, place)); }}>{isFavorite(places, place) ? 'Remove from favorites' : 'Add to favorites'}</button>; })()}
           <button type="button" role="menuitem" onClick={() => { setMenu(null); setProperties(selected.length > 1 ? selected : [menuEntry]); }}>{selected.length > 1 ? `Properties of ${selected.length} items` : 'Properties'}</button>
         </ContextMenu>
       )}

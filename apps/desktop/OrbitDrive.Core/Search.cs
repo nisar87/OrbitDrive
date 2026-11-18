@@ -117,6 +117,7 @@ public sealed class SearchService(FileAccessService files, Func<IReadOnlyList<Sh
                                 Hidden = child.Attributes.HasFlag(FileAttributes.Hidden),
                             },
                             RootId = root.RootId, RootName = root.Name, Path = segments,
+                            ParentEntryId = segments.Length == 0 ? null : files.SealEntry(root, segments, true),
                         });
                         if (hits.Count >= limit) { reason = "limit"; break; }
                     }

@@ -50,6 +50,8 @@ async function call<K extends keyof ProtocolTypeMap>(type: K, session: Session |
 }
 
 export const INVITATION_PREFIX = 'invitation:';
+/** A finished archive on a PC is downloaded through the same path as a file, written "archive:<id>". */
+export const ARCHIVE_PREFIX = 'archive:';
 
 export const api = {
   devSignIn: (email: string) => call('DevSignInResponse', null, 'POST', '/v1/dev/sign-in', { email }),
@@ -61,7 +63,16 @@ export const api = {
   /** A real entry id is an opaque base64url token; an invitation source is written "invitation:<id>" so one download path serves both. */
   prepareDownload: (s: Session, pcId: string, entryId: string) => entryId.startsWith(INVITATION_PREFIX)
     ? call('DownloadSession', s, 'POST', `/v1/invitations/${encodeURIComponent(entryId.slice(INVITATION_PREFIX.length))}/accept`)
-    : call('DownloadSession', s, 'POST', '/v1/download-sessions', { pcId, entryId }),
+    : entryId.startsWith(ARCHIVE_PREFIX)
+      ? call('DownloadSession', s, 'POST', '/v1/download-sessions', { pcId, entryId: entryId.slice(ARCHIVE_PREFIX.length), variant: 'archive' })
+      : call('DownloadSession', s, 'POST', '/v1/download-sessions', { pcId, entryId }),
+  startArchive: (s: Session, pcId: string, entryIds: string[], strict: boolean) => call('ArchiveRef', s, 'POST', `/v1/pcs/${encodeURIComponent(pcId)}/archives`, { entryIds, strict }),
+  archiveStatus: (s: Session, pcId: string, archiveId: string) => call('ArchiveStatus', s, 'POST', `/v1/pcs/${encodeURIComponent(pcId)}/archive-status`, { archiveId }),
+  cancelArchive: (s: Session, pcId: string, archiveId: string) => call('Ack', s, 'POST', `/v1/pcs/${encodeURIComponent(pcId)}/archive-cancel`, { archiveId }),
+  search: (s: Session, pcId: string, request: { searchId: string; query: string; rootId?: string | null; entryId?: string | null; limit: number }) =>
+    call('SearchResult', s, 'POST', `/v1/pcs/${encodeURIComponent(pcId)}/searches`, request),
+  cancelSearch: (s: Session, pcId: string, searchId: string) => call('Ack', s, 'POST', `/v1/pcs/${encodeURIComponent(pcId)}/search-cancel`, { searchId }),
+  checkEntries: (s: Session, pcId: string, entryIds: string[]) => call('CheckEntriesResult', s, 'POST', `/v1/pcs/${encodeURIComponent(pcId)}/entry-checks`, { entryIds }),
   /** In-page preview of a file ("preview") or a generated thumbnail ("thumb:N"): a revocable capability, never a transfer. */
   previewSession: (s: Session, pcId: string, entryId: string, variant: string) => call('DownloadSession', s, 'POST', '/v1/download-sessions', { pcId, entryId, variant }),
   invitations: (s: Session) => call('InvitationList', s, 'GET', '/v1/invitations'),

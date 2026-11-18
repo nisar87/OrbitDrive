@@ -159,7 +159,13 @@ app.MapPost("/v1/pairing-requests/{id}/claim", async (HttpContext context, strin
     var identity = Authenticate(context);
     Throttle(context, "claim-uid:" + identity.Uid, options.PairingClaimsPerMinute, slowDown);
     var request = await ReadJson<ClaimPairingRequest>(context);
-    var (pairing, device, deviceSecret, pc) = store.ClaimPairing(id.ToUpperInvariant(), request.Secret.ToUpperInvariant(), identity, DeviceNames.Clean(request.BrowserName));
+    // A browser that is already approved (it proves it with its own device secret) is paired with this PC as the SAME device.
+    BrowserDeviceRecord? existing = null;
+    if (context.Request.Headers["X-OrbitDrive-Device"].ToString() is { Length: > 0 } header)
+    {
+        try { existing = store.Authorize(identity, header); } catch (ProtocolException) { /* an unknown or revoked device simply pairs as a new one */ }
+    }
+    var (pairing, device, deviceSecret, pc) = store.ClaimPairing(id.ToUpperInvariant(), request.Secret.ToUpperInvariant(), identity, DeviceNames.Clean(request.BrowserName), existing);
     var code = (BitConverter.ToUInt32(Secrets.Hash($"{pairing.Id}|{identity.Uid}|{device.Id}|{pc.PcId}")) % 1_000_000).ToString("D6");
     try
     {

@@ -172,7 +172,7 @@ test('selection, keyboard, context menu and properties', async ({ page }, info) 
   const menu = page.getByRole('menu', { name: 'Actions' });
   // "Save to a file…" is offered only where the browser can write a file the reader chooses.
   const canSave = await page.evaluate(() => typeof window.showSaveFilePicker === 'function');
-  await expect(menu.getByRole('menuitem')).toHaveText(canSave ? ['Download', 'Save to a file…', 'Properties'] : ['Download', 'Properties']);
+  await expect(menu.getByRole('menuitem')).toHaveText(canSave ? ['Download', 'Save to a file…', 'Add to favorites', 'Properties'] : ['Download', 'Add to favorites', 'Properties']);
   await page.screenshot({ path: join(shots, `${info.project.name}-22-context-menu.png`) });
   const box = await menu.boundingBox();
   const viewport = page.viewportSize();

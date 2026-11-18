@@ -263,7 +263,9 @@ export async function pair(agent, browser, browserName = 'Test phone') {
   agent.send('approve');
   const result = await agent.next('pairing_result');
   if (result.state !== 'approved') throw new Error(`pairing not approved: ${result.state}`);
-  browser.device = { id: claim.body.browserDeviceId, secret: claim.body.deviceSecret };
+  // A browser that already has a device is paired with this PC as the same device (the secret is not issued again).
+  if (claim.body.deviceSecret) browser.device = { id: claim.body.browserDeviceId, secret: claim.body.deviceSecret };
+  else assert.equal(claim.body.browserDeviceId, browser.device.id);
   return { pairing, claim: claim.body, pairingId: fragment.get('id') };
 }
 

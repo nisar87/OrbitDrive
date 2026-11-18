@@ -48,7 +48,7 @@
     "ArchiveOmission": { "path": "string", "reason": "string" },
     "ArchiveStatus": { "state": "string", "name": "string", "filesDone": "int32", "filesTotal": "int32", "bytesDone": "int64", "bytesTotal": "int64", "omittedCount": "int32", "omitted": "ArchiveOmission[]", "size": "int64?", "error": "string?", "expiresUnixMs": "int64?", "resumable": "bool" },
     "SearchRequest": { "searchId": "string", "query": "string", "rootId": "string?", "entryId": "string?", "limit": "int32" },
-    "SearchHit": { "entry": "FileEntry", "rootId": "string", "rootName": "string", "path": "string[]" },
+    "SearchHit": { "entry": "FileEntry", "rootId": "string", "rootName": "string", "path": "string[]", "parentEntryId": "string?" },
     "SearchResult": { "hits": "SearchHit[]", "complete": "bool", "reason": "string?", "scanned": "int32", "elapsedMs": "int32", "rootsSearched": "int32", "rootsUnavailable": "string[]" },
     "CancelSearchRequest": { "searchId": "string" },
     "CheckEntriesRequest": { "entryIds": "string[]" },

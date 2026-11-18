@@ -61,6 +61,9 @@ test('search finds by any case and every word, says where each hit is, and the i
   assert.equal(r.body.hits.length, 1);
   assert.deepEqual(r.body.hits[0].path, ['Taxes', '2023']);
   assert.equal(r.body.hits[0].rootName, 'Docs');
+  const parent = await phoneA.post(`/v1/pcs/${pcA}/directory-queries`, { rootId: r.body.hits[0].rootId, entryId: r.body.hits[0].parentEntryId, pageSize: 20 });
+  assert.deepEqual(parent.body.entries.map((e) => e.name), ['Return FINAL.pdf'], 'the containing folder can be opened from a hit');
+  assert.ok((await search(phoneA, pcA, { query: 'report' })).body.hits[0].parentEntryId == null, 'a hit in the shared folder itself has no parent entry');
   assert.equal(r.body.complete, true);
   assert.equal((await search(phoneA, pcA, { query: 'ÜNÏCODE 文書' })).body.hits.length, 1);
   assert.equal((await search(phoneA, pcA, { query: 'return nothing' })).body.hits.length, 0);

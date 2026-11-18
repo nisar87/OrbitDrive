@@ -42,7 +42,7 @@ export function Pairing({ session, link, onLinkUsed, onPaired }: Props) {
       try {
         const status = await api.pairingStatus(session, claim.pairingId);
         setState(status.state);
-        if (status.state === 'approved') onPaired({ id: claim.browserDeviceId, secret: claim.deviceSecret });
+        if (status.state === 'approved') onPaired(claim.deviceSecret === '' && session.device ? session.device : { id: claim.browserDeviceId, secret: claim.deviceSecret });   // an empty secret: this browser's existing device was paired with one more PC
       } catch (e) { if (e instanceof ApiError && e.code !== 'network' && e.code !== 'limit_exceeded') { setError(e.message); setState('expired'); } }
     }, 1500);
     return () => clearInterval(timer);

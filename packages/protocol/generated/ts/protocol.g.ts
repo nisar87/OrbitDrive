@@ -282,6 +282,7 @@ export interface SearchHit {
   rootId: string;
   rootName: string;
   path: string[];
+  parentEntryId?: string | null;
 }
 
 export interface SearchResult {
@@ -711,7 +712,8 @@ export const SCHEMA = {
       "entry": "FileEntry",
       "rootId": "string",
       "rootName": "string",
-      "path": "string[]"
+      "path": "string[]",
+      "parentEntryId": "string?"
     },
     "SearchResult": {
       "hits": "SearchHit[]",

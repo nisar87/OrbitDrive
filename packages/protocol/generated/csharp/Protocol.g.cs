@@ -417,6 +417,7 @@ public sealed record SearchHit
     [JsonPropertyName("rootId")] public required string RootId { get; init; }
     [JsonPropertyName("rootName")] public required string RootName { get; init; }
     [JsonPropertyName("path")] public required IReadOnlyList<string> Path { get; init; }
+    [JsonPropertyName("parentEntryId")] public string? ParentEntryId { get; init; }
 }
 
 public sealed record SearchResult

@@ -197,6 +197,51 @@ public class StoreTests
     private static ErrorCode CodeOf(Action action) => Assert.Throws<ProtocolException>(action).Code;
 
     [Fact]
+    public void An_approved_browser_paired_with_another_PC_keeps_one_device_for_both()
+    {
+        var (device, header) = Pair("pc1", _alice);
+        var (id, secret, _) = _store.CreatePairing("pc2");
+        var claim = _store.ClaimPairing(id, secret, _alice, "phone again", existing: _store.Authorize(_alice, header));
+        Assert.Equal(device.Id, claim.Device.Id);
+        Assert.Equal("", claim.DeviceSecret);                                   // the secret is not issued twice
+        Assert.Equal(PairingState.Approved, _store.ConfirmPairing(id, "pc2", approve: true));
+        Assert.Equal(["pc1", "pc2"], _store.PcsFor(_store.Authorize(_alice, header)).Select(p => p.PcId).Order().ToArray());
+        // The PC owner revoking this browser on one PC leaves the other PC working.
+        _store.RevokeGrant("pc2", device.Id);
+        Assert.Equal(ErrorCode.NotFound, CodeOf(() => _store.Authorize(_alice, header, "pc2")));
+        Assert.Equal(device.Id, _store.Authorize(_alice, header, "pc1").Id);
+    }
+
+    [Fact]
+    public void Denying_or_abandoning_a_pairing_never_removes_a_device_that_already_works_with_another_PC()
+    {
+        var (device, header) = Pair("pc1", _alice);
+        var (id, secret, _) = _store.CreatePairing("pc2");
+        _store.ClaimPairing(id, secret, _alice, "phone", existing: _store.Authorize(_alice, header));
+        Assert.Equal(PairingState.Denied, _store.ConfirmPairing(id, "pc2", approve: false));
+        Assert.Equal(device.Id, _store.Authorize(_alice, header, "pc1").Id);
+        var (id2, secret2, _) = _store.CreatePairing("pc2");
+        _store.ClaimPairing(id2, secret2, _alice, "phone", existing: _store.Authorize(_alice, header));
+        _store.AbandonClaim(id2);
+        Assert.Equal(device.Id, _store.Authorize(_alice, header, "pc1").Id);
+    }
+
+    [Fact]
+    public void Another_accounts_or_a_revoked_device_is_never_reused_by_a_claim()
+    {
+        var (_, aliceHeader) = Pair("pc1", _alice);
+        var aliceDevice = _store.Authorize(_alice, aliceHeader);
+        var (id, secret, _) = _store.CreatePairing("pc2");
+        var claim = _store.ClaimPairing(id, secret, _bob, "bob phone", existing: aliceDevice);       // a header of another account's device
+        Assert.NotEqual(aliceDevice.Id, claim.Device.Id);
+        Assert.NotEqual("", claim.DeviceSecret);
+        _store.RevokeDevice(_alice, aliceDevice.Id);
+        var (id2, secret2, _) = _store.CreatePairing("pc2");
+        Assert.NotEqual(aliceDevice.Id, _store.ClaimPairing(id2, secret2, _alice, "again", existing: aliceDevice).Device.Id);
+    }
+
+
+    [Fact]
     public async Task ConcurrentClaimsOfOneRequestProduceExactlyOneWinner()
     {
         var (id, secret, _) = _store.CreatePairing("pc1");

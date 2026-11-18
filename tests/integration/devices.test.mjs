@@ -74,9 +74,9 @@ test('one browser can revoke another of the same account; the revoked one is ful
   assert.equal((await firstRoot(laptop)).status, 200);
   assert.equal((await phone.call('DELETE', `/v1/browser-devices/${laptop.device.id}`)).status, 200);
   assert.equal((await laptop.get('/v1/pcs')).status, 403);
-  // The laptop's first registration lost its PC grant earlier (revoked at the PC) and remains listed with no PCs.
+  // Pairing again reused the laptop's own device (D8: one browser keeps one device across PCs), so revoking it leaves only the phone.
   const remaining = (await phone.get('/v1/browser-devices')).body.devices.map((d) => [d.name, d.pcIds.length]).sort();
-  assert.deepEqual(remaining, [['Laptop', 0], ['Phone', 1]]);
+  assert.deepEqual(remaining, [['Phone', 1]]);
 });
 
 test('disconnecting the PC ends every grant and frees it for a new owner', async () => {
