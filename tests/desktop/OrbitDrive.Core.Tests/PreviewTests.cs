@@ -101,7 +101,7 @@ public sealed class PreviewTests : IDisposable
         for (var i = 0; i < 5; i++) { cache.Put($"key{i}", new byte[100]); Thread.Sleep(30); }
         var (files, bytes) = cache.Stats();
         Assert.True(bytes <= 250 && files <= 2, $"{files} files, {bytes} bytes");
-        Assert.NotNull(cache.TryOpen("key4"));                      // the newest survived
+        using (var newest = cache.TryOpen("key4")) Assert.NotNull(newest);   // the newest survived (closed again: Windows cannot delete an open file)
         Assert.Null(cache.TryOpen("key0"));
         Assert.DoesNotContain(Directory.GetFiles(Path.Join(_dir, "c")), f => f.Contains("report", StringComparison.OrdinalIgnoreCase));
         Assert.True(cache.Clear() >= 1);

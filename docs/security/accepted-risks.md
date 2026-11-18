@@ -27,7 +27,8 @@ fix. Machine-readable source: `security/audit-exceptions.json`; enforcement: `sc
    already report-only before this advisory (unchanged).
 3. **Is it shipped?** No. `npm audit --omit=dev` reports 0. A production build was made and inspected: it is built
    only from `@firebase/app`, `@firebase/auth`, `@firebase/component`, `@firebase/logger`, `@firebase/util`, `idb`,
-   `jsqr`, `react`, `react-dom`, `scheduler` plus application source, and contains no picomatch code. The gateway,
+   `jsqr`, `pdfjs-dist` (added in W7 for PDF preview; Apache-2.0; `npm audit --omit=dev` = 0 on 2026-11-18; run with
+   scripting, forms and annotation layers off), `react`, `react-dom`, `scheduler` plus application source, and contains no picomatch code. The gateway,
    agent, console and relay release are .NET artifacts with no npm content. This is now checked on every run by
    `scripts/bundle-check.mjs`.
 4. **What triggers it?** Measured with the installed 4.0.7: cost grows steeply with the number of repeated

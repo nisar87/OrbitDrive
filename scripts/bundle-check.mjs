@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 
 const web = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'apps', 'web');
 // Runtime packages reviewed for shipping: the declared dependencies and what they are built from.
-const allowed = new Set(['@firebase/app', '@firebase/auth', '@firebase/component', '@firebase/logger', '@firebase/util', 'idb', 'jsqr', 'react', 'react-dom', 'scheduler', 'tslib']);
+const allowed = new Set(['@firebase/app', '@firebase/auth', '@firebase/component', '@firebase/logger', '@firebase/util', 'idb', 'jsqr', 'pdfjs-dist', 'react', 'react-dom', 'scheduler', 'tslib']);
 const declared = Object.keys(JSON.parse(readFileSync(join(web, 'package.json'), 'utf8')).dependencies);
 
 Object.assign(process.env, {
