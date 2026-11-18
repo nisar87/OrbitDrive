@@ -231,7 +231,7 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         EnsureApprovedVolume(root);
         var path = PathPolicy.Resolve(root, segments, expectDirectory: false);
         SafeFileHandle handle;
-        try { handle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.Asynchronous | FileOptions.SequentialScan); }
+        try { handle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, FileOptions.Asynchronous | FileOptions.SequentialScan); }
         catch (FileNotFoundException) { throw new ProtocolException(ErrorCode.NotFound, "The item no longer exists."); }
         catch (DirectoryNotFoundException) { throw new ProtocolException(ErrorCode.NotFound, "The item no longer exists."); }
         catch (UnauthorizedAccessException) { throw new ProtocolException(ErrorCode.AccessDeniedLocal, "Windows denied access to this file."); }
@@ -293,7 +293,7 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         try { var info = new FileInfo(path); if (info.Exists && info.Attributes.HasFlag(FileAttributes.ReparsePoint)) throw new ProtocolException(ErrorCode.LinkNotAllowed, "Links and shortcuts are not followed. Send the file they point to."); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* reported precisely by the open below */ }
         SafeFileHandle handle;
-        try { handle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.Asynchronous | FileOptions.SequentialScan); }
+        try { handle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, FileOptions.Asynchronous | FileOptions.SequentialScan); }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException) { throw new ProtocolException(ErrorCode.NotFound, "The file no longer exists."); }
         catch (UnauthorizedAccessException) { throw new ProtocolException(ErrorCode.AccessDeniedLocal, "Windows denied access to this file."); }
         catch (IOException) { throw new ProtocolException(ErrorCode.Unavailable, "The file is in use by another program and cannot be read right now."); }
