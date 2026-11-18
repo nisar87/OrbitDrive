@@ -49,7 +49,7 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
 {
     public const string AgentVersion = "0.1.0";
     private const int MaxMessageBytes = 262144;
-    private readonly FileAccessService _files = new(() => state.Roots, state.Tokens) { Thumbnails = state.Thumbnails };
+    private readonly FileAccessService _files = state.Files;
     private readonly HttpClient _http = new(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) }) { Timeout = Timeout.InfiniteTimeSpan };
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _streams = new();
     private readonly ConcurrentDictionary<string, TaskCompletionSource<Envelope>> _pending = new();
@@ -173,7 +173,7 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
             Payload = ProtocolJson.ToElement(new AgentHello
             {
                 ProtocolVersion = ProtocolInfo.Version, PcId = state.PcId, PublicKeySpki = state.PublicKeySpki, Signature = Base64Url.EncodeToString(signature),
-                Name = pcName, AgentVersion = AgentVersion, Capabilities = state.Thumbnails.HasHelper ? ["browse", "range-read", "heartbeat", "preview", "thumbnails"] : ["browse", "range-read", "heartbeat", "preview"],
+                Name = pcName, AgentVersion = AgentVersion, Capabilities = state.Thumbnails.HasHelper ? ["browse", "range-read", "heartbeat", "preview", "thumbnails", "archive", "search", "entry-check"] : ["browse", "range-read", "heartbeat", "preview", "archive", "search", "entry-check"],
             }),
         }, cancellation);
         var welcome = await ReceiveAsync(socket, cancellation) ?? throw new IOException("Gateway closed during handshake.");
@@ -271,6 +271,12 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
             case Actions.ListRoots: return _files.ListRoots();
             case Actions.ListDirectory: return _files.ListDirectory(ProtocolJson.FromElement<DirectoryQuery>(payload));
             case Actions.PrepareRead: return await _files.PrepareReadAsync(ProtocolJson.FromElement<PrepareReadRequest>(payload), cancellation);
+            case Actions.StartArchive: return state.Archives.Start(ProtocolJson.FromElement<ArchiveRequest>(payload));
+            case Actions.ArchiveStatus: return state.Archives.Status(ProtocolJson.FromElement<ArchiveRef>(payload));
+            case Actions.CancelArchive: return state.Archives.Cancel(ProtocolJson.FromElement<ArchiveRef>(payload));
+            case Actions.Search: return await state.Search.SearchAsync(ProtocolJson.FromElement<SearchRequest>(payload), cancellation);
+            case Actions.CancelSearch: return state.Search.Cancel(ProtocolJson.FromElement<CancelSearchRequest>(payload));
+            case Actions.CheckEntries: return _files.CheckEntries(ProtocolJson.FromElement<CheckEntriesRequest>(payload));
             case Actions.OpenRead:
                 var open = ProtocolJson.FromElement<OpenReadRequest>(payload);
                 // Take a transfer slot. A transfer that is just finishing frees its slot within moments, so wait briefly

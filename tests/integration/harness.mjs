@@ -9,6 +9,7 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
+import { inflateRawSync } from 'node:zlib';
 
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const config = process.env.ORBIT_CONFIG || 'Release';
@@ -297,4 +298,55 @@ export function useThumbnailHelper() {
   if (!isReal && process.env.CI) throw new Error('CI must exercise the real image decoder; the helper was not built');
   process.env.ORBITDRIVE_THUMBNAIL_HELPER = isReal ? real : join(repoRoot, 'tests/integration/fake-thumbnail-helper.sh');
   return isReal;
+}
+
+// ----- An independent ZIP reader (not the product's code, not .NET's): checks structure, ZIP64 fields, CRCs and names. -----
+const crcTable = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+export function crc32(buffer) { let c = 0xffffffff; for (const byte of buffer) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+
+/** Reads a whole ZIP held in memory. Returns entries { name, directory, size, data() } and throws on any inconsistency. */
+export function readZip(buffer) {
+  let eocd = -1;
+  for (let i = buffer.length - 22; i >= Math.max(0, buffer.length - 22 - 65535); i--) if (buffer.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) throw new Error('no end-of-central-directory record');
+  let count = buffer.readUInt16LE(eocd + 10), cdSize = buffer.readUInt32LE(eocd + 12), cdOffset = buffer.readUInt32LE(eocd + 16);
+  if (count === 0xffff || cdOffset === 0xffffffff || cdSize === 0xffffffff) {
+    const locator = eocd - 20;
+    if (buffer.readUInt32LE(locator) !== 0x07064b50) throw new Error('ZIP64 locator missing');
+    const z = Number(buffer.readBigUInt64LE(locator + 8));
+    if (buffer.readUInt32LE(z) !== 0x06064b50) throw new Error('ZIP64 end record missing');
+    count = Number(buffer.readBigUInt64LE(z + 32)); cdSize = Number(buffer.readBigUInt64LE(z + 40)); cdOffset = Number(buffer.readBigUInt64LE(z + 48));
+  }
+  const entries = [];
+  let p = cdOffset;
+  for (let i = 0; i < count; i++) {
+    if (buffer.readUInt32LE(p) !== 0x02014b50) throw new Error('bad central header');
+    const flags = buffer.readUInt16LE(p + 8), method = buffer.readUInt16LE(p + 10), crc = buffer.readUInt32LE(p + 16);
+    let compressed = buffer.readUInt32LE(p + 20), size = buffer.readUInt32LE(p + 24), offset = buffer.readUInt32LE(p + 42);
+    const nameLength = buffer.readUInt16LE(p + 28), extraLength = buffer.readUInt16LE(p + 30), commentLength = buffer.readUInt16LE(p + 32);
+    const name = buffer.subarray(p + 46, p + 46 + nameLength).toString('utf8');
+    if (!(flags & 0x0800)) throw new Error('names are not flagged UTF-8');
+    for (let e = p + 46 + nameLength, end = e + extraLength; e < end;) {
+      const id = buffer.readUInt16LE(e), length = buffer.readUInt16LE(e + 2);
+      if (id === 1) { let q = e + 4; if (size === 0xffffffff) { size = Number(buffer.readBigUInt64LE(q)); q += 8; } if (compressed === 0xffffffff) { compressed = Number(buffer.readBigUInt64LE(q)); q += 8; } if (offset === 0xffffffff) offset = Number(buffer.readBigUInt64LE(q)); }
+      e += 4 + length;
+    }
+    entries.push({
+      name, directory: name.endsWith('/'), size, compressed, method, crc, offset,
+      data() {
+        if (buffer.readUInt32LE(offset) !== 0x04034b50) throw new Error('bad local header for ' + name);
+        const start = offset + 30 + buffer.readUInt16LE(offset + 26) + buffer.readUInt16LE(offset + 28);
+        const raw = buffer.subarray(start, start + compressed);
+        const out = method === 0 ? raw : method === 8 ? inflateRawSync(raw) : (() => { throw new Error('method ' + method); })();
+        if (out.length !== size) throw new Error(`size mismatch for ${name}`);
+        if (crc32(out) !== crc) throw new Error(`CRC mismatch for ${name}`);
+        return out;
+      },
+    });
+    p += 46 + nameLength + extraLength + commentLength;
+  }
+  const names = entries.map((e) => e.name);
+  if (new Set(names).size !== names.length) throw new Error('duplicate names');
+  for (const n of names) if (n.startsWith('/') || n.includes('..') || n.includes('\\') || n.includes('//')) throw new Error('unsafe name ' + n);
+  return entries;
 }

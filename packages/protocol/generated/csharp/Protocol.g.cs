@@ -28,7 +28,13 @@ public static class Actions
     public const string CreateInvitation = "create_invitation";
     public const string ListInvitations = "list_invitations";
     public const string CancelInvitation = "cancel_invitation";
-    public static readonly IReadOnlySet<string> All = new HashSet<string> { "challenge", "hello", "create_pairing", "confirm_pairing", "pairing_claimed", "list_roots", "list_directory", "prepare_read", "open_read", "cancel_stream", "list_devices", "revoke_device", "heartbeat", "create_invitation", "list_invitations", "cancel_invitation" };
+    public const string StartArchive = "start_archive";
+    public const string ArchiveStatus = "archive_status";
+    public const string CancelArchive = "cancel_archive";
+    public const string Search = "search";
+    public const string CancelSearch = "cancel_search";
+    public const string CheckEntries = "check_entries";
+    public static readonly IReadOnlySet<string> All = new HashSet<string> { "challenge", "hello", "create_pairing", "confirm_pairing", "pairing_claimed", "list_roots", "list_directory", "prepare_read", "open_read", "cancel_stream", "list_devices", "revoke_device", "heartbeat", "create_invitation", "list_invitations", "cancel_invitation", "start_archive", "archive_status", "cancel_archive", "search", "cancel_search", "check_entries" };
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<EnvelopeKind>))]
@@ -361,6 +367,90 @@ public sealed record InvitationList
 public sealed record CancelInvitationRequest
 {
     [JsonPropertyName("invitationId")] public required string InvitationId { get; init; }
+}
+
+public sealed record ArchiveRequest
+{
+    [JsonPropertyName("entryIds")] public required IReadOnlyList<string> EntryIds { get; init; }
+    [JsonPropertyName("strict")] public required bool Strict { get; init; }
+}
+
+public sealed record ArchiveRef
+{
+    [JsonPropertyName("archiveId")] public required string ArchiveId { get; init; }
+}
+
+public sealed record ArchiveOmission
+{
+    [JsonPropertyName("path")] public required string Path { get; init; }
+    [JsonPropertyName("reason")] public required string Reason { get; init; }
+}
+
+public sealed record ArchiveStatus
+{
+    [JsonPropertyName("state")] public required string State { get; init; }
+    [JsonPropertyName("name")] public required string Name { get; init; }
+    [JsonPropertyName("filesDone")] public required int FilesDone { get; init; }
+    [JsonPropertyName("filesTotal")] public required int FilesTotal { get; init; }
+    [JsonPropertyName("bytesDone")] [JsonConverter(typeof(Int64StringConverter))] public required long BytesDone { get; init; }
+    [JsonPropertyName("bytesTotal")] [JsonConverter(typeof(Int64StringConverter))] public required long BytesTotal { get; init; }
+    [JsonPropertyName("omittedCount")] public required int OmittedCount { get; init; }
+    [JsonPropertyName("omitted")] public required IReadOnlyList<ArchiveOmission> Omitted { get; init; }
+    [JsonPropertyName("size")] [JsonConverter(typeof(NullableInt64StringConverter))] public long? Size { get; init; }
+    [JsonPropertyName("error")] public string? Error { get; init; }
+    [JsonPropertyName("expiresUnixMs")] [JsonConverter(typeof(NullableInt64StringConverter))] public long? ExpiresUnixMs { get; init; }
+    [JsonPropertyName("resumable")] public required bool Resumable { get; init; }
+}
+
+public sealed record SearchRequest
+{
+    [JsonPropertyName("searchId")] public required string SearchId { get; init; }
+    [JsonPropertyName("query")] public required string Query { get; init; }
+    [JsonPropertyName("rootId")] public string? RootId { get; init; }
+    [JsonPropertyName("entryId")] public string? EntryId { get; init; }
+    [JsonPropertyName("limit")] public required int Limit { get; init; }
+}
+
+public sealed record SearchHit
+{
+    [JsonPropertyName("entry")] public required FileEntry Entry { get; init; }
+    [JsonPropertyName("rootId")] public required string RootId { get; init; }
+    [JsonPropertyName("rootName")] public required string RootName { get; init; }
+    [JsonPropertyName("path")] public required IReadOnlyList<string> Path { get; init; }
+}
+
+public sealed record SearchResult
+{
+    [JsonPropertyName("hits")] public required IReadOnlyList<SearchHit> Hits { get; init; }
+    [JsonPropertyName("complete")] public required bool Complete { get; init; }
+    [JsonPropertyName("reason")] public string? Reason { get; init; }
+    [JsonPropertyName("scanned")] public required int Scanned { get; init; }
+    [JsonPropertyName("elapsedMs")] public required int ElapsedMs { get; init; }
+    [JsonPropertyName("rootsSearched")] public required int RootsSearched { get; init; }
+    [JsonPropertyName("rootsUnavailable")] public required IReadOnlyList<string> RootsUnavailable { get; init; }
+}
+
+public sealed record CancelSearchRequest
+{
+    [JsonPropertyName("searchId")] public required string SearchId { get; init; }
+}
+
+public sealed record CheckEntriesRequest
+{
+    [JsonPropertyName("entryIds")] public required IReadOnlyList<string> EntryIds { get; init; }
+}
+
+public sealed record EntryCheck
+{
+    [JsonPropertyName("entryId")] public required string EntryId { get; init; }
+    [JsonPropertyName("available")] public required bool Available { get; init; }
+    [JsonPropertyName("entry")] public FileEntry? Entry { get; init; }
+    [JsonPropertyName("reason")] public string? Reason { get; init; }
+}
+
+public sealed record CheckEntriesResult
+{
+    [JsonPropertyName("entries")] public required IReadOnlyList<EntryCheck> Entries { get; init; }
 }
 
 public sealed record OpenReadRequest

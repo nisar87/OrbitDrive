@@ -5,7 +5,7 @@ export type Int64String = string;
 
 export const PROTOCOL_VERSION = 1;
 export const MIN_PROTOCOL_VERSION = 1;
-export const ACTIONS = ["challenge","hello","create_pairing","confirm_pairing","pairing_claimed","list_roots","list_directory","prepare_read","open_read","cancel_stream","list_devices","revoke_device","heartbeat","create_invitation","list_invitations","cancel_invitation"] as const;
+export const ACTIONS = ["challenge","hello","create_pairing","confirm_pairing","pairing_claimed","list_roots","list_directory","prepare_read","open_read","cancel_stream","list_devices","revoke_device","heartbeat","create_invitation","list_invitations","cancel_invitation","start_archive","archive_status","cancel_archive","search","cancel_search","check_entries"] as const;
 
 export type EnvelopeKind = 'req' | 'res' | 'evt';
 
@@ -240,6 +240,79 @@ export interface CancelInvitationRequest {
   invitationId: string;
 }
 
+export interface ArchiveRequest {
+  entryIds: string[];
+  strict: boolean;
+}
+
+export interface ArchiveRef {
+  archiveId: string;
+}
+
+export interface ArchiveOmission {
+  path: string;
+  reason: string;
+}
+
+export interface ArchiveStatus {
+  state: string;
+  name: string;
+  filesDone: number;
+  filesTotal: number;
+  bytesDone: Int64String;
+  bytesTotal: Int64String;
+  omittedCount: number;
+  omitted: ArchiveOmission[];
+  size?: Int64String | null;
+  error?: string | null;
+  expiresUnixMs?: Int64String | null;
+  resumable: boolean;
+}
+
+export interface SearchRequest {
+  searchId: string;
+  query: string;
+  rootId?: string | null;
+  entryId?: string | null;
+  limit: number;
+}
+
+export interface SearchHit {
+  entry: FileEntry;
+  rootId: string;
+  rootName: string;
+  path: string[];
+}
+
+export interface SearchResult {
+  hits: SearchHit[];
+  complete: boolean;
+  reason?: string | null;
+  scanned: number;
+  elapsedMs: number;
+  rootsSearched: number;
+  rootsUnavailable: string[];
+}
+
+export interface CancelSearchRequest {
+  searchId: string;
+}
+
+export interface CheckEntriesRequest {
+  entryIds: string[];
+}
+
+export interface EntryCheck {
+  entryId: string;
+  available: boolean;
+  entry?: FileEntry | null;
+  reason?: string | null;
+}
+
+export interface CheckEntriesResult {
+  entries: EntryCheck[];
+}
+
 export interface OpenReadRequest {
   readToken: string;
   offset: Int64String;
@@ -326,6 +399,17 @@ export interface ProtocolTypeMap {
   InvitationSummary: InvitationSummary;
   InvitationList: InvitationList;
   CancelInvitationRequest: CancelInvitationRequest;
+  ArchiveRequest: ArchiveRequest;
+  ArchiveRef: ArchiveRef;
+  ArchiveOmission: ArchiveOmission;
+  ArchiveStatus: ArchiveStatus;
+  SearchRequest: SearchRequest;
+  SearchHit: SearchHit;
+  SearchResult: SearchResult;
+  CancelSearchRequest: CancelSearchRequest;
+  CheckEntriesRequest: CheckEntriesRequest;
+  EntryCheck: EntryCheck;
+  CheckEntriesResult: CheckEntriesResult;
   OpenReadRequest: OpenReadRequest;
   CancelStreamRequest: CancelStreamRequest;
   BrowserDeviceSummary: BrowserDeviceSummary;
@@ -590,6 +674,68 @@ export const SCHEMA = {
     },
     "CancelInvitationRequest": {
       "invitationId": "string"
+    },
+    "ArchiveRequest": {
+      "entryIds": "string[]",
+      "strict": "bool"
+    },
+    "ArchiveRef": {
+      "archiveId": "string"
+    },
+    "ArchiveOmission": {
+      "path": "string",
+      "reason": "string"
+    },
+    "ArchiveStatus": {
+      "state": "string",
+      "name": "string",
+      "filesDone": "int32",
+      "filesTotal": "int32",
+      "bytesDone": "int64",
+      "bytesTotal": "int64",
+      "omittedCount": "int32",
+      "omitted": "ArchiveOmission[]",
+      "size": "int64?",
+      "error": "string?",
+      "expiresUnixMs": "int64?",
+      "resumable": "bool"
+    },
+    "SearchRequest": {
+      "searchId": "string",
+      "query": "string",
+      "rootId": "string?",
+      "entryId": "string?",
+      "limit": "int32"
+    },
+    "SearchHit": {
+      "entry": "FileEntry",
+      "rootId": "string",
+      "rootName": "string",
+      "path": "string[]"
+    },
+    "SearchResult": {
+      "hits": "SearchHit[]",
+      "complete": "bool",
+      "reason": "string?",
+      "scanned": "int32",
+      "elapsedMs": "int32",
+      "rootsSearched": "int32",
+      "rootsUnavailable": "string[]"
+    },
+    "CancelSearchRequest": {
+      "searchId": "string"
+    },
+    "CheckEntriesRequest": {
+      "entryIds": "string[]"
+    },
+    "EntryCheck": {
+      "entryId": "string",
+      "available": "bool",
+      "entry": "FileEntry?",
+      "reason": "string?"
+    },
+    "CheckEntriesResult": {
+      "entries": "EntryCheck[]"
     },
     "OpenReadRequest": {
       "readToken": "string",

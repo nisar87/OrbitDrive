@@ -87,6 +87,10 @@ internal sealed class AgentState
     /// <summary>Owner switch for generating thumbnails (D7). Previews of the original file are separate and always allowed to the paired browser.</summary>
     public bool ThumbnailsEnabled { get; private set; } = true;
     public ThumbnailService Thumbnails { get; private set; } = null!;
+    /// <summary>The one filesystem policy object every part of the agent uses, with staged archives (D8) attached.</summary>
+    public FileAccessService Files { get; private set; } = null!;
+    public ArchiveService Archives { get; private set; } = null!;
+    public SearchService Search { get; private set; } = null!;
     public string Directory_ { get; }
 
     public AgentState(string directory)
@@ -110,6 +114,10 @@ internal sealed class AgentState
         var thumbnailOptions = new ThumbnailOptions();
         var helper = ProcessThumbnailRunner.Locate(AppContext.BaseDirectory);
         Thumbnails = new ThumbnailService(new ThumbnailCache(Path.Join(directory, "thumbnails"), thumbnailOptions), helper is null ? null : new ProcessThumbnailRunner(helper, thumbnailOptions), thumbnailOptions);
+        Files = new FileAccessService(() => Roots, Tokens) { Thumbnails = Thumbnails };
+        Archives = new ArchiveService(Files, Tokens, () => Roots, new ArchiveOptions { Directory = Path.Join(directory, "archives") });
+        Files.Archives = Archives;
+        Search = new SearchService(Files, () => Roots);
         ReloadRoots();
     }
 
@@ -192,6 +200,8 @@ internal sealed class AgentState
         if (remaining.Count == _roots.Count) return false;
         Save(remaining);
         Thumbnails.Cache.Clear();      // derived content never outlives a permission change
+        Archives.DropForRoot(rootId);  // nor do archives made from the folder, or searches still reading it
+        Search.CancelAll();
         return true;
     }
 }

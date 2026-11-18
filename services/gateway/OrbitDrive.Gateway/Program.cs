@@ -206,6 +206,47 @@ app.MapPost("/v1/pcs/{pcId}/directory-queries", async (HttpContext context, stri
     await WriteJson(context, await hub.Get(pcId).RequestAsync<DirectoryPage>(Actions.ListDirectory, query, agentTimeout, context.RequestAborted));
 });
 
+// A selection of many items carries many sealed identifiers; these two routes accept a larger body than other JSON routes (still under the 256 KiB control-message cap).
+static void AllowLargerBody(HttpContext context) => context.Features.Get<IHttpMaxRequestBodySizeFeature>()!.MaxRequestBodySize = 192 * 1024;
+
+// ----- D8: archives, search and entry checks. The PC does the work; the gateway only authorises the browser for that PC. -----
+app.MapPost("/v1/pcs/{pcId}/archives", async (HttpContext context, string pcId) =>
+{
+    var device = AuthorizeBrowser(context, pcId);
+    Throttle(context, "archive:" + device.Id, 20, "Too many archive requests. Wait a moment.");
+    AllowLargerBody(context);
+    var request = await ReadJson<ArchiveRequest>(context);
+    await WriteJson(context, await hub.Get(pcId).RequestAsync<ArchiveRef>(Actions.StartArchive, request, agentTimeout, context.RequestAborted), 202);
+});
+app.MapPost("/v1/pcs/{pcId}/archive-status", async (HttpContext context, string pcId) =>
+{
+    AuthorizeBrowser(context, pcId);
+    await WriteJson(context, await hub.Get(pcId).RequestAsync<ArchiveStatus>(Actions.ArchiveStatus, await ReadJson<ArchiveRef>(context), agentTimeout, context.RequestAborted));
+});
+app.MapPost("/v1/pcs/{pcId}/archive-cancel", async (HttpContext context, string pcId) =>
+{
+    AuthorizeBrowser(context, pcId);
+    await WriteJson(context, await hub.Get(pcId).RequestAsync<Ack>(Actions.CancelArchive, await ReadJson<ArchiveRef>(context), agentTimeout, context.RequestAborted));
+});
+app.MapPost("/v1/pcs/{pcId}/searches", async (HttpContext context, string pcId) =>
+{
+    var device = AuthorizeBrowser(context, pcId);
+    Throttle(context, "search:" + device.Id, 60, "Too many searches. Wait a moment.");
+    var request = await ReadJson<SearchRequest>(context);
+    await WriteJson(context, await hub.Get(pcId).RequestAsync<SearchResult>(Actions.Search, request, agentTimeout, context.RequestAborted));
+});
+app.MapPost("/v1/pcs/{pcId}/search-cancel", async (HttpContext context, string pcId) =>
+{
+    AuthorizeBrowser(context, pcId);
+    await WriteJson(context, await hub.Get(pcId).RequestAsync<Ack>(Actions.CancelSearch, await ReadJson<CancelSearchRequest>(context), agentTimeout, context.RequestAborted));
+});
+app.MapPost("/v1/pcs/{pcId}/entry-checks", async (HttpContext context, string pcId) =>
+{
+    AuthorizeBrowser(context, pcId);
+    AllowLargerBody(context);
+    await WriteJson(context, await hub.Get(pcId).RequestAsync<CheckEntriesResult>(Actions.CheckEntries, await ReadJson<CheckEntriesRequest>(context), agentTimeout, context.RequestAborted));
+});
+
 // What a browser may ask the PC for besides the original bytes. Anything else is refused before it reaches the PC.
 static string? NormalizeVariant(string? variant) => variant switch
 {
@@ -223,8 +264,10 @@ var InlineTypes = new HashSet<string>(StringComparer.Ordinal)
 
 async Task<DownloadSession> StartDownload(BrowserDeviceRecord device, string pcId, string entryId, string? requestedVariant, CancellationToken cancellation)
 {
-    var variant = NormalizeVariant(requestedVariant);
-    var prepared = await hub.Get(pcId).RequestAsync<PrepareReadResult>(Actions.PrepareRead, new PrepareReadRequest { EntryId = entryId, Variant = variant },
+    // "archive": the entry is a finished archive of this PC. It is a normal download (it shows in Transfers, never inline).
+    var isArchive = requestedVariant == "archive";
+    var variant = isArchive ? null : NormalizeVariant(requestedVariant);
+    var prepared = await hub.Get(pcId).RequestAsync<PrepareReadResult>(Actions.PrepareRead, new PrepareReadRequest { EntryId = entryId, Variant = isArchive ? "archive" : variant },
         TimeSpan.FromSeconds(options.PrepareTimeoutSeconds), cancellation);
     if (prepared.Size < 0 || !prepared.Revision.StartsWith("sha256-", StringComparison.Ordinal) || prepared.Revision.Length != 71 || prepared.Name.Length is 0 or > 255)
         throw new ProtocolException(ErrorCode.Internal, "The PC sent an answer this service does not understand.");

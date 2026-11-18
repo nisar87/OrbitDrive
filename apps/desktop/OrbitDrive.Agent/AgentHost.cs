@@ -42,7 +42,7 @@ internal sealed class AgentHost : IDisposable
     public AgentHost(AgentState state, string pcName, Action<string, object?> log)
     {
         _state = state; _pcName = pcName; _log = log;
-        _files = new FileAccessService(() => state.Roots, state.Tokens) { Thumbnails = state.Thumbnails };
+        _files = state.Files;
         _receiverCache = Path.Join(state.Directory_, "receivers.json");
         _ipc = new LocalIpcServer(LocalIpc.PipeName(state.Directory_), HandleAsync);
     }

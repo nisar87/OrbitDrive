@@ -26,6 +26,8 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
     private readonly Func<string, string?> _volumeIdentity = volumeIdentity ?? NativeFile.GetVolumeIdentity;
     /// <summary>Thumbnail generation (D7); null leaves previews of pictures unavailable and everything else unchanged.</summary>
     public ThumbnailService? Thumbnails { get; set; }
+    /// <summary>Staged folder/multi-file ZIPs (D8); null means archives are not offered.</summary>
+    public ArchiveService? Archives { get; set; }
     private const string DifferentDisk = "A different disk is at this location now. Share the folder again on the PC to allow access.";
 
     /// <summary>True when the folder exists AND is still on the disk it was approved on.</summary>
@@ -48,7 +50,7 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         Roots = [.. roots().Select(r => new RootSummary { RootId = r.RootId, Name = r.Name, ReadOnly = true, Available = IsAvailable(r) })],
     };
 
-    private SharedRoot FindRoot(string rootId) =>
+    internal SharedRoot FindRoot(string rootId) =>
         roots().FirstOrDefault(r => r.RootId == rootId) ?? throw new ProtocolException(ErrorCode.NotFound, "That shared folder is not available.");
 
     private static string RootFinalPath(SharedRoot root)
@@ -58,20 +60,15 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         { throw new ProtocolException(ErrorCode.Unavailable, "The shared folder is currently unavailable."); }
     }
 
-    public DirectoryPage ListDirectory(DirectoryQuery query)
+    /// <summary>
+    /// The one place a folder's children are read. The folder is opened, the OPENED folder is proven to be inside the shared root, and
+    /// the listing goes through that same handle. Links, unsafe names, system items and (unless the owner allowed them) hidden items
+    /// are left out. Browsing, searching and archiving all use this, so they share one access boundary.
+    /// </summary>
+    internal List<FileSystemInfo> EnumerateChildren(SharedRoot root, string[] segments, out int skipped)
     {
-        var root = FindRoot(query.RootId);
-        string[] segments = [];
-        if (query.EntryId is not null)
-        {
-            var body = tokens.Unseal(query.EntryId, "e");
-            if (body.RootId != root.RootId || !body.IsDirectory) throw new ProtocolException(ErrorCode.InvalidRequest, "Identifier does not belong to this folder.");
-            segments = body.Segments;
-        }
         EnsureApprovedVolume(root);
         var path = PathPolicy.Resolve(root, segments, expectDirectory: true);
-        // Open the folder, prove the OPENED folder is inside the shared root, and list through that same handle.
-        // (Validating the path and then listing it by name again would let a folder be swapped for a link in between.)
         NativeFile.PinnedDirectory pinned;
         try { pinned = NativeFile.OpenDirectory(path, followFinalLink: segments.Length == 0); }
         catch (UnauthorizedAccessException) { throw new ProtocolException(ErrorCode.AccessDeniedLocal, "Windows denied access to this folder."); }
@@ -84,22 +81,13 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
             : !pinned.IsLink && NativeFile.IsUnder(pinned.FinalPath, rootFinal);
         if (!inside) throw new ProtocolException(ErrorCode.LinkNotAllowed, "Links and junctions are not followed.");
 
-        var offset = 0;
-        if (query.Cursor is not null)
-        {
-            var cursor = tokens.Unseal(query.Cursor, "c");
-            if (cursor.RootId != root.RootId || !cursor.Segments.SequenceEqual(segments) || cursor.Offset < 0)
-                throw new ProtocolException(ErrorCode.InvalidRequest, "Cursor does not match this folder.");
-            offset = cursor.Offset;
-        }
-
-        var skipped = 0;
+        var skippedHere = 0;
         var items = new List<FileSystemInfo>();
         try
         {
             foreach (var info in new DirectoryInfo(pinned.EnumerationPath).EnumerateFileSystemInfos())
             {
-                if (info.Attributes.HasFlag(FileAttributes.ReparsePoint) || !PathPolicy.IsSafeSegment(info.Name)) { skipped++; continue; }
+                if (info.Attributes.HasFlag(FileAttributes.ReparsePoint) || !PathPolicy.IsSafeSegment(info.Name)) { skippedHere++; continue; }
                 if (info.Attributes.HasFlag(FileAttributes.System)) continue;
                 if (info.Attributes.HasFlag(FileAttributes.Hidden) && !root.ShowHidden) continue;
                 items.Add(info);
@@ -108,6 +96,40 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         catch (UnauthorizedAccessException) { throw new ProtocolException(ErrorCode.AccessDeniedLocal, "Windows denied access to this folder."); }
         catch (DirectoryNotFoundException) { throw new ProtocolException(ErrorCode.NotFound, "The item no longer exists."); }
         catch (IOException) { throw new ProtocolException(ErrorCode.Unavailable, "The folder could not be read right now."); }
+        skipped = skippedHere;
+        return items;
+    }
+
+    internal TokenBody UnsealEntry(string? entryId, out SharedRoot root)
+    {
+        var body = tokens.Unseal(entryId, "e");
+        root = FindRoot(body.RootId);
+        return body;
+    }
+
+    internal string SealEntry(SharedRoot root, string[] segments, bool isDirectory) =>
+        tokens.Seal(new TokenBody { Type = "e", RootId = root.RootId, Segments = segments, IsDirectory = isDirectory });
+
+    public DirectoryPage ListDirectory(DirectoryQuery query)
+    {
+        var root = FindRoot(query.RootId);
+        string[] segments = [];
+        if (query.EntryId is not null)
+        {
+            var body = tokens.Unseal(query.EntryId, "e");
+            if (body.RootId != root.RootId || !body.IsDirectory) throw new ProtocolException(ErrorCode.InvalidRequest, "Identifier does not belong to this folder.");
+            segments = body.Segments;
+        }
+        var items = EnumerateChildren(root, segments, out var skipped);
+
+        var offset = 0;
+        if (query.Cursor is not null)
+        {
+            var cursor = tokens.Unseal(query.Cursor, "c");
+            if (cursor.RootId != root.RootId || !cursor.Segments.SequenceEqual(segments) || cursor.Offset < 0)
+                throw new ProtocolException(ErrorCode.InvalidRequest, "Cursor does not match this folder.");
+            offset = cursor.Offset;
+        }
 
         items.Sort((a, b) =>
         {
@@ -150,8 +172,43 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         };
     }
 
+    /// <summary>
+    /// Favorites and recents are remembered as ordinary entry IDs. Before one is shown or used it is asked about here: it must still be
+    /// genuine for THIS PC, still inside a folder that is shared now, and still exist, otherwise it is reported as unavailable (never as data).
+    /// </summary>
+    public CheckEntriesResult CheckEntries(CheckEntriesRequest request)
+    {
+        if (request.EntryIds is null || request.EntryIds.Count > 100) throw new ProtocolException(ErrorCode.InvalidRequest, "Check at most 100 items at a time.");
+        var result = new List<EntryCheck>();
+        foreach (var id in request.EntryIds)
+        {
+            try
+            {
+                var body = tokens.Unseal(id, "e");
+                var root = FindRoot(body.RootId);
+                if (!IsAvailable(root)) throw new ProtocolException(ErrorCode.Unavailable, "The shared folder is not available right now.");
+                var path = PathPolicy.Resolve(root, body.Segments, expectDirectory: body.IsDirectory);
+                FileSystemInfo info = body.IsDirectory ? new DirectoryInfo(path) : new FileInfo(path);
+                if (info.Attributes.HasFlag(FileAttributes.System) || (info.Attributes.HasFlag(FileAttributes.Hidden) && !root.ShowHidden))
+                    throw new ProtocolException(ErrorCode.NotFound, "The item is no longer shared.");
+                result.Add(new EntryCheck
+                {
+                    EntryId = id, Available = true, Reason = null,
+                    Entry = new FileEntry
+                    {
+                        EntryId = id, Name = body.Segments[^1], Kind = body.IsDirectory ? EntryKind.Directory : EntryKind.File,
+                        Size = info is FileInfo f ? f.Length : 0, ModifiedUnixMs = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds(), Hidden = info.Attributes.HasFlag(FileAttributes.Hidden),
+                    },
+                });
+            }
+            catch (ProtocolException e) { result.Add(new EntryCheck { EntryId = id, Available = false, Entry = null, Reason = e.Code == ErrorCode.InvalidRequest ? "This item does not belong to this PC." : e.Message }); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { result.Add(new EntryCheck { EntryId = id, Available = false, Entry = null, Reason = "The item could not be read." }); }
+        }
+        return new CheckEntriesResult { Entries = result };
+    }
+
     /// <summary>Opens the file, then proves the opened handle is a single-link regular file that really lives under the root.</summary>
-    private SafeFileHandle OpenValidated(SharedRoot root, string[] segments)
+    internal SafeFileHandle OpenValidated(SharedRoot root, string[] segments)
     {
         EnsureApprovedVolume(root);
         var path = PathPolicy.Resolve(root, segments, expectDirectory: false);
@@ -253,6 +310,8 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
     /// <summary>Hashes the file under a share-read handle (writers are blocked on Windows) to produce a content-verified revision.</summary>
     public async Task<PrepareReadResult> PrepareReadAsync(PrepareReadRequest request, CancellationToken cancellation)
     {
+        if (request.Variant == "archive")
+            return (Archives ?? throw new ProtocolException(ErrorCode.Unavailable, "Archives are not available on this PC.")).PrepareRead(request.EntryId);
         var oneShot = tokens.TryUnseal(request.EntryId, "o", out var grant);
         var body = oneShot ? grant : tokens.Unseal(request.EntryId, "e");
         if (body.IsDirectory) throw new ProtocolException(ErrorCode.InvalidRequest, "Folders cannot be downloaded as a single file.");
@@ -335,6 +394,8 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
     /// <summary>Re-validates root, path, handle and revision for one byte range. The root must still be approved now.</summary>
     public ValidatedRead OpenRead(string readToken, long offset, long length)
     {
+        if (tokens.TryUnseal(readToken, "z", out var archiveBody))
+            return (Archives ?? throw new ProtocolException(ErrorCode.Unavailable, "Archives are not available on this PC.")).OpenRead(archiveBody, offset, length);
         var derivedRead = tokens.TryUnseal(readToken, "p", out var derivedBody);
         var body = derivedRead ? derivedBody : tokens.Unseal(readToken, "r");
         var oneShot = body.RootId == OneShotRoot;
