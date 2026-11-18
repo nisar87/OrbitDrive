@@ -62,6 +62,8 @@ export const api = {
   prepareDownload: (s: Session, pcId: string, entryId: string) => entryId.startsWith(INVITATION_PREFIX)
     ? call('DownloadSession', s, 'POST', `/v1/invitations/${encodeURIComponent(entryId.slice(INVITATION_PREFIX.length))}/accept`)
     : call('DownloadSession', s, 'POST', '/v1/download-sessions', { pcId, entryId }),
+  /** In-page preview of a file ("preview") or a generated thumbnail ("thumb:N"): a revocable capability, never a transfer. */
+  previewSession: (s: Session, pcId: string, entryId: string, variant: string) => call('DownloadSession', s, 'POST', '/v1/download-sessions', { pcId, entryId, variant }),
   invitations: (s: Session) => call('InvitationList', s, 'GET', '/v1/invitations'),
   declineInvitation: (s: Session, id: string) => call('Ack', s, 'POST', `/v1/invitations/${encodeURIComponent(id)}/decline`),
   devices: (s: Session) => call('BrowserDeviceListResponse', s, 'GET', '/v1/browser-devices'),

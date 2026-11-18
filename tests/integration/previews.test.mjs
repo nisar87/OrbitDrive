@@ -5,15 +5,11 @@ import assert from 'node:assert/strict';
 import { writeFileSync, readFileSync, existsSync, copyFileSync, mkdirSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { startGateway, startAgent, connectIpc, agentCli, waitFor, tempDir, Browser, pair, sleep, repoRoot } from './harness.mjs';
+import { startGateway, startAgent, connectIpc, agentCli, waitFor, tempDir, Browser, pair, repoRoot, useThumbnailHelper } from './harness.mjs';
 
-const config = process.env.ORBIT_CONFIG || 'Release';
-const realHelper = join(repoRoot, `apps/desktop/OrbitDrive.ThumbnailHelper/bin/${config}/net10.0`, process.platform === 'win32' ? 'OrbitDrive.ThumbnailHelper.exe' : 'OrbitDrive.ThumbnailHelper');
-const real = existsSync(realHelper);
-if (!real && process.env.CI) throw new Error('CI must exercise the real image decoder; the helper was not built');
+const real = useThumbnailHelper();
 const helperLog = join(tempDir('helper-log'), 'runs.txt');
 writeFileSync(helperLog, '');
-process.env.ORBITDRIVE_THUMBNAIL_HELPER = real ? realHelper : join(repoRoot, 'tests/integration/fake-thumbnail-helper.sh');
 process.env.FAKE_HELPER_LOG = helperLog;
 const helperRuns = () => readFileSync(helperLog, 'utf8').split('\n').filter(Boolean).length;
 const images = join(repoRoot, 'tests/fixtures/images');

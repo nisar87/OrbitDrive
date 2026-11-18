@@ -5,6 +5,8 @@ import type { Breadcrumb, FileEntry, PcSummary, RootSummary } from '../../protoc
 import { transfers } from '../transfers/transfers';
 import { formatBytes, formatTime } from '../../format';
 import type { Prefs, SortKey, ViewMode } from '../../prefs';
+import { opensOnActivate, previewKindOf } from '../preview/kinds';
+import { previewStore, thumbnails } from '../preview/preview';
 import { emptySelection, filterEntries, pruneSelection, select, sortEntries, totalSize, typeLabel, type Selection } from './model';
 
 interface Location { pc: PcSummary; root: RootSummary; entryId: string | null }
@@ -174,6 +176,7 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
     const scroller = body.current;
     if (scroller && heightBeforePrepend.current !== null) { scroller.scrollTop += scroller.scrollHeight - heightBeforePrepend.current; heightBeforePrepend.current = null; }
   }, [range.start]);
+  const thumbContext = useMemo(() => (prefs.view === 'icons' && location ? { session, pcId: location.pc.pcId } : null), [prefs.view, session, location]);
   const order = useMemo(() => visible.map((entry) => entry.entryId), [visible]);
   useEffect(() => { setSelection((s) => pruneSelection(s, order)); }, [order]);
   const selected = useMemo(() => visible.filter((entry) => selection.ids.has(entry.entryId)), [visible, selection]);
@@ -200,7 +203,22 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
     if (started) { setTransfer({ name: entry.name, phase: 'saving' }); onOpenApp('transfers'); }
   }
 
-  const activate = (entry: FileEntry) => { if (!location) return; if (entry.kind === 'directory') void navigate({ ...location, entryId: entry.entryId }); else void download(entry); };
+  /** Opens the Preview window on this file; the other previewable files of the folder become its previous/next. */
+  const preview = (entry: FileEntry) => {
+    if (!location || entry.kind !== 'file') return;
+    // Previous/next stay within the kind that was opened (pictures with pictures, text with text, audio and video together).
+    const group = (name: string) => { const k = previewKindOf(name); return k === 'audio' || k === 'video' ? 'media' : k; };
+    const items = visible.filter((e) => e.kind === 'file' && group(e.name) !== null && group(e.name) === group(entry.name)).map((e) => ({ entryId: e.entryId, name: e.name, size: Number(e.size ?? 0n) }));
+    previewStore.open(location.pc.pcId, items, Math.max(0, items.findIndex((i) => i.entryId === entry.entryId)));
+    onOpenApp('preview');
+  };
+
+  const activate = (entry: FileEntry) => {
+    if (!location) return;
+    if (entry.kind === 'directory') void navigate({ ...location, entryId: entry.entryId });
+    else if (opensOnActivate(previewKindOf(entry.name))) preview(entry);
+    else void download(entry);
+  };
 
   async function loadAll() {
     if (!location) return;
@@ -445,7 +463,7 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
                 </thead>
                 <tbody>
                   {rendered.map((entry) => (
-                    <Row key={entry.entryId} entry={entry} selected={selection.ids.has(entry.entryId)} current={entry.entryId === currentId} checkbox={showCheckboxes} actions={rowActions} />
+                    <Row key={entry.entryId} entry={entry} selected={selection.ids.has(entry.entryId)} current={entry.entryId === currentId} checkbox={showCheckboxes} actions={rowActions} thumbs={thumbContext} />
                   ))}
                 </tbody>
               </table>
@@ -470,13 +488,15 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
         <p className="statusbar" role="status" aria-live="off">
           <span>{visible.length.toLocaleString()} item{visible.length === 1 ? '' : 's'}{cursor ? ' loaded (more available)' : ''}{hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ''}</span>
           {selected.length > 0 && <span>{selected.length.toLocaleString()} selected{selected.some((entry) => entry.kind === 'file') ? ` · ${formatBytes(totalSize(selected).toString())}` : ''}</span>}
+          {selected.length === 1 && selected[0].kind === 'file' && previewKindOf(selected[0].name) !== null && <button type="button" className="ghost" onClick={() => preview(selected[0])}>Preview</button>}
           {selected.length > 0 && <button type="button" className="ghost" onClick={() => setProperties(selected)}>Properties</button>}
         </p>
       )}
 
       {menu && menuEntry && (
         <ContextMenu x={menu.x} y={menu.y} onClose={() => { setMenu(null); focusRow(menu.entryId); }}>
-          {selected.length <= 1 && <button type="button" role="menuitem" onClick={() => { setMenu(null); activate(menuEntry); }}>{menuEntry.kind === 'directory' ? 'Open' : 'Download'}</button>}
+          {selected.length <= 1 && menuEntry.kind === 'file' && previewKindOf(menuEntry.name) !== null && <button type="button" role="menuitem" onClick={() => { setMenu(null); preview(menuEntry); }}>Preview</button>}
+          {selected.length <= 1 && <button type="button" role="menuitem" onClick={() => { setMenu(null); if (menuEntry.kind === 'directory') activate(menuEntry); else void download(menuEntry); }}>{menuEntry.kind === 'directory' ? 'Open' : 'Download'}</button>}
           {selected.length <= 1 && menuEntry.kind === 'file' && transfers.canSaveToFile() && <button type="button" role="menuitem" onClick={() => { setMenu(null); void saveToFile(menuEntry); }}>Save to a file…</button>}
           <button type="button" role="menuitem" onClick={() => { setMenu(null); setProperties(selected.length > 1 ? selected : [menuEntry]); }}>{selected.length > 1 ? `Properties of ${selected.length} items` : 'Properties'}</button>
         </ContextMenu>
@@ -515,7 +535,32 @@ interface RowActions {
   consumeSuppressedClick: () => boolean;
 }
 
-const Row = memo(function Row({ entry, selected, current, checkbox, actions }: { entry: FileEntry; selected: boolean; current: boolean; checkbox: boolean; actions: RowActions }) {
+/** A small picture in the Icons view: requested only when scrolled into view, and an ordinary icon whenever the PC cannot make one. */
+function Thumb({ session, pcId, entryId }: { session: Session; pcId: string; entryId: string }) {
+  const holder = useRef<HTMLSpanElement>(null);
+  const [url, setUrl] = useState<string | null>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const node = holder.current;
+    if (!node || typeof IntersectionObserver === 'undefined') { setVisible(true); return; }
+    const observer = new IntersectionObserver((hits) => { if (hits.some((h) => h.isIntersecting)) { setVisible(true); observer.disconnect(); } }, { rootMargin: '200px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    void thumbnails.url(session, pcId, entryId).then((u) => { if (!cancelled) setUrl(u); });
+    return () => { cancelled = true; };
+  }, [visible, session, pcId, entryId]);
+  return (
+    <span ref={holder} className={`icon file${url ? ' has-thumb' : ''}`} aria-hidden="true">
+      {url && <img src={url} alt="" loading="lazy" referrerPolicy="no-referrer" draggable={false} onError={() => setUrl(null)} />}
+    </span>
+  );
+}
+
+const Row = memo(function Row({ entry, selected, current, checkbox, actions, thumbs }: { entry: FileEntry; selected: boolean; current: boolean; checkbox: boolean; actions: RowActions; thumbs: { session: Session; pcId: string } | null }) {
   return (
     <tr data-entry={entry.entryId} aria-selected={selected} className={`${selected ? 'selected' : ''}${entry.hidden ? ' hidden-item' : ''}` || undefined}
       onClick={(event) => actions.click(event, entry)} onDoubleClick={(event) => { if (!(event.target as HTMLElement).closest('button, input')) actions.activate(entry); }}
@@ -527,8 +572,8 @@ const Row = memo(function Row({ entry, selected, current, checkbox, actions }: {
       <td className="name">
         <button type="button" className="row-button" tabIndex={current ? 0 : -1} onFocus={() => actions.focus(entry.entryId)}
           onClick={() => { if (!actions.consumeSuppressedClick()) actions.activate(entry); }}
-          title={entry.name} aria-label={`${entry.kind === 'directory' ? `Open folder ${entry.name}` : `Download ${entry.name}`}${entry.hidden ? ' (hidden item)' : ''}`}>
-          <span className={`icon ${entry.kind === 'directory' ? 'folder' : 'file'}`} aria-hidden="true" /><bdi>{entry.name}</bdi>
+          title={entry.name} aria-label={`${entry.kind === 'directory' ? `Open folder ${entry.name}` : opensOnActivate(previewKindOf(entry.name)) ? `Preview ${entry.name}` : `Download ${entry.name}`}${entry.hidden ? ' (hidden item)' : ''}`}>
+          {thumbs && entry.kind === 'file' && previewKindOf(entry.name) === 'image' ? <Thumb session={thumbs.session} pcId={thumbs.pcId} entryId={entry.entryId} /> : <span className={`icon ${entry.kind === 'directory' ? 'folder' : 'file'}`} aria-hidden="true" />}<bdi>{entry.name}</bdi>
         </button>
       </td>
       <td className="modified">{formatTime(entry.modifiedUnixMs)}</td>

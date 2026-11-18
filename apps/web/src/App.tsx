@@ -12,6 +12,8 @@ import { DevicesApp } from './features/devices/DevicesApp';
 import { SettingsApp } from './features/settings/SettingsApp';
 import { TransfersApp } from './features/transfers/TransfersApp';
 import { transfers } from './features/transfers/transfers';
+import { PreviewApp } from './features/preview/PreviewApp';
+import { previewStore } from './features/preview/preview';
 import { InboxApp } from './features/inbox/InboxApp';
 import { inbox } from './features/inbox/inbox';
 import { pwa } from './pwa';
@@ -54,6 +56,7 @@ const glyph = (path: string) => <svg viewBox="0 0 24 24" aria-hidden="true"><pat
 const ICONS = {
   explorer: glyph('M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l2 2h8.8A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z'),
   devices: glyph('M4 5h11a1 1 0 0 1 1 1v2h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zm11 5v8h3v-8z'),
+  preview: glyph('M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z'),
   inbox: glyph('M4 13l2.2-6.2A2 2 0 0 1 8.1 5.5h7.8a2 2 0 0 1 1.9 1.3L20 13m-16 0v4.5A1.5 1.5 0 0 0 5.5 19h13a1.5 1.5 0 0 0 1.5-1.5V13m-16 0h4l1 2h6l1-2h4'),
   transfers: glyph('M8 4v12m0 0l-4-4m4 4l4-4M16 20V8m0 0l-4 4m4-4l4 4'),
   settings: glyph('M4 7h9m4 0h3M4 12h3m4 0h9M4 17h11m4 0h1M15 5v4M9 10v4M17 15v4'),
@@ -69,7 +72,7 @@ function Workbench({ session, onAuthLost, onSignOut, onPairAnother }: { session:
   const changed = useCallback(() => setDataVersion((n) => n + 1), []);
   useEffect(() => { inbox.start(session); }, [session]);
   useEffect(() => { pwa.setBusyCheck(() => transfers.list().some((t) => t.state === 'preparing' || t.state === 'saving')); }, []);
-  useEffect(() => () => inbox.reset(), []);
+  useEffect(() => () => { inbox.reset(); previewStore.reset(); }, []);
   const waiting = useSyncExternalStore(inbox.subscribe, inbox.pending);
   const announcements = useSyncExternalStore(inbox.subscribe, inbox.announcements);
   // A system notification opens the Inbox (it never carries a link or a file name).
@@ -80,6 +83,7 @@ function Workbench({ session, onAuthLost, onSignOut, onPairAnother }: { session:
   }, []);
   const apps = useMemo<DesktopApp[]>(() => [
     { id: 'explorer', title: 'File Explorer', icon: ICONS.explorer, render: () => <Explorer session={session} prefs={prefs} onPrefs={updatePrefs} onAuthLost={onAuthLost} dataVersion={dataVersion} onOpenApp={(id) => openApp.current?.(id)} /> },
+    { id: 'preview', title: 'Preview', icon: ICONS.preview, transient: true, render: () => <PreviewApp session={session} onAuthLost={onAuthLost} /> },
     { id: 'inbox', title: 'Inbox', icon: ICONS.inbox, badge: waiting, render: () => <InboxApp session={session} /> },
     { id: 'transfers', title: 'Transfers', icon: ICONS.transfers, render: () => <TransfersApp session={session} /> },
     { id: 'devices', title: 'Devices', icon: ICONS.devices, render: () => <DevicesApp session={session} onAuthLost={onAuthLost} onPairAnother={onPairAnother} onChanged={changed} dataVersion={dataVersion} /> },

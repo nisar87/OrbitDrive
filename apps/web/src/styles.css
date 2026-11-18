@@ -264,3 +264,25 @@ dialog.properties form { display: flex; justify-content: flex-end; margin-top: 1
 .transfer-list progress { width: 100%; height: 6px; accent-color: var(--accent); }
 .transfer-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .transfer-actions button { min-height: 36px; padding: 4px 14px; }
+
+/* D7/W7: previews. Text is shown as characters only; pictures and PDF pages are painted, never embedded as documents. */
+.entries[data-view="icons"] .icon.file.has-thumb { width: 72px; height: 72px; margin: 0 auto 4px; clip-path: none; border-radius: 6px; overflow: hidden; background: color-mix(in srgb, var(--surface, #fff) 90%, #888); box-shadow: inset 0 0 0 1px var(--border, #8fa3bb); display: block; }
+.icon.has-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.preview-app { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.preview-app.empty { align-items: center; justify-content: center; padding: 24px; text-align: center; }
+.preview-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border, #c8d2de); flex-wrap: wrap; }
+.preview-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-body { flex: 1; min-height: 0; display: flex; flex-direction: column; outline: none; }
+.preview-image, .preview-pdf, .preview-text, .preview-media { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.preview-tools { display: flex; align-items: center; gap: 6px; padding: 6px 10px; flex-wrap: wrap; }
+.preview-canvas { flex: 1; min-height: 0; overflow: auto; display: flex; padding: 8px; background: color-mix(in srgb, var(--surface, #fff) 92%, #000); }
+.preview-canvas > * { margin: auto; flex: none; }   /* safe centring: an enlarged picture stays scrollable to its left and top edges */
+.preview-canvas img { display: block; }
+.preview-canvas.pdf > * { margin: 0 auto; }
+.preview-canvas.pdf canvas { background: #fff; box-shadow: 0 1px 6px rgb(0 0 0 / 30%); }
+.preview-text pre { flex: 1; min-height: 0; margin: 0; padding: 12px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 0.85rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.preview-media { align-items: center; justify-content: center; padding: 12px; gap: 8px; }
+.preview-media video { max-width: 100%; max-height: 100%; background: #000; }
+.preview-media audio { width: min(100%, 520px); }
+.preview-failure { margin: auto; padding: 24px; max-width: 460px; text-align: center; display: grid; gap: 12px; }
+@media (prefers-reduced-motion: reduce) { .preview-app * { scroll-behavior: auto; transition: none; animation: none; } }

@@ -285,3 +285,16 @@ export const waitFor = async (check, ms, what) => {
   const start = Date.now();
   for (;;) { const value = await check(); if (value) return value; if (Date.now() - start > ms) assert.fail(`${what} did not happen in ${ms} ms`); await sleep(100); }
 };
+
+/**
+ * Points the agent at the image decoder helper: the real Skia helper when it has been built (always in CI), otherwise the
+ * stand-in script (Linux only, for machines without NuGet access). Returns true when the real decoder is in use.
+ */
+export function useThumbnailHelper() {
+  const config = process.env.ORBIT_CONFIG || 'Release';
+  const real = join(repoRoot, `apps/desktop/OrbitDrive.ThumbnailHelper/bin/${config}/net10.0`, process.platform === 'win32' ? 'OrbitDrive.ThumbnailHelper.exe' : 'OrbitDrive.ThumbnailHelper');
+  const isReal = existsSync(real);
+  if (!isReal && process.env.CI) throw new Error('CI must exercise the real image decoder; the helper was not built');
+  process.env.ORBITDRIVE_THUMBNAIL_HELPER = isReal ? real : join(repoRoot, 'tests/integration/fake-thumbnail-helper.sh');
+  return isReal;
+}

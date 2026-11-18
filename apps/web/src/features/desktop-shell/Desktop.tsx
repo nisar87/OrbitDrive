@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import type { Prefs, WindowLayout } from '../../prefs';
 
-export interface DesktopApp { id: string; title: string; icon: ReactNode; render: () => ReactNode; /** A count shown on the taskbar icon (for example files waiting). */ badge?: number }
+export interface DesktopApp { id: string; title: string; icon: ReactNode; render: () => ReactNode; /** A count shown on the taskbar icon (for example files waiting). */ badge?: number; /** A viewer that is not listed in the launcher and sits on the taskbar only while its window is open. */ transient?: boolean }
 
 interface Props {
   apps: DesktopApp[];
@@ -159,7 +159,7 @@ export function Desktop({ apps, account, prefs, onPrefs, onSignOut, openRef }: P
       <div className="surface">
         {active === null && (
           <div className="desktop-icons" aria-label="Apps">
-            {apps.map((app) => (
+            {apps.filter((app) => !app.transient).map((app) => (
               <button key={app.id} type="button" className="desktop-icon" onClick={() => focusWindow(app.id)}>
                 <span className="glyph" aria-hidden="true">{app.icon}</span>{app.title}
               </button>
@@ -204,7 +204,7 @@ export function Desktop({ apps, account, prefs, onPrefs, onSignOut, openRef }: P
       {menu === 'launcher' && (
         <Flyout label="Apps" className="launcher" onClose={closeMenu}>
           <p className="flyout-title">OrbitDrive</p>
-          {apps.map((app) => (
+          {apps.filter((app) => !app.transient).map((app) => (
             <button key={app.id} type="button" role="menuitem" onClick={() => { setMenu(null); focusWindow(app.id); }}>
               <span className="glyph" aria-hidden="true">{app.icon}</span>{app.title}
             </button>
@@ -225,7 +225,7 @@ export function Desktop({ apps, account, prefs, onPrefs, onSignOut, openRef }: P
           <button type="button" className="task start" aria-label="Apps" aria-haspopup="menu" aria-expanded={menu === 'launcher'} onClick={() => setMenu(menu === 'launcher' ? null : 'launcher')}>
             <span className="app-icon" aria-hidden="true" />
           </button>
-          {apps.map((app) => {
+          {apps.filter((app) => !app.transient || windows[app.id]?.open).map((app) => {
             const state = windows[app.id];
             const running = !!state?.open;
             return (

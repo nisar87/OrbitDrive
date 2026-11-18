@@ -133,7 +133,8 @@ public sealed class PreviewTests : IDisposable
         var (service, cache, runner) = Make();
         var path = Write("photo.png", Png(400, 300));
         var first = await Prepare(service, path, "thumb:256");
-        Assert.Equal(["image/webp", "photo.thumb.webp"], [first.ContentType, first.Name]);
+        Assert.Equal("image/webp", first.ContentType);
+        Assert.Equal("photo.thumb.webp", first.Name);
         var second = await Prepare(service, path, "thumb:256");
         Assert.Equal(1, runner.Runs);                                                   // second request came from the cache
         using (var read = service.OpenRead(second.ReadToken, 0, second.Size)) Assert.Equal(first.Size, RandomAccess.GetLength(read.Handle));
