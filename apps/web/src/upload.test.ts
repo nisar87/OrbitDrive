@@ -63,6 +63,38 @@ describe('upload sender', () => {
     expect(offsets).toEqual([0, 1000, 1000, 2000]);
   });
 
+  it('waits and asks again when the PC is still holding the piece that was cut off, instead of failing', async () => {
+    let calls = 0; const offsets: number[] = [];
+    vi.spyOn(api, 'uploadChunk').mockImplementation(async (_s, _p, _u, offset, data) => {
+      offsets.push(offset);
+      if (++calls <= 2) throw new ApiError('conflict', 'Another piece of this upload is still being received.', 409);
+      return { accepted: true, status: status(offset + data.byteLength) } as never;
+    });
+    vi.spyOn(api, 'uploadStatus').mockResolvedValue(status(0) as never);
+    vi.spyOn(api, 'finishUpload').mockResolvedValue(status(1000, { state: 'committed', finalName: 'a.bin' }) as never);
+    uploads.enqueue(session, target, [file('a.bin', 1000)], 'reject');
+    await wait(() => last()?.phase === 'done');
+    expect(last().phase).toBe('done');
+    expect(offsets).toEqual([0, 0, 0]);
+  });
+
+  it('does not wait on a conflict when the upload is really over', async () => {
+    vi.spyOn(api, 'uploadChunk').mockRejectedValue(new ApiError('conflict', 'This upload is no longer receiving data.', 409));
+    vi.spyOn(api, 'uploadStatus').mockResolvedValue(status(0, { state: 'failed' }) as never);
+    vi.spyOn(api, 'cancelUpload').mockResolvedValue(undefined as never);
+    uploads.enqueue(session, target, [file('a.bin', 1000)], 'reject');
+    await wait(() => last()?.phase === 'failed');
+    expect(last().phase).toBe('failed');
+  });
+
+  it('stops waiting on a conflict that never clears and pauses for the person to resume', async () => {
+    vi.spyOn(api, 'uploadChunk').mockRejectedValue(new ApiError('conflict', 'Another piece of this upload is still being received.', 409));
+    vi.spyOn(api, 'uploadStatus').mockResolvedValue(status(0) as never);
+    uploads.enqueue(session, target, [file('a.bin', 1000)], 'reject');
+    await wait(() => last()?.phase === 'paused');
+    expect(last().phase).toBe('paused');
+  });
+
   it('pauses after repeated failures and resumes from the stored offset', async () => {
     let online = false;
     vi.spyOn(api, 'uploadChunk').mockImplementation(async (_s, _p, _u, offset, data) => {

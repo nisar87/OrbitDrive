@@ -129,12 +129,19 @@ async function send(job: Internal): Promise<void> {
       if (e instanceof DOMException && e.name === 'AbortError') return;
       if (e instanceof ApiError && e.code === 'checksum_mismatch' && ++damaged <= 3) continue;                  // damaged in transit: send the same piece again
       if (e instanceof ApiError && e.code === 'limit_exceeded') { await sleep(2000); continue; }
-      if (transient(e) || (e instanceof ApiError && e.code === 'checksum_mismatch')) {
+      // 'conflict' on a piece means the PC is still holding the piece that was cut off a moment ago; it lets go when it notices the
+      // connection ended. That is a wait-and-ask-again situation, not a failure (a conflict that is really "no longer receiving" is caught below).
+      const stillHoldingOldPiece = e instanceof ApiError && e.code === 'conflict';
+      if (transient(e) || stillHoldingOldPiece || (e instanceof ApiError && e.code === 'checksum_mismatch')) {
         failures++;
         if (failures > MAX_QUICK_RETRIES) { await waitForResume(job, 'The connection was interrupted. Tap Resume when you are back online; the PC keeps what it already stored.'); if (job.stop) return; failures = 0; update(job, { phase: 'sending', message: null }); }
         else await sleep(Math.min(8000, 700 * 2 ** failures));
         // Whatever happened to the piece in flight, ask the PC where it really is.
-        try { stored = Number((await api.uploadStatus(session, target.pcId, started.uploadId)).committedBytes); update(job, { storedBytes: stored }); } catch (inner) { if (!transient(inner)) throw inner; }
+        try {
+          const where = await api.uploadStatus(session, target.pcId, started.uploadId);
+          if (stillHoldingOldPiece && where.state !== 'receiving') throw e;                     // really over (cancelled, failed, expired): do not wait for it
+          stored = Number(where.committedBytes); update(job, { storedBytes: stored });
+        } catch (inner) { if (!transient(inner)) throw inner; }
         continue;
       }
       throw e;
