@@ -27,7 +27,8 @@ publish('OrbitDrive.ThumbnailHelper');
 if (!skipDesktop) publish('OrbitDrive.Desktop');
 
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]));
-const entries = walk(staging).map((f) => ({ name: `OrbitDrive/${relative(staging, f).split(sep).join('/')}`, data: readFileSync(f) }));
+// Debug symbols (.pdb) are not part of the artifact: they are large, tell an attacker nothing useful the binaries do not, and the support bundle does not need them.
+const entries = walk(staging).filter((f) => !/\.pdb$/i.test(f)).map((f) => ({ name: `OrbitDrive/${relative(staging, f).split(sep).join('/')}`, data: readFileSync(f) }));
 for (const required of ['OrbitDrive/orbitdrive-agent.exe', 'OrbitDrive/OrbitDrive.ThumbnailHelper.exe', ...(skipDesktop ? [] : ['OrbitDrive/OrbitDrive.exe'])])
   if (!entries.some((e) => e.name === required)) throw new Error(`The build is missing ${required}`);
 

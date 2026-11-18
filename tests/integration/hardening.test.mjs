@@ -31,6 +31,7 @@ const routes = [
 /** Endpoints that are reachable without a user sign-in on purpose, and what protects each instead. */
 const ANONYMOUS = new Map([
   ['/healthz', 'liveness probe, reveals nothing'],
+  ['/readyz', 'readiness probe: "ready" or "maintenance", nothing else'],
   ['/v1/meta', 'public service facts (version, limits)'],
   ['/v1/dev/sign-in', 'development sign-in; absent in production (checked below)'],
   ['/v1/downloads/{capability}', 'unguessable short-lived capability link'],

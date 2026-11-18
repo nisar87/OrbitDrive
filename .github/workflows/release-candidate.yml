@@ -53,7 +53,8 @@ jobs:
           Expand-Archive $zip.FullName -DestinationPath $out
           $app = Join-Path $out 'OrbitDrive'
           foreach ($f in 'orbitdrive-agent.exe','OrbitDrive.exe','OrbitDrive.ThumbnailHelper.exe','THIRD_PARTY_NOTICES.md','docs/INSTALL.md','docs/SUPPORT_MATRIX.md','docs/TROUBLESHOOTING.md') { if (-not (Test-Path (Join-Path $app $f))) { throw "missing in archive: $f" } }
-          if (Get-ChildItem $app -Recurse -Filter *.pdb) { throw 'debug symbols must not ship' }
+          $symbols = Get-ChildItem $app -Recurse -Filter *.pdb
+          if ($symbols) { $symbols | ForEach-Object { $_.FullName }; throw 'debug symbols must not ship' }
           $version = & "$app\orbitdrive-agent.exe" version
           "agent says: $version"
           if ($version -notmatch [regex]::Escape($env:GITHUB_SHA.Substring(0,12))) { throw 'the published agent does not report this commit' }

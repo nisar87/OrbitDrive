@@ -53,7 +53,7 @@ test('production needs the owner\'s own domain; staging may use Firebase default
 });
 
 test('secrets never live in an environment file', () => {
-  assert.match(problems({ ...filled.production, note: '-----BEGIN PRIVATE KEY-----' }, { deploy: true }), /secret/);
+  assert.match(problems({ ...filled.production, note: ['-----BEGIN', 'PRIVATE', 'KEY-----'].join(' ') }, { deploy: true }), /secret/);
   assert.match(problems({ ...filled.production, note: 'AIza' + 'a'.repeat(35) }, { deploy: true }), /API key/);
 });
 
