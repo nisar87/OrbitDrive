@@ -123,6 +123,27 @@ test('history: back, forward, up, breadcrumbs, the browser Back button and the f
   if (isPhone(info)) await expect(tree).toBeHidden();            // the drawer closes after choosing
 });
 
+// Regression for a CI failure on Firefox: opening a folder with Enter must leave keyboard focus in the list however long the browser takes to
+// draw the new rows. Focus used to be restored one animation frame after the click, which can come before React has drawn the new place.
+// Chromium lets the test make the machine slow on purpose (CDP CPU throttling), so the gap is wide instead of a matter of luck.
+test('keyboard focus stays in the list after opening and leaving a folder, even on a very slow machine', async ({ page, browserName }, info) => {
+  test.skip(isPhone(info) || browserName !== 'chromium', 'keyboard test; CPU throttling is a Chromium feature');
+  await pairAndOpen(page, info);
+  const win = explorer(page);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 20 });
+  try {
+    for (let round = 0; round < 4; round++) {
+      await win.getByRole('button', { name: 'Open folder Documents' }).focus();
+      await page.keyboard.press('Enter');
+      await expect(win.getByRole('button', { name: 'Download report.txt' })).toBeVisible({ timeout: 30_000 });
+      await expect(win.getByRole('button', { name: 'Open folder Nested' }), `round ${round + 1}: focus was lost after opening a folder`).toBeFocused({ timeout: 15_000 });
+      await page.keyboard.press('Backspace');
+      await expect(win.getByRole('button', { name: 'Open folder Documents' }), `round ${round + 1}: focus was lost after going up`).toBeVisible({ timeout: 30_000 });
+    }
+  } finally { await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 }); }
+});
+
 test('selection, keyboard, context menu and properties', async ({ page }, info) => {
   await pairAndOpen(page, info);
   const win = explorer(page);

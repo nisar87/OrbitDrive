@@ -76,6 +76,7 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
   // Visit history for Back/Forward. Browser Back is wired to the same list through history.state.
   const history = useRef<{ list: (Location | null)[]; index: number }>({ list: [null], index: 0 });
   const [, bump] = useState(0);
+  const pendingFocus = useRef<{ target: Location | null } | null>(null);
   const body = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const requestId = useRef(0);
@@ -132,13 +133,23 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
     bump((n) => n + 1);
     body.current?.scrollTo({ top: 0 });
     // Opening a folder removes the item that had focus. Keep keyboard users inside the list instead of dropping
-    // focus to the page (where Backspace, arrows and Enter would do nothing).
-    requestAnimationFrame(() => {
-      const content = body.current;
-      if (!content || (document.activeElement !== document.body && !content.contains(document.activeElement))) return;
-      (content.querySelector<HTMLElement>('.row-button[tabindex="0"], .tile:not(:disabled)') ?? content).focus({ preventScroll: true });
-    });
+    // focus to the page (where Backspace, arrows and Enter would do nothing). The new rows are not on screen yet (React commits
+    // them later, in more than one step), so this is done by the effect below once the new place is actually drawn.
+    pendingFocus.current = { target };
   }, [show]);
+
+  // Runs after every render until the place that was just opened is drawn with its rows, then puts keyboard focus on the first one - but only if
+  // focus was lost to the page or is already in the list (not when the person is working in the toolbar or the address bar).
+  useEffect(() => {
+    const pending = pendingFocus.current;
+    const content = body.current;
+    if (!pending || !content || loading || location !== pending.target) return;
+    const first = content.querySelector<HTMLElement>('.row-button[tabindex="0"], .tile:not(:disabled)');
+    if (!first && entries.length > 0) return;                      // the rows are still being drawn: wait for the next render
+    pendingFocus.current = null;
+    if (document.activeElement !== document.body && !content.contains(document.activeElement)) return;
+    (first ?? content).focus({ preventScroll: true });
+  });
 
   const go = useCallback(async (index: number) => {
     const h = history.current;
