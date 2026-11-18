@@ -1,4 +1,4 @@
-# Firebase (development project `orbitdrive-dev`; Hosting not deployed yet)
+# Firebase (development project `orbitdrive-dev`; Hosting deployed 2026-11-18)
 
 `firebase.json` serves the static web build with an SPA fallback only. It deliberately contains **no rewrite to a
 backend**: Hosting rewrites time out after 60 seconds, so the web app calls the relay origin (`VITE_GATEWAY_URL`) directly.

@@ -12,3 +12,5 @@ design but are **not committed**: copy them from Project settings → General �
 
 No service-account key has been created. One will be needed for Firestore and token-revocation checks; the owner should
 create it and store it as a GitHub Actions secret / relay host secret — never in the repository.
+
+**Hosting:** first deployed 2026-11-18 by the owner (`scripts/deploy-web.mjs`) to https://orbitdrive-dev.web.app, with the CSP pointing at the development relay. Firestore not created; no service-account key exists.
