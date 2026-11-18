@@ -72,12 +72,14 @@ check('small download p95', report.results.smallDownload.p95Ms, BUDGET.firstByte
 
 // throughput, and memory while moving it
 const peak = { relay: 0, agent: 0 };
-const watch = setInterval(() => { peak.relay = Math.max(peak.relay, rssBytes(gateway.pid)); peak.agent = Math.max(peak.agent, rssBytes(agent.pid)); }, 250);
+const sampleMemory = () => { peak.relay = Math.max(peak.relay, rssBytes(gateway.pid)); peak.agent = Math.max(peak.agent, rssBytes(agent.pid)); };
+sampleMemory();
+const watch = setInterval(sampleMemory, 50);            // a 64 MiB file can move in 0.1 s on a fast machine, so sample often and once more at the end
 const session = await owner.post('/v1/download-sessions', { pcId, entryId: big.entryId });
 const [downMs] = await time(async () => { let n = 0; for await (const chunk of (await fetch(gateway.url + session.body.urlPath)).body) n += chunk.length; if (n !== sizeMiB * 1048576) throw new Error('short download'); });
 report.results.download = { MiB: sizeMiB, seconds: +(downMs / 1000).toFixed(2), MiBps: +(sizeMiB / (downMs / 1000)).toFixed(1) };
 if (report.results.download.MiBps < BUDGET.minThroughputMiBps) report.violations.push(`download throughput ${report.results.download.MiBps} MiB/s is under the floor of ${BUDGET.minThroughputMiBps}`);
-clearInterval(watch);
+sampleMemory(); clearInterval(watch);
 report.results.memoryWhileTransferringMiB = { relayPeak: +(peak.relay / 1048576).toFixed(1), agentPeak: +(peak.agent / 1048576).toFixed(1), note: 'peak resident memory while one file of sizeMiB moved; read it against the file size and the idle figures' };
 
 // cancel latency: start a big download, read a little, cancel it, and time until the client's stream ends
