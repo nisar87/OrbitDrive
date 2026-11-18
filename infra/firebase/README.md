@@ -21,7 +21,7 @@ first deploy. Deploying needs the owner's Firebase login, so it is run by the ow
 
 On every push to `main` that touches the web app or hosting config, the workflow checks that **all seven verification workflows are green for that exact
 commit**, then runs `scripts/deploy-web.mjs` (hosting only). The public web configuration comes from `web-dev.env` (public identifiers, committed);
-`apps/web/.env.local` overrides it on the owner's PC. The only secret is the deploy credential: There is **no stored secret**: authentication is keyless.
+`apps/web/.env.local` overrides it on the owner's PC. There is **no stored secret**: authentication is keyless.
 
 - GitHub's OIDC token is exchanged through Google Workload Identity Federation (pool `github-actions`, provider `github` in `orbitdrive-dev`) for
   short-lived credentials of `github-deploy-hosting@orbitdrive-dev.iam.gserviceaccount.com`, which has only the Firebase Hosting Admin role.
