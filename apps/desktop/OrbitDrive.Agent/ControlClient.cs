@@ -279,8 +279,10 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
             case Actions.CheckEntries: return _files.CheckEntries(ProtocolJson.FromElement<CheckEntriesRequest>(payload));
             case Actions.StartUpload: return state.Uploads.Start(ProtocolJson.FromElement<StartUploadRequest>(payload));
             case Actions.UploadStatus: return state.Uploads.Status(ProtocolJson.FromElement<UploadRef>(payload));
-            case Actions.FinishUpload: return state.Uploads.Finish(ProtocolJson.FromElement<UploadRef>(payload));
-            case Actions.CancelUpload: return state.Uploads.Cancel(ProtocolJson.FromElement<UploadRef>(payload));
+            case Actions.FinishUpload:
+                try { var finished = state.Uploads.Finish(ProtocolJson.FromElement<UploadRef>(payload)); emit("upload_finished", new { state = finished.State, bytes = finished.CommittedBytes.ToString(System.Globalization.CultureInfo.InvariantCulture) }); return finished; }
+                catch (ProtocolException e) { emit("upload_failed", new { code = e.Code.ToString() }); throw; }
+            case Actions.CancelUpload: { var cancelled = state.Uploads.Cancel(ProtocolJson.FromElement<UploadRef>(payload)); emit("upload_cancelled", null); return cancelled; }
             case Actions.CancelDeviceUploads: return state.Uploads.CancelForDevice(ProtocolJson.FromElement<CancelDeviceUploadsRequest>(payload).DeviceId);
             case Actions.WriteChunk: return await ReceiveChunkAsync(ProtocolJson.FromElement<WriteChunkRequest>(payload), cancellation);
             case Actions.OpenRead:

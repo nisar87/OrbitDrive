@@ -70,6 +70,10 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
 {
     private readonly ConcurrentDictionary<string, AgentConnection> _connections = new();
     private long _generation;
+    private int _pendingHandshakes;
+
+    /// <summary>Control connections that have not yet proven who they are.</summary>
+    public int PendingHandshakes => Volatile.Read(ref _pendingHandshakes);
 
     public bool IsOnline(string pcId) => _connections.ContainsKey(pcId);
 
@@ -119,14 +123,20 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
         // 1. Challenge -> signed hello. The PC id is the hash of its public key, so it cannot be claimed by another key.
         var nonce = Secrets.Token();
         var hello = new AgentConnection(socket, "", 0);
-        await hello.SendAsync(new Envelope
+        Envelope? first;
+        Interlocked.Increment(ref _pendingHandshakes);                       // counted until it has said who it is (or been dropped)
+        try
         {
-            V = ProtocolInfo.Version, Id = "challenge", Kind = EnvelopeKind.Evt, Action = Actions.Challenge,
-            Payload = ProtocolJson.ToElement(new AgentChallenge { Nonce = nonce, MinProtocolVersion = ProtocolInfo.MinVersion, MaxProtocolVersion = ProtocolInfo.Version }),
-        }, cancellation);
-        using var helloTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-        helloTimeout.CancelAfter(TimeSpan.FromSeconds(10));
-        var first = await ReceiveAsync(socket, helloTimeout.Token);
+            await hello.SendAsync(new Envelope
+            {
+                V = ProtocolInfo.Version, Id = "challenge", Kind = EnvelopeKind.Evt, Action = Actions.Challenge,
+                Payload = ProtocolJson.ToElement(new AgentChallenge { Nonce = nonce, MinProtocolVersion = ProtocolInfo.MinVersion, MaxProtocolVersion = ProtocolInfo.Version }),
+            }, cancellation);
+            using var helloTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            helloTimeout.CancelAfter(TimeSpan.FromSeconds(10));
+            first = await ReceiveAsync(socket, helloTimeout.Token);
+        }
+        finally { Interlocked.Decrement(ref _pendingHandshakes); }
         if (first is not { Kind: EnvelopeKind.Req, Action: Actions.Hello, Payload: not null }) { socket.Abort(); return; }
         AgentHello agent;
         try { agent = ProtocolJson.FromElement<AgentHello>(first.Payload.Value); }

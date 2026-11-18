@@ -95,10 +95,14 @@ internal sealed class AgentState
     private readonly object _mutate = new();
     public string Directory_ { get; }
 
+    /// <summary>The owner-visible history of what the app did (no file names, paths or contents).</summary>
+    public ActivityLog Activity { get; }
+
     public AgentState(string directory)
     {
         Directory.CreateDirectory(directory);
         Directory_ = Path.GetFullPath(directory);
+        Activity = new ActivityLog(Path.Join(Directory_, "activity"), new ActivityLogOptions { MaxFileBytes = long.TryParse(Environment.GetEnvironmentVariable("ORBIT_ACTIVITY_MAX_BYTES"), out var limit) && limit >= 512 ? limit : 256 * 1024 });   // the override exists so rotation can be tested quickly
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         _configPath = Path.Join(directory, "config.json");
         var identityPath = Path.Join(directory, "identity.bin");

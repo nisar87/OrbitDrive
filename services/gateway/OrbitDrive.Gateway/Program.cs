@@ -115,6 +115,13 @@ app.Use(async (context, next) =>
     context.Response.Headers.CacheControl = "no-store";
     context.Response.Headers.XContentTypeOptions = "nosniff";
     context.Response.Headers["Referrer-Policy"] = "no-referrer";
+    // The API serves data, never pages: if a browser is ever pointed at a response directly, it may not run, frame or embed anything.
+    // (Inline previews tighten this further and, being shown by the app's own origin, relax only Cross-Origin-Resource-Policy.)
+    context.Response.Headers.ContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'; sandbox";
+    context.Response.Headers.XFrameOptions = "DENY";
+    context.Response.Headers["Cross-Origin-Resource-Policy"] = "same-origin";
+    context.Response.Headers.Append("Vary", "Origin");               // the cross-origin answer depends on who asks
+    context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
     try { await next(context); }
     catch (ProtocolException e) when (!context.Response.HasStarted)
     {
@@ -156,6 +163,11 @@ app.Map("/v1/agent-control", async (HttpContext context) =>
 {
     if (!context.WebSockets.IsWebSocketRequest || context.Request.Headers.ContainsKey("Origin"))
         throw new ProtocolException(ErrorCode.InvalidRequest, "Agent WebSocket connections only.");
+    if (hub.PendingHandshakes >= options.MaxPendingHandshakes)
+    {
+        context.Response.Headers.RetryAfter = "10";
+        throw new ProtocolException(ErrorCode.LimitExceeded, "Too many connections are waiting to identify themselves. Try again shortly.");
+    }
     using var socket = await context.WebSockets.AcceptWebSocketAsync();
     await hub.RunAsync(socket, context.RequestAborted);
 });
@@ -419,6 +431,7 @@ async Task<DownloadSession> StartDownload(BrowserDeviceRecord device, string pcI
 
 app.MapPost("/v1/download-sessions", async (HttpContext context) =>
 {
+    Authenticate(context);                                        // who is asking comes before anything about what they sent
     var request = await ReadJson<CreateDownloadSessionRequest>(context);
     var device = AuthorizeBrowser(context, request.PcId);
     await WriteJson(context, await StartDownload(device, request.PcId, request.EntryId, request.Variant, context.RequestAborted), 201);

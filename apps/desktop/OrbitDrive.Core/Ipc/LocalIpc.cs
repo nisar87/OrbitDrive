@@ -17,7 +17,7 @@ public static class LocalIpc
     public const int MaxClients = 4;
     public static readonly IReadOnlySet<string> Commands = new HashSet<string>
     {
-        "status", "add_root", "remove_root", "set_root_hidden", "set_root_uploads", "set_limits", "pair", "approve", "deny", "pause", "resume", "set_gateway", "devices", "revoke_device", "send_files", "set_sendto", "thumbnails", "set_thumbnails", "clear_thumbnails", "invitations", "cancel_invitation", "quit",
+        "status", "activity", "clear_activity", "support_bundle_preview", "support_bundle_create", "add_root", "remove_root", "set_root_hidden", "set_root_uploads", "set_limits", "pair", "approve", "deny", "pause", "resume", "set_gateway", "devices", "revoke_device", "send_files", "set_sendto", "thumbnails", "set_thumbnails", "clear_thumbnails", "invitations", "cancel_invitation", "quit",
     };
 
     /// <summary>One pipe per user state directory, so two Windows users never share an endpoint name.</summary>

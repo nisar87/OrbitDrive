@@ -46,6 +46,9 @@ jobs:
       - name: Assumptions behind accepted advisories still hold
         if: ${{ !cancelled() }}
         run: node --test tests/relay/picomatch-exposure.test.mjs
+      - name: Web security headers (strict CSP builder, fail-closed placeholder in firebase.json)
+        if: ${{ !cancelled() }}
+        run: node --test tests/web/security-headers.test.mjs && node scripts/web-security-headers.mjs --check
       - name: Audit gate self-test
         if: ${{ !cancelled() }}
         run: node --test tests/relay/audit-check.test.mjs

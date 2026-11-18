@@ -31,6 +31,7 @@ internal sealed class AgentHost : IDisposable
     private readonly FileAccessService _files;
     private readonly string _receiverCache;
     private readonly List<JsonObject> _offers = [];                   // newest last, bounded; what "Send to my phone" did, success or not
+    private readonly SupportBundle _bundle;
     private readonly SemaphoreSlim _outboxGate = new(1, 1);
     private FileSystemWatcher? _outboxWatcher;
     private Timer? _outboxTimer;
@@ -44,6 +45,7 @@ internal sealed class AgentHost : IDisposable
         _state = state; _pcName = pcName; _log = log;
         _files = state.Files;
         _receiverCache = Path.Join(state.Directory_, "receivers.json");
+        _bundle = new SupportBundle(state.Activity, SupportFacts, Path.Join(state.Directory_, "support"));
         _ipc = new LocalIpcServer(LocalIpc.PipeName(state.Directory_), HandleAsync);
     }
 
@@ -51,6 +53,29 @@ internal sealed class AgentHost : IDisposable
     {
         var (files, bytes) = _state.Thumbnails.Cache.Stats();
         return new JsonObject { ["enabled"] = _state.ThumbnailsEnabled, ["available"] = _state.Thumbnails.Available, ["files"] = files, ["bytes"] = bytes };
+    }
+
+    /// <summary>Non-identifying facts for a support bundle: versions, system type, state and counts. No names, paths or accounts.</summary>
+    private IReadOnlyDictionary<string, string> SupportFacts()
+    {
+        var (files, bytes) = _state.Activity.Footprint();
+        string connection; bool paused;
+        lock (_gate) { connection = _paused && _connection == "online" ? "paused" : _connection; paused = _paused; }
+        return new Dictionary<string, string>
+        {
+            ["app_version"] = ControlClient.AgentVersion,
+            ["protocol_version"] = ProtocolInfo.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["system"] = $"{Environment.OSVersion.Platform} {Environment.OSVersion.Version}",
+            ["architecture"] = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString(),
+            ["runtime"] = Environment.Version.ToString(),
+            ["connection"] = connection,
+            ["paused"] = paused ? "yes" : "no",
+            ["shared_folders"] = _state.Roots.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["folders_with_uploads_on"] = _state.Roots.Count((r) => r.UploadsEnabled).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["thumbnails_enabled"] = _state.ThumbnailsEnabled ? "yes" : "no",
+            ["activity_files"] = files.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["activity_bytes"] = bytes.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        };
     }
 
     private void Emit(string name, object? data)
@@ -164,6 +189,15 @@ internal sealed class AgentHost : IDisposable
             switch (command)
             {
                 case "status": return Status();
+                case "activity":
+                    return new JsonObject { ["entries"] = new JsonArray([.. _state.Activity.Recent(args["count"]?.GetValue<int>() ?? 100).Select((e) => (JsonNode)new JsonObject
+                        { ["time"] = e.Time.ToString("O"), ["kind"] = e.Kind, ["detail"] = e.Detail, ["bytes"] = e.Bytes?.ToString(System.Globalization.CultureInfo.InvariantCulture) })]) };
+                case "clear_activity": _state.Activity.Clear(); return null;
+                case "support_bundle_preview":
+                    return new JsonObject { ["items"] = new JsonArray([.. _bundle.Preview().Select((i) => (JsonNode)new JsonObject
+                        { ["name"] = i.Name, ["description"] = i.Description, ["bytes"] = i.Bytes.ToString(System.Globalization.CultureInfo.InvariantCulture), ["preview"] = i.Preview })]) };
+                case "support_bundle_create":
+                    return new JsonObject { ["path"] = _bundle.Create(args["consent"]?.GetValue<bool>() ?? false) };
                 case "add_root":
                     var root = _state.AddRoot(Arg(args, "name", 64), Arg(args, "path", 4096), args["showHidden"]?.GetValue<bool>() ?? false);
                     Emit("roots_changed", new { count = _state.Roots.Count });

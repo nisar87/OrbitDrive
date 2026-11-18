@@ -410,8 +410,9 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
     const note = state.state === 'offline' ? 'PC offline' : state.state === 'gone' ? 'Unavailable' : null;
     return (
       <li key={place.pcId + place.entryId} className="place" data-state={state.state}>
-        <button type="button" className="tree-item place-open" disabled={!usable} onClick={() => openPlace(place)} aria-label={`${place.name} on ${pcName}${note ? ` (${note})` : ''}`}>
-          <span className={`icon ${place.kind === 'directory' ? 'folder' : 'file'}`} aria-hidden="true" /><span className="place-text"><bdi>{place.name}</bdi><small><bdi>{pcName}</bdi>{note ? ` · ${note}` : ''}</small></span>
+        <button type="button" className="tree-item place-open" disabled={!usable} onClick={() => openPlace(place)}>
+          {/* No separate aria-label: the accessible name is exactly the visible text (name, PC, state), so speech control by what is shown works. */}
+          <span className={`icon ${place.kind === 'directory' ? 'folder' : 'file'}`} aria-hidden="true" /><span className="place-text"><bdi>{place.name}</bdi>{' '}<small><bdi>{pcName}</bdi>{note ? ` · ${note}` : ''}</small></span>
         </button>
         <button type="button" className="ghost icon-button place-remove" aria-label={`Remove ${place.name} from ${list === 'favorite' ? 'favorites' : 'recent items'}`} onClick={() => setPlaces((p) => (list === 'favorite' ? removeFavorite(p, place) : removeRecent(p, place)))}>×</button>
       </li>
@@ -572,7 +573,7 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
           ) : (
             <>
               {range.start > 0 && <div ref={topSentinel} className="more-rows" aria-hidden="true" />}
-              <table className="entries" data-view={prefs.view} aria-label="Files and folders" aria-multiselectable="true">
+              <table className="entries" role="grid" data-view={prefs.view} aria-label="Files and folders" aria-multiselectable="true">
                 <thead>
                   <tr>
                     {showCheckboxes && <th scope="col" className="check"><span className="sr-only">Selected</span></th>}

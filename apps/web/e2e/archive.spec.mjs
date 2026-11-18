@@ -147,14 +147,14 @@ test('the same browser pairs a second PC; search covers both, shows an offline P
   await page.getByRole('menuitem', { name: 'Add to favorites' }).click();
   await showTree(page);
   const favorites = explorer(page).getByRole('group', { name: 'Favorites' });
-  await expect(favorites.getByRole('button', { name: /^hello\.txt on Tower PC/ })).toBeEnabled();
+  await expect(favorites.getByRole('button', { name: /^hello\.txt Tower PC/ })).toBeEnabled();
   renameSync(join(rootA, 'hello.txt'), join(rootA, 'hello-renamed.txt'));
   await page.reload();
   await page.getByRole('region', { name: "This account's PCs" }).getByRole('button', { name: /Share/ }).click();
   await showTree(page);
   const after = explorer(page).getByRole('group', { name: 'Favorites' });
   await expect(after.getByText('Unavailable')).toBeVisible({ timeout: 30_000 });
-  await expect(after.getByRole('button', { name: /^hello\.txt on Tower PC/ })).toBeDisabled();
+  await expect(after.getByRole('button', { name: /^hello\.txt Tower PC/ })).toBeDisabled();
   await after.getByRole('button', { name: /Remove hello\.txt from favorites/ }).click();
   await expect(explorer(page).getByRole('group', { name: 'Favorites' })).toHaveCount(0);
 });

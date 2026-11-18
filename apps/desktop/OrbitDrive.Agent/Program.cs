@@ -7,8 +7,10 @@ using OrbitDrive.Protocol;
 // OrbitDrive agent: per-user, never elevated. The WPF owner console drives it over a same-user local pipe;
 // "ctl" and the interactive console commands are the headless equivalents.
 // Machine-readable events are written to stdout as lines starting with "@@ ".
-static void Emit(string name, object? data)
+AgentState? activityState = null;                       // set once the state folder is open; events before that are not recorded
+void Emit(string name, object? data)
 {
+    ActivityEvents.Record(activityState?.Activity, activityState?.Roots.Count ?? 0, name, data);   // the one place every event passes through
     var line = JsonSerializer.Serialize(new { @event = name, data });
     lock (Console.Out) { Console.Out.WriteLine("@@ " + line); Console.Out.Flush(); }
 }
@@ -94,6 +96,7 @@ if (args[0] == "ctl" && args.Length >= 2)
 }
 
 var state = new AgentState(stateDirectory);
+activityState = state;
 if (args[0] == "roots" && args.Length >= 2)
 {
     switch (args[1])

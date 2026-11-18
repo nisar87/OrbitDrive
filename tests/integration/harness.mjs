@@ -312,7 +312,7 @@ const crcTable = (() => { const t = new Uint32Array(256); for (let n = 0; n < 25
 export function crc32(buffer) { let c = 0xffffffff; for (const byte of buffer) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
 
 /** Reads a whole ZIP held in memory. Returns entries { name, directory, size, data() } and throws on any inconsistency. */
-export function readZip(buffer) {
+export function readZip(buffer, { requireUtf8Flag = true } = {}) {
   let eocd = -1;
   for (let i = buffer.length - 22; i >= Math.max(0, buffer.length - 22 - 65535); i--) if (buffer.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
   if (eocd < 0) throw new Error('no end-of-central-directory record');
@@ -332,7 +332,7 @@ export function readZip(buffer) {
     let compressed = buffer.readUInt32LE(p + 20), size = buffer.readUInt32LE(p + 24), offset = buffer.readUInt32LE(p + 42);
     const nameLength = buffer.readUInt16LE(p + 28), extraLength = buffer.readUInt16LE(p + 30), commentLength = buffer.readUInt16LE(p + 32);
     const name = buffer.subarray(p + 46, p + 46 + nameLength).toString('utf8');
-    if (!(flags & 0x0800)) throw new Error('names are not flagged UTF-8');
+    if (requireUtf8Flag && !(flags & 0x0800)) throw new Error('names are not flagged UTF-8');
     for (let e = p + 46 + nameLength, end = e + extraLength; e < end;) {
       const id = buffer.readUInt16LE(e), length = buffer.readUInt16LE(e + 2);
       if (id === 1) { let q = e + 4; if (size === 0xffffffff) { size = Number(buffer.readBigUInt64LE(q)); q += 8; } if (compressed === 0xffffffff) { compressed = Number(buffer.readBigUInt64LE(q)); q += 8; } if (offset === 0xffffffff) offset = Number(buffer.readBigUInt64LE(q)); }
