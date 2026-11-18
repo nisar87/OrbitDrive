@@ -45,8 +45,8 @@ async function sendAll(browser, uploadId, data, chunk) {
   }
 }
 const randomData = (n, seed = 1) => { const b = Buffer.alloc(n); let h = createHash('sha256').update('seed' + seed).digest(); for (let o = 0; o < n; o += 32) { h = createHash('sha256').update(h).digest(); h.copy(b, o, 0, Math.min(32, n - o)); } return b; };
-const setUploads = async (rootId, enabled, quotaMiB = 200, maxFileMiB = 100) => {
-  const reply = await ipc.send('set_root_uploads', { rootId, enabled, quotaMiB, maxFileMiB });
+const setUploads = async (rootId, enabled, quotaMiB = 200, maxFileMiB = 100, resetUsed = false) => {
+  const reply = await ipc.send('set_root_uploads', { rootId, enabled, quotaMiB, maxFileMiB, resetUsed });
   assert.equal(reply.ok, true, JSON.stringify(reply));
 };
 const names = (dir) => readdirSync(dir).sort();
@@ -412,7 +412,7 @@ describe('large files and crashes', () => {
     writeFileSync(join(repoRoot, 'artifacts', `upload-metrics-${process.platform}.json`), JSON.stringify(metrics, null, 2));
     assert.ok(metrics.gatewayRssGrowthMiB < 96, `gateway memory grew ${metrics.gatewayRssGrowthMiB} MiB`);
     assert.ok(metrics.agentRssGrowthMiB < 96, `agent memory grew ${metrics.agentRssGrowthMiB} MiB`);
-    await setUploads(dropId, true, 200, 100);
+    await setUploads(dropId, true, 200, 100, true);      // the big run used more than the normal allowance: start the count again
   });
 
   test('after the PC crashes mid-upload, no half-received file is kept and no final file exists', async () => {
