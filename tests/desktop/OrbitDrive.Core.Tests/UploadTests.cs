@@ -552,7 +552,7 @@ public sealed class UploadTests : IDisposable
         Directory.CreateDirectory(Path.Join(_rootPath, "Inbox", "Trips"));
         await Upload("t.txt", [1, 2, 3], folder: Folder("Inbox", "Trips"));
         Assert.Equal(new[] { "t.txt" }, Names(Path.Join(_rootPath, "Inbox", "Trips")));
-        Assert.Empty(Names(Path.Join(_rootPath, "Inbox")).Where(n => n == "t.txt"));
+        Assert.DoesNotContain("t.txt", Names(Path.Join(_rootPath, "Inbox")));
         Assert.False(File.Exists(Path.Join(_rootPath, "t.txt")));
     }
 }
