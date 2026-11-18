@@ -415,7 +415,17 @@ public sealed class Store
         {
             foreach (var key in _downloads.Where(d => d.Value.ExpiresAt <= time.GetUtcNow()).Select(d => d.Key).ToList()) _downloads.Remove(key);
             var preview = session.IsPreview;
-            if (_downloads.Values.Count(d => d.BrowserDeviceId == session.BrowserDeviceId && d.IsPreview == preview) >= (preview ? options.MaxPreviewSessionsPerDevice : options.MaxDownloadSessionsPerDevice))
+            var limit = preview ? options.MaxPreviewSessionsPerDevice : options.MaxDownloadSessionsPerDevice;
+            var mine = _downloads.Where(d => d.Value.BrowserDeviceId == session.BrowserDeviceId && d.Value.IsPreview == preview).ToList();
+            if (mine.Count >= limit)
+            {
+                // A session stays valid for its whole lifetime so a transfer can be resumed, so finished ones used to pile up until the limit refused a
+                // browser that had simply saved a lot of files. Make room by retiring the oldest sessions that are over (cancelled, or completely sent);
+                // sessions that are waiting, running or resumable are never taken away, and the limit still holds against those.
+                foreach (var finished in mine.Where(d => d.Value.Summarize().State is DownloadState.SentToBrowser or DownloadState.Cancelled).OrderBy(d => d.Value.CreatedAt).Take(mine.Count - limit + 1).ToList())
+                { _downloads.Remove(finished.Key); mine.Remove(finished); }
+            }
+            if (mine.Count >= limit)
                 throw new ProtocolException(ErrorCode.LimitExceeded, preview ? "Too many previews are open in this browser. Close some and try again." : "This browser has too many downloads waiting. Cancel some in Transfers or wait for them to expire.");
             _downloads[Secrets.HashHex(capability)] = session;
         }
