@@ -190,7 +190,7 @@ public sealed class ArchiveTests : IDisposable
         var extracted = await Extract(files, archives, status, reference);
         AssertSame(root, extracted);
         Assert.True(Directory.Exists(Path.Join(extracted, "Album", "Empty")));
-        Assert.Equal(["Album", "loose.txt"], Directory.EnumerateFileSystemEntries(extracted).Select(Path.GetFileName).Order().ToArray());     // nothing from outside the selection, no absolute or parent paths
+        Assert.Equal(["Album", "loose.txt"], Directory.EnumerateFileSystemEntries(extracted).Select(p => Path.GetFileName(p)!).Order().ToArray());     // nothing from outside the selection, no absolute or parent paths
         Assert.Equal(status.FilesTotal, status.FilesDone);
         Assert.Equal(status.BytesTotal, status.BytesDone);
         Assert.Single(Directory.GetFiles(staging));                                                                                       // one staged file, no leftovers
@@ -362,7 +362,7 @@ public sealed class ArchiveTests : IDisposable
         var reference = archives.Start(new ArchiveRequest { EntryIds = [Entry(files, "r1", "A", "same.txt"), Entry(files, "r1", "B", "same.txt")], Strict = false });
         var status = await Finish(archives, reference);
         var extracted = await Extract(files, archives, status, reference);
-        Assert.Equal(["same (2).txt", "same.txt"], Directory.GetFiles(extracted).Select(Path.GetFileName).Order().ToArray());
+        Assert.Equal(["same (2).txt", "same.txt"], Directory.GetFiles(extracted).Select(p => Path.GetFileName(p)!).Order().ToArray());
         Assert.Equal("from A", File.ReadAllText(Path.Join(extracted, "same.txt")));
         Assert.Equal("from B", File.ReadAllText(Path.Join(extracted, "same (2).txt")));
     }
