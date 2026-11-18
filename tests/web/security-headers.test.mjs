@@ -55,3 +55,11 @@ test('the committed firebase.json uses the builder and a fail-closed placeholder
   assert.doesNotMatch(JSON.stringify(config), /localhost|127\.0\.0\.1|unsafe-/);
   assert.ok(config.hosting.headers.find((r) => r.source === '/assets/**').headers.some((h) => /immutable/.test(h.value)));
 });
+
+test('hashed assets are cached for a year: Firebase lets the LATER matching rule win, so the catch-all no-cache rule must come first', () => {
+  const rules = JSON.parse(readFileSync(new URL('../../infra/firebase/firebase.json', import.meta.url), 'utf8')).hosting.headers;
+  const cache = (source) => rules.findIndex((r) => r.source === source && r.headers.some((h) => h.key === 'Cache-Control'));
+  assert.ok(cache('**') >= 0 && cache('/assets/**') >= 0, 'both cache rules exist');
+  assert.ok(cache('/assets/**') > cache('**'), 'the more specific rule comes after the catch-all (observed live: a catch-all placed after it overrode immutable caching)');
+  assert.match(rules[cache('/assets/**')].headers.find((h) => h.key === 'Cache-Control').value, /immutable/);
+});
