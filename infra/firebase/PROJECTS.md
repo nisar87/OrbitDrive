@@ -10,7 +10,7 @@ Web config values (`authDomain` `orbitdrive-dev.firebaseapp.com`, `projectId`, `
 design but are **not committed**: copy them from Project settings → General → Your apps → Config into a local
 `apps/web/.env.local` (git-ignored) or CI variables. The gateway needs only `OrbitDrive__Firebase__ProjectId=orbitdrive-dev`.
 
-No service-account key has been created. One will be needed for Firestore and token-revocation checks; the owner should
+Deploys from GitHub are keyless (Workload Identity Federation, see README). No service-account key has been created. One will be needed for Firestore and token-revocation checks; the owner should
 create it and store it as a GitHub Actions secret / relay host secret — never in the repository.
 
 **Hosting:** first deployed 2026-11-18 by the owner (`scripts/deploy-web.mjs`) to https://orbitdrive-dev.web.app, with the CSP pointing at the development relay. Firestore not created; no service-account key exists.
