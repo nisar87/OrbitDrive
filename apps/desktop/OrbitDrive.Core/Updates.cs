@@ -231,14 +231,15 @@ public sealed class UpdateStager(string folder)
             throw new UpdateRejectedException(UpdateRejection.NotStaged, "The staged update is missing.");
         try { using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(drainTimeout); await drainActiveWork(timeout.Token); }
         catch (Exception e) when (e is OperationCanceledException or IOException or InvalidOperationException) { throw new UpdateRejectedException(UpdateRejection.DrainFailed, "Running transfers could not be paused, so nothing was changed."); }
+        bool intact;
         await using (var stream = File.OpenRead(path))
+            intact = stream.Length == journal.Size && Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, cancellation)).Equals(journal.Sha256, StringComparison.Ordinal);
+        if (!intact)
         {
-            if (stream.Length != journal.Size || !Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, cancellation)).Equals(journal.Sha256, StringComparison.Ordinal))
-            {
-                TryDelete(path);
-                journal.Phase = ""; Write(journal);
-                throw new UpdateRejectedException(UpdateRejection.HashMismatch, "The staged update changed on disk and was removed.");
-            }
+            // Deleted only after the stream is closed: Windows refuses to delete a file that is still open.
+            TryDelete(path);
+            journal.Phase = ""; Write(journal);
+            throw new UpdateRejectedException(UpdateRejection.HashMismatch, "The staged update changed on disk and was removed.");
         }
         journal.Phase = "applying"; Write(journal);
         launcher.Launch(path);

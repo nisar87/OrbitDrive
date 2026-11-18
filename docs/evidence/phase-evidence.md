@@ -398,3 +398,7 @@ verify-deployment and both live-agent jobs.
 - Firebase `auth_time` handling for operators is exercised only through the dev identity and code review, not a live or emulator Firebase run.
 - Dashboards show counters since the last service start only; no history, no cost or billing metrics, no spend caps (never provisioned billing).
 - Retention preference can only shorten the relay's one-hour in-memory list; diagnostics consent records a choice for features that do not exist yet.
+
+### D10/W10 CI finding on `7fafe3a` (recorded honestly)
+- `desktop` workflow (real Windows xunit) FAILED: `UpdateTests.A_staged_file_changed_after_download_is_removed_and_never_launched`. Cause: a genuine bug, `UpdateStager.ApplyAsync` tried to delete a tampered staged installer while its own read stream was still open; Windows refuses that and the failure was swallowed, so the file stayed on disk (it was still never launched). The Linux stand-in runner cannot show this. Fixed by deleting after the stream is closed; the test assertion was not changed.
+- contracts, gateway, integration, security, desktop-ui were green on `7fafe3a`; `web` was still running when this was written.
