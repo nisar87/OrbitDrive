@@ -29,7 +29,7 @@ jobs:
       - run: npm ci
         working-directory: tests/integration
       - name: Real agent + gateway processes, 1 GiB hash-verified transfer
-        run: node --test --test-reporter=spec tests/integration/slice.test.mjs tests/integration/ipc.test.mjs tests/integration/devices.test.mjs tests/integration/qr.test.mjs tests/integration/firebase-auth.test.mjs tests/integration/restart.test.mjs tests/integration/faults.test.mjs tests/integration/pairing-limits.test.mjs tests/integration/browse.test.mjs tests/integration/transfers.test.mjs tests/integration/invitations.test.mjs tests/integration/previews.test.mjs tests/integration/archives.test.mjs tests/integration/search.test.mjs tests/integration/multipc.test.mjs
+        run: node --test --test-reporter=spec tests/integration/slice.test.mjs tests/integration/ipc.test.mjs tests/integration/devices.test.mjs tests/integration/qr.test.mjs tests/integration/firebase-auth.test.mjs tests/integration/restart.test.mjs tests/integration/faults.test.mjs tests/integration/pairing-limits.test.mjs tests/integration/browse.test.mjs tests/integration/transfers.test.mjs tests/integration/invitations.test.mjs tests/integration/previews.test.mjs tests/integration/archives.test.mjs tests/integration/search.test.mjs tests/integration/multipc.test.mjs tests/integration/uploads.test.mjs
         env:
           ORBIT_LARGE_MIB: 1024
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

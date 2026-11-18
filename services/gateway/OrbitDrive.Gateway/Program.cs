@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Features;
@@ -38,8 +39,8 @@ else
 }
 builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy => policy
     .WithOrigins(options.AllowedWebOrigins)
-    .WithMethods("GET", "POST", "PATCH", "DELETE", "HEAD")
-    .WithHeaders("Authorization", "Content-Type", "X-OrbitDrive-Device", "Range", "If-Range")
+    .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")
+    .WithHeaders("Authorization", "Content-Type", "X-OrbitDrive-Device", "X-Chunk-Sha256", "Range", "If-Range")
     .WithExposedHeaders("Content-Range", "Accept-Ranges", "ETag", "Content-Length", "Content-Disposition", "Retry-After")));
 
 var app = builder.Build();
@@ -59,7 +60,10 @@ static int StatusFor(ErrorCode code) => code switch
     ErrorCode.NotFound => 404,
     ErrorCode.InvalidRequest or ErrorCode.UnknownAction => 400,
     ErrorCode.Expired => 410,
-    ErrorCode.Conflict or ErrorCode.RevisionChanged => 409,
+    ErrorCode.Conflict or ErrorCode.RevisionChanged or ErrorCode.NameExists => 409,
+    ErrorCode.TooLarge => 413,
+    ErrorCode.ChecksumMismatch => 422,
+    ErrorCode.DiskFull => 507,
     ErrorCode.RangeNotSatisfiable => 416,
     ErrorCode.LimitExceeded => 429,
     ErrorCode.UnsupportedVersion => 426,
@@ -252,6 +256,119 @@ app.MapPost("/v1/pcs/{pcId}/entry-checks", async (HttpContext context, string pc
     AllowLargerBody(context);
     await WriteJson(context, await hub.Get(pcId).RequestAsync<CheckEntriesResult>(Actions.CheckEntries, await ReadJson<CheckEntriesRequest>(context), agentTimeout, context.RequestAborted));
 });
+
+// ----- D9: uploads into a folder the owner enabled on the PC. The browser names a folder it was shown and a file name; the PC decides everything else. -----
+// The relay authorises the browser for this PC and stamps its own device id on every request (a browser cannot name another device's upload).
+app.MapPost("/v1/pcs/{pcId}/uploads", async (HttpContext context, string pcId) =>
+{
+    var device = AuthorizeBrowser(context, pcId);
+    Throttle(context, "upload-start:" + device.Id, options.UploadStartsPerMinute, "Too many uploads were started. Wait a moment.");
+    var request = await ReadJson<StartUploadRequest>(context);
+    await WriteJson(context, await hub.Get(pcId).RequestAsync<UploadStarted>(Actions.StartUpload, request with { DeviceId = device.Id }, agentTimeout, context.RequestAborted), 201);
+});
+app.MapPost("/v1/pcs/{pcId}/upload-status", async (HttpContext context, string pcId) =>
+{
+    var device = AuthorizeBrowser(context, pcId);
+    Throttle(context, "upload-status:" + device.Id, 600, "Too many requests. Wait a moment.");
+    var request = await ReadJson<UploadRef>(context);
+    await WriteJson(context, await hub.Get(pcId).RequestAsync<UploadStatus>(Actions.UploadStatus, request with { DeviceId = device.Id }, agentTimeout, context.RequestAborted));
+});
+app.MapPost("/v1/pcs/{pcId}/upload-finish", async (HttpContext context, string pcId) =>
+{
+    var device = AuthorizeBrowser(context, pcId);
+    Throttle(context, "upload-finish:" + device.Id, 300, "Too many requests. Wait a moment.");
+    var request = await ReadJson<UploadRef>(context);
+    await WriteJson(context, await hub.Get(pcId).RequestAsync<UploadStatus>(Actions.FinishUpload, request with { DeviceId = device.Id }, TimeSpan.FromSeconds(options.PrepareTimeoutSeconds), context.RequestAborted));
+});
+app.MapPost("/v1/pcs/{pcId}/upload-cancel", async (HttpContext context, string pcId) =>
+{
+    var device = AuthorizeBrowser(context, pcId);
+    var request = await ReadJson<UploadRef>(context);
+    await WriteJson(context, await hub.Get(pcId).RequestAsync<Ack>(Actions.CancelUpload, request with { DeviceId = device.Id }, agentTimeout, context.RequestAborted));
+});
+
+// One piece of an upload: the browser's request body is carried to the PC through a one-use stream the PC dials out to fetch. The body is never
+// buffered or model-bound here; the PC verifies the SHA-256 and the position, and only its answer decides what the browser is told.
+app.MapPut("/v1/pcs/{pcId}/uploads/{uploadId}/chunk", async (HttpContext context, string pcId, string uploadId) =>
+{
+    var device = AuthorizeBrowser(context, pcId);
+    Throttle(context, "upload-chunk:" + device.Id, 1200, "Too many pieces were sent. Wait a moment.");
+    var query = context.Request.Query["offset"].ToString();
+    var checksum = context.Request.Headers["X-Chunk-Sha256"].ToString();
+    var length = context.Request.ContentLength ?? -1;
+    if (uploadId.Length != 32 || !uploadId.All(char.IsAsciiHexDigit) || query.Length is 0 or > 19 || !query.All(char.IsAsciiDigit) ||
+        !long.TryParse(query, NumberStyles.None, CultureInfo.InvariantCulture, out var offset) || checksum.Length != 64 || !checksum.All(char.IsAsciiHexDigit))
+        throw new ProtocolException(ErrorCode.InvalidRequest, "Malformed upload piece.");
+    if (length <= 0 || length > options.MaxUploadChunkBytes)
+        throw new ProtocolException(length > options.MaxUploadChunkBytes ? ErrorCode.TooLarge : ErrorCode.InvalidRequest, "An upload piece must declare a size within the allowed limit.");
+    context.Features.Get<IHttpMaxRequestBodySizeFeature>()!.MaxRequestBodySize = length;
+    context.Features.Get<IHttpMinRequestBodyDataRateFeature>()?.MinDataRate = null;          // slow phones are throttled, not dropped
+
+    var (stream, uplinkToken) = streams.Create(device.OwnerUid);
+    using var cancel = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+    var success = false;
+    Task<WriteChunkResult>? agentTask = null;
+    try
+    {
+        agentTask = hub.Get(pcId).RequestAsync<WriteChunkResult>(Actions.WriteChunk, new WriteChunkRequest
+        {
+            UploadId = uploadId, DeviceId = device.Id, Offset = offset, Length = (int)length, Sha256 = checksum, StreamId = stream.Id, UplinkToken = uplinkToken,
+        }, TimeSpan.FromSeconds(options.UploadChunkTimeoutSeconds), cancel.Token);
+        var arrival = stream.Arrival.Task;
+        var first = await Task.WhenAny(arrival, agentTask).WaitAsync(TimeSpan.FromSeconds(options.AgentRequestTimeoutSeconds), cancel.Token);
+        if (first == agentTask)
+        {
+            // The PC answered without asking for the data (wrong position, a rule it enforces, an error). That answer is the result.
+            success = true;
+            await WriteJson(context, await agentTask);
+            return;
+        }
+        var agentContext = await arrival;
+        var downlink = agentContext.Response;
+        downlink.StatusCode = 200;
+        downlink.ContentLength = length;
+        downlink.ContentType = "application/octet-stream";
+        await StreamRegistry.RelayAsync(context.Request.Body, downlink.Body, length, cancel.Token);
+        await downlink.Body.FlushAsync(cancel.Token);
+        success = true;
+        streams.Remove(stream, true);                                                       // lets the PC's fetch finish
+        await WriteJson(context, await agentTask.WaitAsync(TimeSpan.FromSeconds(options.UploadChunkTimeoutSeconds), cancel.Token));
+    }
+    catch (TimeoutException) { throw new ProtocolException(ErrorCode.Timeout, "The PC did not take this piece in time."); }
+    finally
+    {
+        streams.Remove(stream, success);
+        if (!success && agentTask is not null)
+        {
+            _ = agentTask.ContinueWith(t => _ = t.Exception, TaskScheduler.Default);       // the abandoned request's failure is expected
+            if (hub.IsOnline(pcId))
+                _ = hub.Get(pcId).RequestAsync<Ack>(Actions.CancelStream, new CancelStreamRequest { StreamId = stream.Id }, TimeSpan.FromSeconds(5), CancellationToken.None)
+                    .ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
+        }
+    }
+});
+
+// One-use fetch by the PC of exactly one pending upload piece (the mirror image of the download uplink below).
+app.MapGet("/v1/agent-downlinks/{streamId}", async (HttpContext context, string streamId) =>
+{
+    var header = context.Request.Headers.Authorization.ToString();
+    var stream = streams.Find(streamId);
+    if (stream is null || !header.StartsWith("Bearer ", StringComparison.Ordinal) || !Secrets.Matches(stream.UplinkTokenHash, header[7..]) ||
+        Interlocked.Exchange(ref stream.Claimed, 1) != 0)
+        throw new ProtocolException(ErrorCode.Forbidden, "Stream authorisation rejected.");
+    stream.Arrival.TrySetResult(context);
+    var delivered = await stream.Done.Task.WaitAsync(context.RequestAborted);
+    if (!delivered) context.Abort();                                                        // a truncated piece must look truncated to the PC
+});
+
+/// <summary>Tells a PC to throw away anything a browser still had in flight. Best effort: the PC also refuses every later request from that browser.</summary>
+void DiscardUploads(string deviceId, IEnumerable<string> pcIds)
+{
+    foreach (var pcId in pcIds)
+        if (hub.IsOnline(pcId))
+            _ = hub.Get(pcId).RequestAsync<Ack>(Actions.CancelDeviceUploads, new CancelDeviceUploadsRequest { DeviceId = deviceId }, TimeSpan.FromSeconds(5), CancellationToken.None)
+                .ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
+}
 
 // What a browser may ask the PC for besides the original bytes. Anything else is refused before it reaches the PC.
 static string? NormalizeVariant(string? variant) => variant switch
@@ -446,7 +563,8 @@ app.MapGet("/v1/browser-devices", (HttpContext context) =>
 
 app.MapDelete("/v1/pcs/{pcId}", (HttpContext context, string pcId) =>
 {
-    AuthorizeBrowser(context, pcId);
+    var removing = AuthorizeBrowser(context, pcId);
+    DiscardUploads(removing.Id, [pcId]);
     store.RemovePc(pcId);
     return WriteJson(context, new Ack { Ok = true });
 });
@@ -462,7 +580,10 @@ app.MapPatch("/v1/browser-devices/{deviceId}", async (HttpContext context, strin
 app.MapDelete("/v1/browser-devices/{deviceId}", (HttpContext context, string deviceId) =>
 {
     var device = AuthorizeBrowser(context);
-    store.RevokeDevice(Authenticate(context), deviceId == "current" ? device.Id : deviceId);
+    var targetId = deviceId == "current" ? device.Id : deviceId;
+    var target = store.DevicesForOwner(device.OwnerUid).FirstOrDefault(d => d.Id == targetId);
+    store.RevokeDevice(Authenticate(context), targetId);
+    if (target is not null) DiscardUploads(target.Id, target.PcIds);
     return WriteJson(context, new Ack { Ok = true });
 });
 

@@ -277,6 +277,12 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
             case Actions.Search: return await state.Search.SearchAsync(ProtocolJson.FromElement<SearchRequest>(payload), cancellation);
             case Actions.CancelSearch: return state.Search.Cancel(ProtocolJson.FromElement<CancelSearchRequest>(payload));
             case Actions.CheckEntries: return _files.CheckEntries(ProtocolJson.FromElement<CheckEntriesRequest>(payload));
+            case Actions.StartUpload: return state.Uploads.Start(ProtocolJson.FromElement<StartUploadRequest>(payload));
+            case Actions.UploadStatus: return state.Uploads.Status(ProtocolJson.FromElement<UploadRef>(payload));
+            case Actions.FinishUpload: return state.Uploads.Finish(ProtocolJson.FromElement<UploadRef>(payload));
+            case Actions.CancelUpload: return state.Uploads.Cancel(ProtocolJson.FromElement<UploadRef>(payload));
+            case Actions.CancelDeviceUploads: return state.Uploads.CancelForDevice(ProtocolJson.FromElement<CancelDeviceUploadsRequest>(payload).DeviceId);
+            case Actions.WriteChunk: return await ReceiveChunkAsync(ProtocolJson.FromElement<WriteChunkRequest>(payload), cancellation);
             case Actions.OpenRead:
                 var open = ProtocolJson.FromElement<OpenReadRequest>(payload);
                 // Take a transfer slot. A transfer that is just finishing frees its slot within moments, so wait briefly
@@ -296,6 +302,31 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
                 return new Ack { Ok = true };
             default: throw new ProtocolException(ErrorCode.UnknownAction, "Unknown action.");
         }
+    }
+
+    /// <summary>
+    /// One piece of an upload. The PC dials out (like a download does) to fetch exactly this piece from the relay with a one-use token,
+    /// so nothing ever connects in to the PC. The piece is verified and stored by the upload service; a cancelled or broken fetch stores nothing.
+    /// </summary>
+    private async Task<WriteChunkResult> ReceiveChunkAsync(WriteChunkRequest chunk, CancellationToken cancellation)
+    {
+        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        _streams[chunk.StreamId] = cancel;
+        try
+        {
+            return await state.Uploads.WriteChunkAsync(chunk, async token =>
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(gateway, $"/v1/agent-downlinks/{Uri.EscapeDataString(chunk.StreamId)}"));
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", chunk.UplinkToken);
+                HttpResponseMessage response;
+                try { response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token); }
+                catch (HttpRequestException) { throw new ProtocolException(ErrorCode.Unavailable, "The PC could not reach the relay to receive this piece."); }
+                if (response.StatusCode != HttpStatusCode.OK) { response.Dispose(); throw new ProtocolException(ErrorCode.Unavailable, "The relay did not hand over this piece."); }
+                return await response.Content.ReadAsStreamAsync(token);
+            }, cancel.Token);
+        }
+        catch (OperationCanceledException) when (cancel.IsCancellationRequested) { throw new ProtocolException(ErrorCode.Unavailable, "This piece was cancelled. Nothing from it was stored."); }
+        finally { _streams.TryRemove(chunk.StreamId, out _); }
     }
 
     private async Task UplinkAsync(OpenReadRequest open, ValidatedRead read, CancellationToken cancellation)

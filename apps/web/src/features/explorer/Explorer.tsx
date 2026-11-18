@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { memo, useSyncExternalStore, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { api, ApiError, type Session } from '../../api';
 import type { Breadcrumb, FileEntry, PcSummary, RootSummary } from '../../protocol';
@@ -7,8 +7,10 @@ import { formatBytes, formatTime } from '../../format';
 import type { Prefs, SortKey, ViewMode } from '../../prefs';
 import { opensOnActivate, previewKindOf } from '../preview/kinds';
 import { previewStore, thumbnails } from '../preview/preview';
+import { uploads } from '../upload/upload';
 import { archives } from '../archive/archive';
 import { ArchivePanel } from '../archive/ArchivePanel';
+import { UploadConfirm, UploadJobs } from '../upload/UploadPanel';
 import { SearchPanel, type OpenHit } from '../search/SearchPanel';
 import { addRecent, clearPlaces, groupByPc, isFavorite, loadPlaces, removeFavorite, removeRecent, savePlaces, toggleFavorite, type Availability, type Place, type Places } from './places';
 import { emptySelection, filterEntries, pruneSelection, select, sortEntries, totalSize, typeLabel, type Selection } from './model';
@@ -31,11 +33,12 @@ export function ConfirmButton({ label, confirmLabel, onConfirm }: { label: strin
   );
 }
 
-const Icon = ({ name }: { name: 'back' | 'forward' | 'up' | 'refresh' | 'tree' | 'search' }) => (
+const Icon = ({ name }: { name: 'back' | 'forward' | 'up' | 'refresh' | 'tree' | 'search' | 'upload' }) => (
   <svg className="tool-icon" viewBox="0 0 16 16" aria-hidden="true">
     {name === 'back' && <path d="M9.5 3L4.5 8l5 5M4.5 8h8" />}
     {name === 'forward' && <path d="M6.5 3l5 5-5 5M11.5 8h-8" />}
     {name === 'up' && <path d="M3 7.5l5-5 5 5M8 2.5v11" />}
+    {name === 'upload' && <path d="M2.5 10.5v3h11v-3M8 10V2.5M4.8 5.2L8 2l3.2 3.2" />}
     {name === 'refresh' && <path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v3h-3" />}
     {name === 'tree' && <path d="M2.5 3.5h11M2.5 8h11M2.5 12.5h11" />}
     {name === 'search' && <path d="M6.8 11.6a4.8 4.8 0 1 1 0-9.6 4.8 4.8 0 0 1 0 9.6zM10.3 10.3l3.7 3.7" />}
@@ -48,6 +51,9 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
   const [pcs, setPcs] = useState<PcSummary[] | null>(null);
   const [roots, setRoots] = useState<Record<string, RootSummary[] | string>>({});
   const [location, setLocation] = useState<Location | null>(null);
+  const [pendingUpload, setPendingUpload] = useState<File[] | null>(null);
+  const uploadInput = useRef<HTMLInputElement>(null);
+  const savedUploads = useSyncExternalStore(uploads.subscribe, uploads.list).filter((j) => j.phase === 'done' && j.pcId === location?.pc.pcId).length;
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -154,6 +160,8 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
 
   // First load, and whenever another app changed what this browser can reach (PC disconnected, device removed).
   useEffect(() => { void show(history.current.list[history.current.index]); }, [show, dataVersion]);
+  // A file that was just saved on the PC appears in the listing without a manual refresh.
+  useEffect(() => { if (savedUploads > 0) void show(history.current.list[history.current.index]); }, [savedUploads]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sort once per folder/sort change; filtering afterwards keeps the order, so typing in the filter never re-sorts.
   const sorted = useMemo(() => sortEntries(entries, prefs.sortKey, prefs.sortDescending), [entries, prefs.sortKey, prefs.sortDescending]);
@@ -474,6 +482,12 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
         <button type="button" className="ghost icon-button" aria-label="Up one level" disabled={location === null} onClick={goUp}><Icon name="up" /></button>
         <button type="button" className="ghost icon-button" aria-label="Refresh" onClick={() => void show(location)}><Icon name="refresh" /></button>
         <button type="button" className="ghost icon-button" aria-label="Search" aria-pressed={searchOpen} onClick={() => setSearchOpen((open) => !open)}><Icon name="search" /></button>
+        {location && location.pc.online && location.root.canUpload && (
+          <>
+            <button type="button" className="ghost icon-button" aria-label="Upload files here" onClick={() => uploadInput.current?.click()}><Icon name="upload" /></button>
+            <input ref={uploadInput} type="file" multiple hidden data-testid="upload-input" onChange={(e) => { const picked = [...(e.target.files ?? [])]; e.target.value = ''; if (picked.length) setPendingUpload(picked); }} />
+          </>
+        )}
         <nav className="breadcrumbs" aria-label="Breadcrumb" ref={crumbs}>
           <button type="button" className="ghost" onClick={() => void navigate(null)} aria-current={location === null ? 'page' : undefined}>{location ? location.pc.name : 'This account’s PCs'}</button>
           {location && breadcrumbs.map((crumb, index) => (
@@ -513,6 +527,11 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
             <SearchPanel session={session} pcs={pcs} onClose={() => setSearchOpen(false)} onOpenFolder={openFromSearch.folder} onOpenFile={openFromSearch.file}
               here={location ? { pc: location.pc, root: location.root, entryId: location.entryId, folderName: breadcrumbs[breadcrumbs.length - 1]?.name ?? location.root.name } : null} />
           )}
+          {location && pendingUpload && location.root.canUpload && (
+            <UploadConfirm session={session} files={pendingUpload} root={location.root} onDone={() => setPendingUpload(null)}
+              target={{ pcId: location.pc.pcId, pcName: location.pc.name, rootId: location.root.rootId, folderEntryId: location.entryId, path: breadcrumbs.length ? breadcrumbs.map((c) => c.name) : [location.root.name] }} />
+          )}
+          {location && <UploadJobs pcId={location.pc.pcId} />}
           {location && <ArchivePanel session={session} pcId={location.pc.pcId} onOpenTransfers={() => onOpenApp('transfers')} />}
           {transfer && (
             <p role="status" className={transfer.phase === 'failed' ? 'notice error' : 'notice'} data-testid="transfer-status">

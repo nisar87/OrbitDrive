@@ -24,8 +24,8 @@ static int Usage()
     Console.Error.WriteLine("""
         orbitdrive-agent run [--gateway <https-url>] [--web-origin <https-url>] [--state <dir>] [--name <pc-name>]
         orbitdrive-agent ctl <status|pair|approve|deny|pause|resume|quit> [--state <dir>]      (talks to the running agent)
-        orbitdrive-agent ctl add_root <name> <folder> | remove_root <rootId> | set_root_hidden <rootId> <on|off> | set_limits <KB/s, 0 = none> <files at once> | set_gateway <https-url> [web-origin]
-        orbitdrive-agent roots add <name> <folder> | list | remove <rootId> [--state <dir>]   (agent not running)
+        orbitdrive-agent ctl add_root <name> <folder> | remove_root <rootId> | set_root_hidden <rootId> <on|off> | set_root_uploads <rootId> <on|off> [quotaMiB [maxFileMiB [reset]]] | set_limits <KB/s, 0 = none> <files at once> | set_gateway <https-url> [web-origin]
+        orbitdrive-agent roots add <name> <folder> | list | remove <rootId> | uploads <rootId> <on|off> [quotaMiB [maxFileMiB]] [--state <dir>]   (agent not running)
 
         While "run" is in the foreground you can also type: pair | approve | deny | pause | resume | reload | quit
         """);
@@ -54,6 +54,7 @@ if (args[0] == "ctl" && args.Length >= 2)
         ("remove_root", 1) => new JsonObject { ["rootId"] = positional[0] },
         ("set_limits", 2) => new JsonObject { ["maxUploadKBps"] = int.Parse(positional[0]), ["maxConcurrentTransfers"] = int.Parse(positional[1]) },
         ("set_root_hidden", 2) => new JsonObject { ["rootId"] = positional[0], ["showHidden"] = positional[1] is "on" or "true" },
+        ("set_root_uploads", >= 2) => new JsonObject { ["rootId"] = positional[0], ["enabled"] = positional[1] is "on" or "true", ["quotaMiB"] = positional.Length > 2 ? long.Parse(positional[2]) : 0, ["maxFileMiB"] = positional.Length > 3 ? long.Parse(positional[3]) : 0, ["resetUsed"] = positional.Length > 4 && positional[4] == "reset" },
         ("set_sendto", 1) => new JsonObject { ["enabled"] = positional[0] is "on" or "true" },
         ("set_thumbnails", 1) => new JsonObject { ["enabled"] = positional[0] is "on" or "true" },
         ("cancel_invitation", 1) => new JsonObject { ["invitationId"] = positional[0] },
@@ -102,10 +103,20 @@ if (args[0] == "roots" && args.Length >= 2)
             Console.WriteLine($"Shared read-only: {added.Name} ({added.RootId}) -> {added.Path}");
             return 0;
         case "list":
-            foreach (var root in state.Roots) Console.WriteLine($"{root.RootId}\t{root.Name}\t{root.Path}");
+            foreach (var root in state.Roots) Console.WriteLine($"{root.RootId}\t{root.Name}\t{root.Path}\t{(root.UploadsEnabled ? "uploads on" : "read-only")}");
             return 0;
         case "remove" when args.Length >= 3:
             return state.RemoveRoot(args[2]) ? 0 : 1;
+        case "uploads" when args.Length >= 4:
+            // roots uploads <rootId> <on|off> [quotaMiB [maxFileMiB]] — the owner switches a shared folder from read-only to accepting uploads.
+            var enable = args[3] is "on" or "true";
+            if (!enable && args[3] is not ("off" or "false")) return Usage();
+            var quota = args.Length > 4 && long.TryParse(args[4], out var q) ? q : 0;
+            var maxFile = args.Length > 5 && long.TryParse(args[5], out var m) ? m : 0;
+            try { if (!state.SetUploads(args[2], enable, quota << 20, maxFile << 20)) { Console.Error.WriteLine("That folder is not shared."); return 1; } }
+            catch (ArgumentException e) { Console.Error.WriteLine(e.Message); return 2; }
+            Console.WriteLine(enable ? $"Uploads are ON for {args[2]} (allowance {(quota > 0 ? quota + " MiB" : "unlimited")}, per file {(maxFile > 0 ? maxFile + " MiB" : "4 GiB")})." : $"Uploads are OFF for {args[2]}; it is read-only.");
+            return 0;
         default: return Usage();
     }
 }
@@ -120,6 +131,7 @@ catch (IOException)
     return 3;
 }
 using var instance = instanceLock;
+state.Uploads.CleanupAfterRestart();   // only the one running agent may do this; half-received files from an earlier run are never kept
 
 if (Option(args, "--gateway") is { } gatewayOption)
 {

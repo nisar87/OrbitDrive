@@ -368,3 +368,16 @@ verify-deployment and both live-agent jobs.
 
 ### Not evidenced
 - A real >4 GiB ZIP64 archive (only forced-ZIP64 structures and a >65 534-entry directory); physical phones; large-list profile on devices; server-side favorites; WPF console toggles (thumbnails/cache clear, SendTo shortcut); Windows-specific hidden/system-attribute handling beyond the CI Windows unit tests.
+
+## D9/W9 — uploads from the phone into approved folders (status: local verification only until CI is recorded below)
+
+- Added: Core `UploadTests`; integration `uploads.test.mjs` (20: enablement, forged ids, auth, multi-piece, mismatch/duplicate/skip/replay, cut-off piece, collisions, bad names, limits incl. disk-full at start, concurrency cap, device ownership, cancel, uploads off mid-upload, revocation both ways, bounded-memory 48 MiB run, crash recovery); web vitest `upload.test.ts` (12); Playwright `upload.spec.mjs` (4 × desktop and emulated mobile).
+- Local results: Core 229 pass (stand-in runner), uploads integration 20/20, regression 91 pass/0 fail, vitest 91, Playwright 69 passed/1 skipped (the 1 GiB case).
+- Memory: 48 MiB upload, gateway about +8 MiB, agent about +8 MiB RSS (`artifacts/upload-metrics-<platform>.json`).
+- Defects found by these tests and fixed: Finish answered Conflict before Forbidden when uploads were off; the start throttle (60/min) tripped legitimate suites (now configurable, default 300); the Upload confirm radios rendered oversized and the folder list did not refresh after a save (found in the mobile screenshots).
+- Mobile screenshots (`upload-confirm-*`, `upload-done-*`) reviewed locally; the confirm panel scrolls inside the pane on a phone.
+
+### Not evidenced
+- CI results for the D9 commit (recorded here once inspected); real xunit compile and the WPF toggle (desktop-ui) are verified only by CI.
+- Windows: Mark-of-the-Web and `MoveFileEx` semantics run only in Windows CI unit tests.
+- Real 45-minute idle expiry; mid-chunk disk-full against a real full disk; resume after agent restart (not supported); folder upload and drag-and-drop (not built); the interruption e2e cuts the connection at a moment the test cannot pin to mid-file, so byte-level resume is proven by the integration and vitest suites, not that e2e alone; physical phones.

@@ -110,7 +110,7 @@ internal sealed class AgentHost : IDisposable
                 ["activeStreams"] = _client?.ActiveStreams ?? 0,
                 ["transfers"] = _client?.RecentTransfers() ?? [],
                 ["offers"] = new JsonArray([.. _offers.Select(o => o.DeepClone())]),
-                ["roots"] = new JsonArray([.. _state.Roots.Select(r => (JsonNode)new JsonObject { ["rootId"] = r.RootId, ["name"] = r.Name, ["path"] = r.Path, ["available"] = _files.IsAvailable(r), ["readOnly"] = true, ["showHidden"] = r.ShowHidden })]),
+                ["roots"] = new JsonArray([.. _state.Roots.Select(r => (JsonNode)new JsonObject { ["rootId"] = r.RootId, ["name"] = r.Name, ["path"] = r.Path, ["available"] = _files.IsAvailable(r), ["readOnly"] = !r.UploadsEnabled, ["showHidden"] = r.ShowHidden, ["uploadsEnabled"] = r.UploadsEnabled, ["uploadQuotaBytes"] = r.UploadQuotaBytes.ToString(), ["uploadUsedBytes"] = r.UploadUsedBytes.ToString(), ["uploadMaxFileBytes"] = r.UploadMaxFileBytes.ToString() })]),
                 ["activePairing"] = _activePairing?.DeepClone(),
                 ["pendingApproval"] = _pendingApproval?.DeepClone(),
             };
@@ -172,6 +172,18 @@ internal sealed class AgentHost : IDisposable
                     if (!_state.SetShowHidden(Arg(args, "rootId", 64), args["showHidden"]?.GetValue<bool>() ?? false)) throw new IpcException("That folder is not shared.");
                     Emit("roots_changed", new { count = _state.Roots.Count });
                     return null;
+                case "set_root_uploads":
+                    // Owner decision on this PC only. Sizes come in MiB so a typo cannot silently mean bytes.
+                    var quotaMiB = args["quotaMiB"]?.GetValue<long>() ?? 0; var maxMiB = args["maxFileMiB"]?.GetValue<long>() ?? 0;
+                    if (quotaMiB is < 0 or > (1L << 30) || maxMiB is < 0 or > (1L << 30)) throw new IpcException("Sizes must be between 0 and 1,073,741,824 MiB.");
+                    try
+                    {
+                        if (!_state.SetUploads(Arg(args, "rootId", 64), args["enabled"]?.GetValue<bool>() ?? false, quotaMiB << 20, maxMiB << 20, args["resetUsed"]?.GetValue<bool>() ?? false))
+                            throw new IpcException("That folder is not shared.");
+                    }
+                    catch (ArgumentException e) { throw new IpcException(e.Message); }
+                    Emit("roots_changed", new { count = _state.Roots.Count });
+                    return null;
                 case "remove_root":
                     if (!_state.RemoveRoot(Arg(args, "rootId", 64))) throw new IpcException("That folder is not shared.");
                     Emit("roots_changed", new { count = _state.Roots.Count });
@@ -209,7 +221,9 @@ internal sealed class AgentHost : IDisposable
                     await Client.CancelInvitationAsync(Arg(args, "invitationId", 64), cancellation);
                     return null;
                 case "revoke_device":
-                    await Client.RevokeDeviceAsync(Arg(args, "deviceId", 128), cancellation);
+                    var revoking = Arg(args, "deviceId", 128);
+                    await Client.RevokeDeviceAsync(revoking, cancellation);
+                    _state.Uploads.CancelForDevice(revoking);      // whatever that browser was still sending is discarded
                     Emit("device_revoked", null);
                     return null;
                 case "pause": SetPaused(true); return null;

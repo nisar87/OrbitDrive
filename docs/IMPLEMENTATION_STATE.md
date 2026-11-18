@@ -63,6 +63,7 @@ Firebase is back in scope (owner, 2026-11-17): project `orbitdrive-dev` was crea
 | W6 / D6 | AWAITING_DEVICE_TEST | Automated scope done on `a3a833e`: sealed one-shot grants, gateway invitations (durable, idempotent, expiry, revoke, per-receiver), agent `send_files`/spool/ctl fallback/classic SendTo shortcuts, native `IExplorerCommand` (built + COM-tested on windows-2025), web Inbox, notices, opt-in local notifications, PWA manifest + static-only service worker. Missing: modern menu in real Win 11 Explorer (signing identity), real FCM push (Firebase credentials), real phones; WPF console toggle for SendTo shortcuts not built. |
 | W7 / D7 | AUTOMATED_VERIFIED (partial) | Automated scope done on `f79897c` (seven workflows green): content sniffer, image probe, thumbnail helper + cache, preview/derived read variants, inline-serving headers, preview sessions, owner controls (IPC), Preview app (image/text/PDF/media), Icons-view thumbnails, e2e on 5 browser projects, real-decoder corpus on Linux+Windows CI. Missing: WPF console thumbnail toggle/cache clear, PDF origin isolation, real phones, codec matrix, fuzzing |
 | W8 / D8 | AUTOMATED_VERIFIED (partial) | Staged ZIP archives (ADR-16), live search (ADR-17), entry checks, favorites/recents, one browser device across PCs (ADR-18); Core, gateway, integration (archives, search, multipc), vitest and Playwright (desktop + emulated phone) pass locally; CI result recorded in `phase-evidence.md`. Not done: WPF console toggles (thumbnails/cache clear), >4 GiB real ZIP64, physical-phone checks, server-side favorites |
+| W9 / D9 | IN_PROGRESS | Owner-enabled, add-only, chunked and checksummed uploads (ADR-19/20) with phone UI; local verification complete (Core 229 stand-in, integration uploads 20, regression 91/0, vitest 91, Playwright 69 passed/1 skipped); **CI for the commit not yet inspected**. Limits: no resume across agent restart, no folder upload or drag-and-drop, no Windows/phone evidence |
 | W9–W12, D9–D12 | NOT_STARTED | |
 
 The first vertical slice (pair → browse approved root → hash-verified ranged download, across Windows agent, gateway and
@@ -105,7 +106,7 @@ Not blocked, in order:
 3. D1 remainder needs the owner's Windows 11 PC: standard user, lock/sleep, high contrast, DPI, tray menu.
 4. D4/W4: Windows-style web shell (desktop, taskbar, windows), full Explorer (views, sort, selection, properties,
    context menus, back/forward/up), root volume binding. Visual iteration against the rubric starts here.
-5. D5/W5: only the physical-device checks listed in the phase row remain. D6/W6 automated scope is done (see phase row). D7/W7 automated scope is done (see phase row). **Next dependency-ready work: D8/W8.**
+5. D5/W5: only the physical-device checks listed in the phase row remain. D6/W6 automated scope is done (see phase row). D7/W7 automated scope is done (see phase row). D8/W8 done; D9/W9 in progress (see phase row).
 6. D6/W6: native Explorer command + package identity, invitations, Inbox, FCM, PWA/service worker.
 7. D8/W8 archives, search, favorites, multi-PC; D9/W9 uploads; D10 packaging/signing/updates;
    W10 admin and owner controls; D11/W11 hardening, soak, accessibility, visual gate; D12/W12 release candidate.

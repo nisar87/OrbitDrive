@@ -78,6 +78,7 @@ public sealed class MainWindow : Window
     private readonly TextBlock _devicesEmpty = MakeText("DevicesEmpty", "No phone or browser is paired with this PC.", 13, FontWeights.Normal, Muted);
     private List<string> _rootIds = [];
     private List<bool> _rootHidden = [];
+    private List<bool> _rootUploads = [];
     private readonly ListBox _transferList = new() { MinHeight = 0, Margin = new Thickness(0, 4, 0, 8) };
     private string _transfersShown = "";
     private string _rootsShown = "";
@@ -318,9 +319,18 @@ public sealed class MainWindow : Window
             if (index < 0 || index >= _rootIds.Count) throw new IpcException("Select a folder first.");
             await client.SendAsync("set_root_hidden", new JsonObject { ["rootId"] = _rootIds[index], ["showHidden"] = !_rootHidden[index] });
         });
+        var toggleUploads = MakeButton("ToggleUploadsButton", "Allow or stop uploads into selected folder");
+        toggleUploads.Click += (_, _) => _ = RunAsync(_rootError, async client =>
+        {
+            var index = _roots.SelectedIndex;
+            if (index < 0 || index >= _rootIds.Count) throw new IpcException("Select a folder first.");
+            var turnOn = !_rootUploads[index];
+            if (turnOn && MessageBox.Show(this, "Paired phones and browsers will be able to ADD files to this folder (up to 10 GiB in total, 4 GiB per file). They can never replace, delete or run anything. Turn uploads on?", "Allow uploads", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            await client.SendAsync("set_root_uploads", new JsonObject { ["rootId"] = _rootIds[index], ["enabled"] = turnOn, ["quotaMiB"] = 10240, ["maxFileMiB"] = 4096 });
+        });
         Page("Shared folders",
-            MakeText("RootsIntro", "Only folders listed here can be seen from your paired devices. Sharing is read-only, and Windows permissions still apply.", 13, FontWeights.Normal, Muted),
-            Card("Shared now", _rootsEmpty, _roots, Row(remove, toggleHidden)),
+            MakeText("RootsIntro", "Only folders listed here can be seen from your paired devices. Sharing is read-only unless you allow uploads for a folder below, and Windows permissions still apply.", 13, FontWeights.Normal, Muted),
+            Card("Shared now", _rootsEmpty, _roots, Row(remove, toggleHidden), Row(toggleUploads)),
             Card("Share another folder", MakeLabel("Name shown on your phone", _rootName), _rootName, MakeLabel("Folder", _rootPath), _rootPath, _newRootHidden, Row(browse, add), _rootError,
                 MakeText("HiddenHint", "Hidden items stay private unless you tick the box. Windows system files are never shared. A folder is tied to the disk it is on: another disk at the same drive letter is not shared.", 13, FontWeights.Normal, Muted)));
 
@@ -593,6 +603,7 @@ public sealed class MainWindow : Window
             _rootsShown = shown;
             _rootIds = ids;
             _rootHidden = [.. roots.Select(r => r!["showHidden"]?.GetValue<bool>() ?? false)];
+            _rootUploads = [.. roots.Select(r => r!["uploadsEnabled"]?.GetValue<bool>() ?? false)];
             _roots.Items.Clear();
             foreach (var root in roots)
             {
@@ -600,13 +611,14 @@ public sealed class MainWindow : Window
                 var includesHidden = root["showHidden"]?.GetValue<bool>() ?? false;
                 var title = new TextBlock { Text = root["name"]!.GetValue<string>(), FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
                 var path = new TextBlock { Text = root["path"]!.GetValue<string>(), FontSize = 12.5, TextWrapping = TextWrapping.Wrap };
-                var badge = new TextBlock { Text = (available ? "Read-only" : "Read-only · currently unavailable (folder missing, or a different disk is at this location)") + (includesHidden ? " · hidden items included" : ""), FontSize = 12.5, TextWrapping = TextWrapping.Wrap };
+                var uploadsOn = root["uploadsEnabled"]?.GetValue<bool>() ?? false;
+                var badge = new TextBlock { Text = (available ? (uploadsOn ? "Accepts uploads from paired devices" : "Read-only") : "Read-only · currently unavailable (folder missing, or a different disk is at this location)") + (includesHidden ? " · hidden items included" : ""), FontSize = 12.5, TextWrapping = TextWrapping.Wrap };
                 Mute(path);
                 if (available) Mute(badge); else badge.SetResourceReference(TextBlock.ForegroundProperty, Danger);
                 var lines = new StackPanel { Margin = new Thickness(0, 4, 0, 4) };
                 lines.Children.Add(title); lines.Children.Add(path); lines.Children.Add(badge);
                 var item = new ListBoxItem { Content = lines };
-                AutomationProperties.SetName(item, $"{root["name"]}  —  {root["path"]}  (read-only{(available ? "" : ", currently unavailable")}{(includesHidden ? ", hidden items included" : "")})");
+                AutomationProperties.SetName(item, $"{root["name"]}  —  {root["path"]}  ({(uploadsOn ? "accepts uploads" : "read-only")}{(available ? "" : ", currently unavailable")}{(includesHidden ? ", hidden items included" : "")})");
                 _roots.Items.Add(item);
             }
             if (keep is not null) _roots.SelectedIndex = _rootIds.IndexOf(keep);

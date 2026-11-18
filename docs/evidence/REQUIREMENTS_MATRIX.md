@@ -14,7 +14,7 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R07 | IN_PROGRESS | ECDSA identity, DPAPI CurrentUser via P/Invoke on Windows; restart keeps pcId (Windows integration). Rotation not built |
 | R08 | IN_PROGRESS | Roots added only by local owner action (console or CLI); remote side sees exactly those (desktop-ui, integration). Drive-root warning exists but is untested. **D4:** roots bound to disk identity; another disk at the same path is refused (unit + integration, real volume serials) |
 | R09 | IN_PROGRESS | Traversal/ADS/reserved/symlink/junction/ancestor-swap/hard-link denied on Windows CI. Volume identity, placeholder, race fuzzing outstanding. **D4:** listing race closed (enumeration through a validated handle), encoded-separator, hard-link and ancestor-swap tests on Windows and Linux |
-| R10 | IN_PROGRESS | No write path exists at all; every root reports readOnly. Upload enablement is D9/W9 |
+| R10 | AUTOMATED_VERIFIED (partial) | Uploads exist only in owner-enabled folders (ADR-19); everything else stays read-only. Core, integration (uploads, 20) and Playwright verified locally; CI for the D9 SHA is recorded in phase-evidence. No Windows or phone run |
 | R11 | IN_PROGRESS | Tray, close-to-tray, Quit with no orphan agent, single instance verified by UI Automation (desktop-ui 43961529507). Start-at-sign-in, standard-user run outstanding |
 | R12 | IN_PROGRESS | Agent is outbound-only by construction. Real agents on GitHub's Windows and Linux runners connect to the live Oracle relay over the internet and obtain pairing codes (relay-release 44000402541). No browse/transfer through the live relay yet; no mobile-data trial |
 | R13 | IN_PROGRESS | Backoff+jitter reconnect; gateway-restart tests; fault-injection suite (`faults.test.mjs`: silent network loss, agent crash, relay crash mid-download with byte-exact ranged resume, graceful shutdown). Idempotency keys for retried mutations and bounded browser-side retry not built |
@@ -40,7 +40,7 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R33 | IN_PROGRESS | Emulated Pixel 7 / iPhone 15 layouts pass; no physical phone, no landscape/tablet work. **W4:** windowed desktop shell with taskbar, launcher, themes; phones get one maximised window (emulation only) |
 | R34 | IN_PROGRESS | Semantic buttons/labels, focus-visible, reduced-motion, forced-colors CSS. No automated a11y audit or keyboard review yet |
 | R35 | IN_PROGRESS | PWA manifest, PNG icons, one service worker (static shell only, purged on sign-out, updates never during a managed transfer) tested in 5 browser projects; iOS Home Screen / Android install and real push AWAITING_DEVICE_TEST |
-| R36 | NOT_STARTED | D9/W9 |
+| R36 | AUTOMATED_VERIFIED (partial) | Phone upload UI: system picker, confirmation (destination, sizes, limits, collision choice), separate "stored on PC" vs "Saved" states, resume, errors. Desktop + emulated mobile only; AWAITING_DEVICE_TEST on real phones |
 | R37 | NOT_STARTED | W10 |
 | R38 | IN_PROGRESS | Logs asserted free of pairing/device secrets, tokens, capabilities (integration). No support bundle/cache yet |
 | R39 | AUTOMATED_VERIFIED | /v1/meta and web taskbar state TLS-via-relay, not E2EE (integration test); README/SECURITY agree |
@@ -51,7 +51,7 @@ Statuses: NOT_STARTED, IN_PROGRESS, AUTOMATED_VERIFIED (automated proof exists f
 | R44 | NOT_STARTED | D10 (signing identity required) |
 | R45 | IN_PROGRESS | Transfer metrics recorded per run; 10,000-entry listing test. Budgets beyond transfer memory not set. **D1 pass:** Fluent light/dark verified by reviewed screenshots; keyboard reachability on all pages; contrast measured. High contrast, DPI scaling and screen-reader pass not evidenced |
 | R46 | IN_PROGRESS | /healthz only |
-| R47 | IN_PROGRESS | Adversarial cases run in every integration/Core run; no dedicated corpus/fuzzing yet |
+| R47 | IN_PROGRESS | Adversarial cases run in every integration/Core run, now including upload traversal, forged ids, hostile names and damaged pieces (T27–T31); no dedicated corpus/fuzzing yet |
 | R48 | IN_PROGRESS | Runner OS/tool versions recorded; emulation labelled; device evidence listed as missing |
 | R49 | NOT_STARTED | D12/W12 |
 | R50 | IN_PROGRESS | Version negotiation in handshake; unsupported agent version rejected with update message (integration). No old/new matrix |

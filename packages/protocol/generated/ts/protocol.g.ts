@@ -5,11 +5,11 @@ export type Int64String = string;
 
 export const PROTOCOL_VERSION = 1;
 export const MIN_PROTOCOL_VERSION = 1;
-export const ACTIONS = ["challenge","hello","create_pairing","confirm_pairing","pairing_claimed","list_roots","list_directory","prepare_read","open_read","cancel_stream","list_devices","revoke_device","heartbeat","create_invitation","list_invitations","cancel_invitation","start_archive","archive_status","cancel_archive","search","cancel_search","check_entries"] as const;
+export const ACTIONS = ["challenge","hello","create_pairing","confirm_pairing","pairing_claimed","list_roots","list_directory","prepare_read","open_read","cancel_stream","list_devices","revoke_device","heartbeat","create_invitation","list_invitations","cancel_invitation","start_archive","archive_status","cancel_archive","search","cancel_search","check_entries","start_upload","upload_status","write_chunk","finish_upload","cancel_upload","cancel_device_uploads"] as const;
 
 export type EnvelopeKind = 'req' | 'res' | 'evt';
 
-export type ErrorCode = 'unauthenticated' | 'forbidden' | 'not_found' | 'invalid_request' | 'expired' | 'conflict' | 'pc_offline' | 'timeout' | 'revision_changed' | 'range_not_satisfiable' | 'limit_exceeded' | 'unsupported_version' | 'unknown_action' | 'access_denied_local' | 'link_not_allowed' | 'unavailable' | 'internal';
+export type ErrorCode = 'unauthenticated' | 'forbidden' | 'not_found' | 'invalid_request' | 'expired' | 'conflict' | 'pc_offline' | 'timeout' | 'revision_changed' | 'range_not_satisfiable' | 'limit_exceeded' | 'unsupported_version' | 'unknown_action' | 'access_denied_local' | 'link_not_allowed' | 'unavailable' | 'internal' | 'name_exists' | 'too_large' | 'disk_full' | 'checksum_mismatch';
 
 export type EntryKind = 'file' | 'directory';
 
@@ -124,6 +124,9 @@ export interface RootSummary {
   name: string;
   readOnly: boolean;
   available: boolean;
+  canUpload: boolean;
+  maxUploadBytes: Int64String;
+  uploadQuotaLeftBytes?: Int64String | null;
 }
 
 export interface RootListResponse {
@@ -314,6 +317,64 @@ export interface CheckEntriesResult {
   entries: EntryCheck[];
 }
 
+export interface StartUploadRequest {
+  rootId: string;
+  folderEntryId?: string | null;
+  name: string;
+  size: Int64String;
+  collision: string;
+  deviceId?: string | null;
+}
+
+export interface UploadStarted {
+  uploadId: string;
+  name: string;
+  size: Int64String;
+  chunkBytes: number;
+  expiresUnixMs: Int64String;
+  collision: string;
+  destination: string[];
+  quotaLeftBytes?: Int64String | null;
+}
+
+export interface UploadRef {
+  uploadId: string;
+  deviceId?: string | null;
+}
+
+export interface UploadStatus {
+  uploadId: string;
+  state: string;
+  name: string;
+  size: Int64String;
+  committedBytes: Int64String;
+  finalName?: string | null;
+  renamed: boolean;
+  sha256?: string | null;
+  originMarked: boolean;
+  error?: string | null;
+  expiresUnixMs: Int64String;
+}
+
+export interface WriteChunkRequest {
+  uploadId: string;
+  deviceId: string;
+  offset: Int64String;
+  length: number;
+  sha256: string;
+  streamId: string;
+  uplinkToken: string;
+}
+
+export interface WriteChunkResult {
+  accepted: boolean;
+  status: UploadStatus;
+}
+
+export interface CancelDeviceUploadsRequest {
+  deviceId: string;
+}
+
 export interface OpenReadRequest {
   readToken: string;
   offset: Int64String;
@@ -411,6 +472,13 @@ export interface ProtocolTypeMap {
   CheckEntriesRequest: CheckEntriesRequest;
   EntryCheck: EntryCheck;
   CheckEntriesResult: CheckEntriesResult;
+  StartUploadRequest: StartUploadRequest;
+  UploadStarted: UploadStarted;
+  UploadRef: UploadRef;
+  UploadStatus: UploadStatus;
+  WriteChunkRequest: WriteChunkRequest;
+  WriteChunkResult: WriteChunkResult;
+  CancelDeviceUploadsRequest: CancelDeviceUploadsRequest;
   OpenReadRequest: OpenReadRequest;
   CancelStreamRequest: CancelStreamRequest;
   BrowserDeviceSummary: BrowserDeviceSummary;
@@ -447,7 +515,11 @@ export const SCHEMA = {
       "access_denied_local",
       "link_not_allowed",
       "unavailable",
-      "internal"
+      "internal",
+      "name_exists",
+      "too_large",
+      "disk_full",
+      "checksum_mismatch"
     ],
     "EntryKind": [
       "file",
@@ -575,7 +647,10 @@ export const SCHEMA = {
       "rootId": "string",
       "name": "string",
       "readOnly": "bool",
-      "available": "bool"
+      "available": "bool",
+      "canUpload": "bool",
+      "maxUploadBytes": "int64",
+      "uploadQuotaLeftBytes": "int64?"
     },
     "RootListResponse": {
       "roots": "RootSummary[]"
@@ -738,6 +813,57 @@ export const SCHEMA = {
     },
     "CheckEntriesResult": {
       "entries": "EntryCheck[]"
+    },
+    "StartUploadRequest": {
+      "rootId": "string",
+      "folderEntryId": "string?",
+      "name": "string",
+      "size": "int64",
+      "collision": "string",
+      "deviceId": "string?"
+    },
+    "UploadStarted": {
+      "uploadId": "string",
+      "name": "string",
+      "size": "int64",
+      "chunkBytes": "int32",
+      "expiresUnixMs": "int64",
+      "collision": "string",
+      "destination": "string[]",
+      "quotaLeftBytes": "int64?"
+    },
+    "UploadRef": {
+      "uploadId": "string",
+      "deviceId": "string?"
+    },
+    "UploadStatus": {
+      "uploadId": "string",
+      "state": "string",
+      "name": "string",
+      "size": "int64",
+      "committedBytes": "int64",
+      "finalName": "string?",
+      "renamed": "bool",
+      "sha256": "string?",
+      "originMarked": "bool",
+      "error": "string?",
+      "expiresUnixMs": "int64"
+    },
+    "WriteChunkRequest": {
+      "uploadId": "string",
+      "deviceId": "string",
+      "offset": "int64",
+      "length": "int32",
+      "sha256": "string",
+      "streamId": "string",
+      "uplinkToken": "string"
+    },
+    "WriteChunkResult": {
+      "accepted": "bool",
+      "status": "UploadStatus"
+    },
+    "CancelDeviceUploadsRequest": {
+      "deviceId": "string"
     },
     "OpenReadRequest": {
       "readToken": "string",

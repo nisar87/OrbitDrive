@@ -91,6 +91,8 @@ internal sealed class AgentState
     public FileAccessService Files { get; private set; } = null!;
     public ArchiveService Archives { get; private set; } = null!;
     public SearchService Search { get; private set; } = null!;
+    public UploadService Uploads { get; private set; } = null!;
+    private readonly object _mutate = new();
     public string Directory_ { get; }
 
     public AgentState(string directory)
@@ -118,6 +120,7 @@ internal sealed class AgentState
         Archives = new ArchiveService(Files, Tokens, () => Roots, new ArchiveOptions { Directory = Path.Join(directory, "archives") });
         Files.Archives = Archives;
         Search = new SearchService(Files, () => Roots);
+        Uploads = new UploadService(Files, () => Roots, AddUploadUsed, new UploadOptions());
         ReloadRoots();
     }
 
@@ -152,7 +155,7 @@ internal sealed class AgentState
         if (!Directory.Exists(full)) throw new DirectoryNotFoundException($"Folder not found: {full}");
         if (name.Length is 0 or > 64) throw new ArgumentException("Root name must be 1-64 characters.");
         var root = new SharedRoot(Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(9)), name, full, showHidden, NativeFile.GetVolumeIdentity(full));
-        Save([.. _roots, root]);
+        lock (_mutate) Save([.. _roots, root]);
         return root;
     }
 
@@ -190,15 +193,47 @@ internal sealed class AgentState
     public bool SetShowHidden(string rootId, bool showHidden)
     {
         if (_roots.All(r => r.RootId != rootId)) return false;
-        Save([.. _roots.Select(r => r.RootId == rootId ? r with { ShowHidden = showHidden } : r)]);
+        lock (_mutate) Save([.. _roots.Select(r => r.RootId == rootId ? r with { ShowHidden = showHidden } : r)]);
         return true;
+    }
+
+    /// <summary>
+    /// Owner-only: let paired browsers upload into this shared folder, within a total allowance and a per-file limit (0 = the default
+    /// per-file limit / no total allowance). Turning it off discards every upload still in progress. Never reachable from a remote request.
+    /// </summary>
+    public bool SetUploads(string rootId, bool enabled, long quotaBytes = 0, long maxFileBytes = 0, bool resetUsed = false)
+    {
+        if (quotaBytes is < 0 or > (1L << 50) || maxFileBytes is < 0 or > (1L << 50)) throw new ArgumentException("The limits must be between 0 and 1 PiB.");
+        lock (_mutate)
+        {
+            if (_roots.All(r => r.RootId != rootId)) return false;
+            Save([.. _roots.Select(r => r.RootId != rootId ? r : r with
+            {
+                UploadsEnabled = enabled,
+                UploadQuotaBytes = enabled ? quotaBytes : r.UploadQuotaBytes,
+                UploadMaxFileBytes = enabled ? maxFileBytes : r.UploadMaxFileBytes,
+                UploadUsedBytes = resetUsed ? 0 : r.UploadUsedBytes,
+            })]);
+        }
+        if (!enabled) Uploads.DropForRoot(rootId);
+        return true;
+    }
+
+    private void AddUploadUsed(string rootId, long bytes)
+    {
+        lock (_mutate) Save([.. _roots.Select(r => r.RootId == rootId ? r with { UploadUsedBytes = r.UploadUsedBytes + bytes } : r)]);
     }
 
     public bool RemoveRoot(string rootId)
     {
-        var remaining = _roots.Where(r => r.RootId != rootId).ToList();
-        if (remaining.Count == _roots.Count) return false;
-        Save(remaining);
+        List<SharedRoot> remaining;
+        lock (_mutate)
+        {
+            remaining = _roots.Where(r => r.RootId != rootId).ToList();
+            if (remaining.Count == _roots.Count) return false;
+            Save(remaining);
+        }
+        Uploads.DropForRoot(rootId);
         Thumbnails.Cache.Clear();      // derived content never outlives a permission change
         Archives.DropForRoot(rootId);  // nor do archives made from the folder, or searches still reading it
         Search.CancelAll();

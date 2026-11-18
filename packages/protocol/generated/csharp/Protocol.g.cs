@@ -34,7 +34,13 @@ public static class Actions
     public const string Search = "search";
     public const string CancelSearch = "cancel_search";
     public const string CheckEntries = "check_entries";
-    public static readonly IReadOnlySet<string> All = new HashSet<string> { "challenge", "hello", "create_pairing", "confirm_pairing", "pairing_claimed", "list_roots", "list_directory", "prepare_read", "open_read", "cancel_stream", "list_devices", "revoke_device", "heartbeat", "create_invitation", "list_invitations", "cancel_invitation", "start_archive", "archive_status", "cancel_archive", "search", "cancel_search", "check_entries" };
+    public const string StartUpload = "start_upload";
+    public const string UploadStatus = "upload_status";
+    public const string WriteChunk = "write_chunk";
+    public const string FinishUpload = "finish_upload";
+    public const string CancelUpload = "cancel_upload";
+    public const string CancelDeviceUploads = "cancel_device_uploads";
+    public static readonly IReadOnlySet<string> All = new HashSet<string> { "challenge", "hello", "create_pairing", "confirm_pairing", "pairing_claimed", "list_roots", "list_directory", "prepare_read", "open_read", "cancel_stream", "list_devices", "revoke_device", "heartbeat", "create_invitation", "list_invitations", "cancel_invitation", "start_archive", "archive_status", "cancel_archive", "search", "cancel_search", "check_entries", "start_upload", "upload_status", "write_chunk", "finish_upload", "cancel_upload", "cancel_device_uploads" };
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<EnvelopeKind>))]
@@ -65,6 +71,10 @@ public enum ErrorCode
     [JsonStringEnumMemberName("link_not_allowed")] LinkNotAllowed,
     [JsonStringEnumMemberName("unavailable")] Unavailable,
     [JsonStringEnumMemberName("internal")] Internal,
+    [JsonStringEnumMemberName("name_exists")] NameExists,
+    [JsonStringEnumMemberName("too_large")] TooLarge,
+    [JsonStringEnumMemberName("disk_full")] DiskFull,
+    [JsonStringEnumMemberName("checksum_mismatch")] ChecksumMismatch,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<EntryKind>))]
@@ -238,6 +248,9 @@ public sealed record RootSummary
     [JsonPropertyName("name")] public required string Name { get; init; }
     [JsonPropertyName("readOnly")] public required bool ReadOnly { get; init; }
     [JsonPropertyName("available")] public required bool Available { get; init; }
+    [JsonPropertyName("canUpload")] public required bool CanUpload { get; init; }
+    [JsonPropertyName("maxUploadBytes")] [JsonConverter(typeof(Int64StringConverter))] public required long MaxUploadBytes { get; init; }
+    [JsonPropertyName("uploadQuotaLeftBytes")] [JsonConverter(typeof(NullableInt64StringConverter))] public long? UploadQuotaLeftBytes { get; init; }
 }
 
 public sealed record RootListResponse
@@ -452,6 +465,71 @@ public sealed record EntryCheck
 public sealed record CheckEntriesResult
 {
     [JsonPropertyName("entries")] public required IReadOnlyList<EntryCheck> Entries { get; init; }
+}
+
+public sealed record StartUploadRequest
+{
+    [JsonPropertyName("rootId")] public required string RootId { get; init; }
+    [JsonPropertyName("folderEntryId")] public string? FolderEntryId { get; init; }
+    [JsonPropertyName("name")] public required string Name { get; init; }
+    [JsonPropertyName("size")] [JsonConverter(typeof(Int64StringConverter))] public required long Size { get; init; }
+    [JsonPropertyName("collision")] public required string Collision { get; init; }
+    [JsonPropertyName("deviceId")] public string? DeviceId { get; init; }
+}
+
+public sealed record UploadStarted
+{
+    [JsonPropertyName("uploadId")] public required string UploadId { get; init; }
+    [JsonPropertyName("name")] public required string Name { get; init; }
+    [JsonPropertyName("size")] [JsonConverter(typeof(Int64StringConverter))] public required long Size { get; init; }
+    [JsonPropertyName("chunkBytes")] public required int ChunkBytes { get; init; }
+    [JsonPropertyName("expiresUnixMs")] [JsonConverter(typeof(Int64StringConverter))] public required long ExpiresUnixMs { get; init; }
+    [JsonPropertyName("collision")] public required string Collision { get; init; }
+    [JsonPropertyName("destination")] public required IReadOnlyList<string> Destination { get; init; }
+    [JsonPropertyName("quotaLeftBytes")] [JsonConverter(typeof(NullableInt64StringConverter))] public long? QuotaLeftBytes { get; init; }
+}
+
+public sealed record UploadRef
+{
+    [JsonPropertyName("uploadId")] public required string UploadId { get; init; }
+    [JsonPropertyName("deviceId")] public string? DeviceId { get; init; }
+}
+
+public sealed record UploadStatus
+{
+    [JsonPropertyName("uploadId")] public required string UploadId { get; init; }
+    [JsonPropertyName("state")] public required string State { get; init; }
+    [JsonPropertyName("name")] public required string Name { get; init; }
+    [JsonPropertyName("size")] [JsonConverter(typeof(Int64StringConverter))] public required long Size { get; init; }
+    [JsonPropertyName("committedBytes")] [JsonConverter(typeof(Int64StringConverter))] public required long CommittedBytes { get; init; }
+    [JsonPropertyName("finalName")] public string? FinalName { get; init; }
+    [JsonPropertyName("renamed")] public required bool Renamed { get; init; }
+    [JsonPropertyName("sha256")] public string? Sha256 { get; init; }
+    [JsonPropertyName("originMarked")] public required bool OriginMarked { get; init; }
+    [JsonPropertyName("error")] public string? Error { get; init; }
+    [JsonPropertyName("expiresUnixMs")] [JsonConverter(typeof(Int64StringConverter))] public required long ExpiresUnixMs { get; init; }
+}
+
+public sealed record WriteChunkRequest
+{
+    [JsonPropertyName("uploadId")] public required string UploadId { get; init; }
+    [JsonPropertyName("deviceId")] public required string DeviceId { get; init; }
+    [JsonPropertyName("offset")] [JsonConverter(typeof(Int64StringConverter))] public required long Offset { get; init; }
+    [JsonPropertyName("length")] public required int Length { get; init; }
+    [JsonPropertyName("sha256")] public required string Sha256 { get; init; }
+    [JsonPropertyName("streamId")] public required string StreamId { get; init; }
+    [JsonPropertyName("uplinkToken")] public required string UplinkToken { get; init; }
+}
+
+public sealed record WriteChunkResult
+{
+    [JsonPropertyName("accepted")] public required bool Accepted { get; init; }
+    [JsonPropertyName("status")] public required UploadStatus Status { get; init; }
+}
+
+public sealed record CancelDeviceUploadsRequest
+{
+    [JsonPropertyName("deviceId")] public required string DeviceId { get; init; }
 }
 
 public sealed record OpenReadRequest

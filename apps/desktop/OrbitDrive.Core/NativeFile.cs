@@ -215,4 +215,40 @@ public static class NativeFile
         var root = rootFinalPath.TrimEnd(Path.DirectorySeparatorChar);
         return finalPath.Length > root.Length && finalPath.StartsWith(root, comparison) && finalPath[root.Length] == Path.DirectorySeparatorChar;
     }
+
+    [DllImport("libc", EntryPoint = "link", SetLastError = true, CharSet = CharSet.Ansi)]
+    private static extern int PosixLink(string existing, string created);
+
+    /// <summary>
+    /// Moves a finished file to its final name without ever replacing something that is already there. Returns false when the name
+    /// is taken. Windows: MoveFileEx without the replace flag (atomic, fails if the name exists). Linux (development hosts): hard
+    /// link then remove the old name, which also fails atomically if the name exists.
+    /// </summary>
+    public static bool MoveNoReplace(string source, string destination)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            try { File.Move(source, destination, overwrite: false); return true; }
+            catch (IOException) when (File.Exists(destination) || Directory.Exists(destination)) { return false; }
+        }
+        if (PosixLink(source, destination) != 0)
+        {
+            var errno = Marshal.GetLastPInvokeError();
+            if (errno == 17) return false;                                 // EEXIST
+            throw new IOException($"The file could not be moved into place (error {errno}).");
+        }
+        File.Delete(source);
+        return true;
+    }
+
+    /// <summary>
+    /// Windows "came from the internet" marker (Zone.Identifier, zone 3) so SmartScreen and Office treat a received file with
+    /// suspicion. Returns false where the file system or the OS has no such thing (not Windows, or not NTFS).
+    /// </summary>
+    public static bool MarkAsFromInternet(string path)
+    {
+        if (!OperatingSystem.IsWindows()) return false;
+        try { File.WriteAllText(path + ":Zone.Identifier", "[ZoneTransfer]\r\nZoneId=3\r\n"); return true; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException) { return false; }
+    }
 }

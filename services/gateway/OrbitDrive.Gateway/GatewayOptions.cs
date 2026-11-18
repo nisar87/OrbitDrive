@@ -44,6 +44,11 @@ public sealed class GatewayOptions
     public int InvitationTtlSeconds { get; set; } = 86400;
     /// <summary>Open invitations one receiver may have at a time (a hostile or buggy PC cannot flood an Inbox).</summary>
     public int MaxPendingInvitationsPerReceiver { get; set; } = 50;
+    /// <summary>The largest piece of an upload the relay will carry in one request, and how long one piece may take end to end.</summary>
+    public int MaxUploadChunkBytes { get; set; } = 8 * 1024 * 1024;
+    public int UploadChunkTimeoutSeconds { get; set; } = 600;
+    /// <summary>Uploads one browser may start per minute (a phone sending many small photos starts many).</summary>
+    public int UploadStartsPerMinute { get; set; } = 300;
     public int MaxControlMessageBytes { get; set; } = 262144;
     /// <summary>How often a connected PC must prove it is alive, and how long silence is tolerated before it is treated as offline.</summary>
     public int AgentHeartbeatSeconds { get; set; } = 10;

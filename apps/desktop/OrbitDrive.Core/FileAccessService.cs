@@ -47,7 +47,12 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
 
     public RootListResponse ListRoots() => new()
     {
-        Roots = [.. roots().Select(r => new RootSummary { RootId = r.RootId, Name = r.Name, ReadOnly = true, Available = IsAvailable(r) })],
+        Roots = [.. roots().Select(r => new RootSummary
+        {
+            RootId = r.RootId, Name = r.Name, ReadOnly = !r.UploadsEnabled, Available = IsAvailable(r),
+            CanUpload = r.UploadsEnabled, MaxUploadBytes = r.UploadsEnabled ? UploadLimits.MaxFileBytes(r) : 0,
+            UploadQuotaLeftBytes = r.UploadsEnabled ? UploadLimits.QuotaLeft(r) : null,
+        })],
     };
 
     internal SharedRoot FindRoot(string rootId) =>
@@ -61,11 +66,10 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
     }
 
     /// <summary>
-    /// The one place a folder's children are read. The folder is opened, the OPENED folder is proven to be inside the shared root, and
-    /// the listing goes through that same handle. Links, unsafe names, system items and (unless the owner allowed them) hidden items
-    /// are left out. Browsing, searching and archiving all use this, so they share one access boundary.
+    /// Opens a folder inside a root and proves the OPENED folder is inside the root (not a link or junction, not another disk).
+    /// The caller works through the returned handle's path and disposes it.
     /// </summary>
-    internal List<FileSystemInfo> EnumerateChildren(SharedRoot root, string[] segments, out int skipped)
+    internal NativeFile.PinnedDirectory PinFolder(SharedRoot root, string[] segments)
     {
         EnsureApprovedVolume(root);
         var path = PathPolicy.Resolve(root, segments, expectDirectory: true);
@@ -74,19 +78,33 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         catch (UnauthorizedAccessException) { throw new ProtocolException(ErrorCode.AccessDeniedLocal, "Windows denied access to this folder."); }
         catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception)
         { throw new ProtocolException(segments.Length == 0 ? ErrorCode.Unavailable : ErrorCode.NotFound, segments.Length == 0 ? "The shared folder is currently unavailable." : "The item no longer exists."); }
-        using var held = pinned;
-        var rootFinal = RootFinalPath(root);
-        var inside = segments.Length == 0
-            ? string.Equals(pinned.FinalPath.TrimEnd(Path.DirectorySeparatorChar), rootFinal.TrimEnd(Path.DirectorySeparatorChar), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
-            : !pinned.IsLink && NativeFile.IsUnder(pinned.FinalPath, rootFinal);
-        if (!inside) throw new ProtocolException(ErrorCode.LinkNotAllowed, "Links and junctions are not followed.");
+        try
+        {
+            var rootFinal = RootFinalPath(root);
+            var inside = segments.Length == 0
+                ? string.Equals(pinned.FinalPath.TrimEnd(Path.DirectorySeparatorChar), rootFinal.TrimEnd(Path.DirectorySeparatorChar), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
+                : !pinned.IsLink && NativeFile.IsUnder(pinned.FinalPath, rootFinal);
+            if (!inside) throw new ProtocolException(ErrorCode.LinkNotAllowed, "Links and junctions are not followed.");
+            return pinned;
+        }
+        catch { pinned.Dispose(); throw; }
+    }
 
+    /// <summary>
+    /// The one place a folder's children are read. The folder is opened, the OPENED folder is proven to be inside the shared root, and
+    /// the listing goes through that same handle. Links, unsafe names, system items and (unless the owner allowed them) hidden items
+    /// are left out. Browsing, searching and archiving all use this, so they share one access boundary.
+    /// </summary>
+    internal List<FileSystemInfo> EnumerateChildren(SharedRoot root, string[] segments, out int skipped)
+    {
+        using var pinned = PinFolder(root, segments);
         var skippedHere = 0;
         var items = new List<FileSystemInfo>();
         try
         {
             foreach (var info in new DirectoryInfo(pinned.EnumerationPath).EnumerateFileSystemInfos())
             {
+                if (PathPolicy.IsInternalName(info.Name)) continue;                  // the private folder of files still being received
                 if (info.Attributes.HasFlag(FileAttributes.ReparsePoint) || !PathPolicy.IsSafeSegment(info.Name)) { skippedHere++; continue; }
                 if (info.Attributes.HasFlag(FileAttributes.System)) continue;
                 if (info.Attributes.HasFlag(FileAttributes.Hidden) && !root.ShowHidden) continue;

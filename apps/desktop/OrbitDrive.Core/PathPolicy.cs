@@ -7,7 +7,8 @@ namespace OrbitDrive.Core;
 /// A folder the owner approved. <paramref name="VolumeId"/> is the identity of the disk it was on when approved: if a
 /// different disk later appears at the same path (another USB stick on E:), the approval does not carry over.
 /// </summary>
-public sealed record SharedRoot(string RootId, string Name, string Path, bool ShowHidden = false, string? VolumeId = null);
+public sealed record SharedRoot(string RootId, string Name, string Path, bool ShowHidden = false, string? VolumeId = null,
+    bool UploadsEnabled = false, long UploadQuotaBytes = 0, long UploadUsedBytes = 0, long UploadMaxFileBytes = 0);
 
 public static class PathPolicy
 {
@@ -17,10 +18,18 @@ public static class PathPolicy
         "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9", "CONIN$", "CONOUT$",
     };
 
+    /// <summary>
+    /// The private folder, directly inside an upload-enabled shared folder, that holds files still being received. It is never
+    /// listed, searched, archived or readable, and no upload may use the name, so a half-received file can never look finished.
+    /// </summary>
+    public const string PartialDirectoryName = ".orbitdrive-partial";
+
+    public static bool IsInternalName(string? name) => string.Equals(name, PartialDirectoryName, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>True when a single path component is safe to join beneath a root on Windows and Unix.</summary>
     public static bool IsSafeSegment(string? segment)
     {
-        if (string.IsNullOrEmpty(segment) || segment.Length > 255 || segment is "." or "..") return false;
+        if (string.IsNullOrEmpty(segment) || segment.Length > 255 || segment is "." or ".." || IsInternalName(segment)) return false;
         foreach (var c in segment)
             if (c < 0x20 || c is '/' or '\\' or ':' or '*' or '?' or '"' or '<' or '>' or '|' or '\u007f') return false;
         if (segment[^1] is '.' or ' ') return false; // Windows silently strips these, aliasing another name

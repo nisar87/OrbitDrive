@@ -49,6 +49,31 @@ async function call<K extends keyof ProtocolTypeMap>(type: K, session: Session |
   return validate(type, json);
 }
 
+/**
+ * One piece of an upload: the raw bytes, with their SHA-256 in a header. The PC checks the checksum and the position, and its answer
+ * (accepted or not, and how many bytes it really holds) is the only thing that moves the upload forward.
+ */
+async function sendChunk(s: Session, pcId: string, uploadId: string, offset: number, data: ArrayBuffer, sha256: string, signal: AbortSignal): Promise<ProtocolTypeMap['WriteChunkResult']> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream', 'X-Chunk-Sha256': sha256 };
+  const token = tokenProvider ? await tokenProvider() : s.idToken;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (s.device) headers['X-OrbitDrive-Device'] = `${s.device.id}.${s.device.secret}`;
+  let response: Response;
+  try {
+    response = await fetch(`${GATEWAY_URL}/v1/pcs/${encodeURIComponent(pcId)}/uploads/${encodeURIComponent(uploadId)}/chunk?offset=${offset}`,
+      { method: 'PUT', headers, body: data, cache: 'no-store', referrerPolicy: 'no-referrer', signal });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e;
+    throw new ApiError('network', 'Cannot reach the OrbitDrive service. Check your connection.', 0);
+  }
+  const json: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    try { const failure = validate('ErrorResponse', json); throw new ApiError(failure.error.code, failure.error.message, response.status); }
+    catch (e) { if (e instanceof ApiError) throw e; throw new ApiError('internal', `The service answered ${response.status}.`, response.status); }
+  }
+  return validate('WriteChunkResult', json);
+}
+
 export const INVITATION_PREFIX = 'invitation:';
 /** A finished archive on a PC is downloaded through the same path as a file, written "archive:<id>". */
 export const ARCHIVE_PREFIX = 'archive:';
@@ -72,6 +97,12 @@ export const api = {
   search: (s: Session, pcId: string, request: { searchId: string; query: string; rootId?: string | null; entryId?: string | null; limit: number }) =>
     call('SearchResult', s, 'POST', `/v1/pcs/${encodeURIComponent(pcId)}/searches`, request),
   cancelSearch: (s: Session, pcId: string, searchId: string) => call('Ack', s, 'POST', `/v1/pcs/${encodeURIComponent(pcId)}/search-cancel`, { searchId }),
+  startUpload: (s: Session, pcId: string, request: { rootId: string; folderEntryId: string | null; name: string; size: string; collision: 'reject' | 'rename' }) =>
+    call('UploadStarted', s, 'POST', `/v1/pcs/${encodeURIComponent(pcId)}/uploads`, request),
+  uploadStatus: (s: Session, pcId: string, uploadId: string) => call('UploadStatus', s, 'POST', `/v1/pcs/${encodeURIComponent(pcId)}/upload-status`, { uploadId }),
+  uploadChunk: sendChunk,
+  finishUpload: (s: Session, pcId: string, uploadId: string) => call('UploadStatus', s, 'POST', `/v1/pcs/${encodeURIComponent(pcId)}/upload-finish`, { uploadId }),
+  cancelUpload: (s: Session, pcId: string, uploadId: string) => call('Ack', s, 'POST', `/v1/pcs/${encodeURIComponent(pcId)}/upload-cancel`, { uploadId }),
   checkEntries: (s: Session, pcId: string, entryIds: string[]) => call('CheckEntriesResult', s, 'POST', `/v1/pcs/${encodeURIComponent(pcId)}/entry-checks`, { entryIds }),
   /** In-page preview of a file ("preview") or a generated thumbnail ("thumb:N"): a revocable capability, never a transfer. */
   previewSession: (s: Session, pcId: string, entryId: string, variant: string) => call('DownloadSession', s, 'POST', '/v1/download-sessions', { pcId, entryId, variant }),
