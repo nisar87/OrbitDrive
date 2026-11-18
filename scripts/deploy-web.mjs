@@ -14,10 +14,13 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const web = join(root, 'apps', 'web');
 const staging = join(root, '.deploy-web');
 const env = { ...process.env };
-const envFile = join(web, '.env.local');
-if (existsSync(envFile)) for (const line of readFileSync(envFile, 'utf8').split(/\r?\n/)) {
-  const m = line.match(/^\s*(VITE_[A-Z_]+)\s*=\s*(.*?)\s*$/);
-  if (m && !(m[1] in env)) env[m[1]] = m[2];
+// Precedence: real environment, then apps/web/.env.local (the owner's own), then the committed public development values (used by CI).
+for (const envFile of [join(web, '.env.local'), join(root, 'infra', 'firebase', 'web-dev.env')]) {
+  if (!existsSync(envFile)) continue;
+  for (const line of readFileSync(envFile, 'utf8').split(/\r?\n/)) {
+    const m = line.match(/^\s*(VITE_[A-Z_]+)\s*=\s*(.*?)\s*$/);
+    if (m && !(m[1] in env)) env[m[1]] = m[2];
+  }
 }
 const need = ['VITE_GATEWAY_URL', 'VITE_FIREBASE_API_KEY', 'VITE_FIREBASE_AUTH_DOMAIN', 'VITE_FIREBASE_PROJECT_ID', 'VITE_FIREBASE_APP_ID'];
 const missing = need.filter((k) => !env[k]);

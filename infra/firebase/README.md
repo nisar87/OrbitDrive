@@ -16,3 +16,16 @@ first deploy. Deploying needs the owner's Firebase login, so it is run by the ow
 2. `npx firebase-tools login`, then `node scripts/deploy-web.mjs`. It writes the page headers for that relay, builds, deploys **hosting only**
    and always restores the committed fail-closed `firebase.json`.
 3. Afterwards: open `https://orbitdrive-dev.web.app`, check the response headers and that `/assets/*.mjs` is served as JavaScript.
+
+## Automatic deploys (`.github/workflows/deploy-web.yml`)
+
+On every push to `main` that touches the web app or hosting config, the workflow checks that **all seven verification workflows are green for that exact
+commit**, then runs `scripts/deploy-web.mjs` (hosting only). The public web configuration comes from `web-dev.env` (public identifiers, committed);
+`apps/web/.env.local` overrides it on the owner's PC. The only secret is the deploy credential:
+
+- **One-time setup (owner, on their PC, in the repository folder):** `npx firebase-tools init hosting:github`. Pick the repository `nisar87/OrbitDrive`
+  and project `orbitdrive-dev`; it creates a Hosting-only service account and stores it as the repository secret
+  `FIREBASE_SERVICE_ACCOUNT_ORBITDRIVE_DEV`. **Say no** when it offers to create its own workflow files (this repository already has `deploy-web.yml`),
+  and delete any `firebase-hosting-*.yml` it adds under `.github/workflows/`. No key passes through chat or the repository.
+- Until that secret exists the workflow stops at its first step with an explanation and deploys nothing.
+- Revoke by deleting the secret (and the service account in Google Cloud). Production would need its own project, secret and approval; none exists.
