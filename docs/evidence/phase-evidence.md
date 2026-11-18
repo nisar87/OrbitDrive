@@ -355,3 +355,16 @@ verify-deployment and both live-agent jobs.
   **not visually reviewed**; only the script's own assertions (UIA text, non-blank pixels) are known.
 - No Windows 11 desktop, standard-user, physical Android/iOS, mobile-data, or internet-relay run exists yet.
 - The relay Dockerfile and `firebase.json` have never been built/validated.
+
+## D8/W8 — ZIP archives, search, favorites/recents (code SHA `b0ab209`)
+
+- CI for the exact SHA `b0ab209164c47785c094b85d03a5b427e2e04e11`: contracts, security, gateway, desktop, desktop-ui, integration and web all **success**. The first D8 commit `c011b62` failed `desktop` (CS8631 nullability in two `ArchiveTests` assertions); fixed by making the expression nullability-safe, assertions unchanged.
+- Added: Core `ArchiveTests` and `SearchTests`; integration `archives` (4), `search` (7), `multipc` (3); gateway device-reuse tests (3); web vitest `library.test.ts` (16); Playwright `archive.spec.mjs` (ZIP of a folder and of a multi-selection extracted with an independent reader and compared by SHA-256, symlink omission shown and reported in `_OrbitDrive_omitted.txt`, two PCs paired from one browser, cross-PC search, offline PC shown as offline, favorite becomes Unavailable after rename and can be removed).
+- Defects found by these tests and fixed: one device per pairing broke multi-PC use (claim now reuses the device); Favorites list crashed the Explorer (`placeItem` used before initialisation) — found by Playwright, fixed.
+- Test changes that are not weakenings: `devices.test.mjs` now expects the remaining device list after the device-reuse change; `explorer.spec.mjs` context-menu list gained the intended "Add to favorites" item (still an exact list match).
+
+### Local-only observations
+- Local runs used the fake thumbnail helper where relevant and the stand-in xunit runner (nuget.org unreachable); CI is the authority. Mobile screenshots (`archive-ready-*`, `search-two-pcs-*`) were reviewed; both phone layouts push the file list below the panel, which is acceptable but not polished.
+
+### Not evidenced
+- A real >4 GiB ZIP64 archive (only forced-ZIP64 structures and a >65 534-entry directory); physical phones; large-list profile on devices; server-side favorites; WPF console toggles (thumbnails/cache clear, SendTo shortcut); Windows-specific hidden/system-attribute handling beyond the CI Windows unit tests.
