@@ -45,6 +45,7 @@ async function pairAndOpen(page, share) {
 }
 
 test.describe.configure({ mode: 'serial' });
+test.beforeEach(() => link.throttleUploads(0));
 
 test('only an owner-enabled folder offers Upload; a picked file arrives byte for byte; existing names are never replaced', async ({ page }, info) => {
   await pairAndOpen(page, 'Drop box');
@@ -101,11 +102,13 @@ test('a read-only folder has no Upload button', async ({ page }) => {
 test('a dropped connection is resumed without sending the file again from the start', async ({ page }) => {
   await pairAndOpen(page, 'Drop box');
   const data = randomBytes(7 * 1024 * 1024);
+  link.throttleUploads(1 << 20);                                 // about 1 MB/s: the transfer is certainly still running when the link drops
   await page.getByTestId('upload-input').setInputFiles([upload('resumed.bin', data)]);
   await page.getByTestId('upload-confirm').getByRole('button', { name: /Upload 1 file/ }).click();
   const job = page.getByTestId('upload-job').filter({ hasText: 'resumed.bin' });
   await expect(job.getByRole('progress').or(job.locator('progress'))).toBeVisible({ timeout: 30_000 });
   link.cut();
+  link.throttleUploads(0);                                       // the connection comes back at full speed
   await expect(job.getByTestId('upload-saved')).toBeVisible({ timeout: 90_000 });
   expect(sha(readFileSync(join(drop, 'resumed.bin')))).toBe(sha(data));
 });

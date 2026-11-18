@@ -89,22 +89,24 @@ export async function startProxy(gateway, listenPort = 0) {
   const pairs = new Set();
   let dark = false;
   let downstreamRate = 0;                                         // bytes per second towards the client; 0 = unlimited
+  let upstreamRate = 0;                                           // bytes per second from the client (uploads); 0 = unlimited
   const server = createServer((client) => {
     const upstream = connect(target, '127.0.0.1');
     const pair = { client, upstream };
     pairs.add(pair);
-    const forward = (from, to, limited) => from.on('data', (chunk) => {
+    const forward = (from, to, rateOf) => from.on('data', (chunk) => {
       if (dark) return;
       const flushed = to.write(chunk);
       // Like a real network path, the proxy must not soak up data: when the receiving side is slow, stop reading
       // from the sender until it has drained (otherwise the proxy itself would hide missing backpressure).
       if (!flushed) { from.pause(); to.once('drain', () => from.resume()); }
-      if (limited && downstreamRate > 0) {                        // a slow link: hold the sender back in proportion to what was sent
+      const rate = rateOf();
+      if (rate > 0) {                                             // a slow link: hold the sender back in proportion to what was sent
         from.pause();
-        setTimeout(() => { if (to.writableNeedDrain) to.once('drain', () => from.resume()); else from.resume(); }, Math.ceil((chunk.length / downstreamRate) * 1000));
+        setTimeout(() => { if (to.writableNeedDrain) to.once('drain', () => from.resume()); else from.resume(); }, Math.ceil((chunk.length / rate) * 1000));
       }
     });
-    forward(client, upstream, false); forward(upstream, client, true);
+    forward(client, upstream, () => upstreamRate); forward(upstream, client, () => downstreamRate);
     const close = () => { pairs.delete(pair); client.destroy(); upstream.destroy(); };
     for (const socket of [client, upstream]) { socket.on('error', close); socket.on('close', () => { if (!dark) close(); }); }
   });
@@ -114,6 +116,8 @@ export async function startProxy(gateway, listenPort = 0) {
     url: `http://127.0.0.1:${server.address().port}`,
     /** Limits download speed towards the client (bytes per second; 0 removes the limit). */
     throttle(bytesPerSecond) { downstreamRate = bytesPerSecond; },
+    /** Limits upload speed from the client (bytes per second; 0 removes the limit). */
+    throttleUploads(bytesPerSecond) { upstreamRate = bytesPerSecond; },
     /** Drops every open connection at once (a network drop); new connections work. */
     cut() { for (const pair of pairs) { pair.client.destroy(); pair.upstream.destroy(); } pairs.clear(); },
     blackhole() { dark = true; },
