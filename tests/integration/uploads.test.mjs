@@ -204,8 +204,9 @@ describe('receiving a file', () => {
     assert.equal(unknown.status, 404);
     const empty = await putChunk(phone, started.uploadId, 0, Buffer.alloc(0));
     assert.equal(empty.status, 400);
-    const tooBig = await putChunk(phone, started.uploadId, 0, Buffer.alloc(8 * 2 ** 20 + 1));
-    assert.ok([400, 413].includes(tooBig.status), `${tooBig.status}`);
+    // Refused before its body is read: the relay answers 400/413, or (Windows) closes the connection while the sender is still writing.
+    const tooBig = await putChunk(phone, started.uploadId, 0, Buffer.alloc(8 * 2 ** 20 + 1)).catch((e) => ({ status: 'reset', cause: e?.cause?.code }));
+    assert.ok([400, 413].includes(tooBig.status) || (tooBig.status === 'reset' && ['ECONNRESET', 'EPIPE'].includes(tooBig.cause)), `${tooBig.status} ${tooBig.cause}`);
     const pastEnd = await putChunk(phone, started.uploadId, 0, randomData(6000, 32));                // more than the declared 5000
     assert.equal(pastEnd.status, 400);
     assert.equal((await statusOf(phone, started.uploadId)).body.committedBytes, '0');
