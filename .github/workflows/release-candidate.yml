@@ -1,0 +1,86 @@
+name: release-candidate
+# Builds a Windows release CANDIDATE artifact for the exact commit (D12). It publishes nothing: no release, no installer feed, no deployment.
+# The result is a workflow artifact (zip, SHA256SUMS, THIRD_PARTY_NOTICES.md, release-manifest.json) that the owner can download and verify.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-candidate
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Release tooling tests
+        run: node --test tests/release/release-lib.test.mjs
+      - name: Build the candidate (self-contained win-x64; agent, thumbnail helper, WPF console)
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          "version $version commit $env:GITHUB_SHA run $env:GITHUB_RUN_ID"
+          node tools/release/release-candidate.mjs --version $version --commit $env:GITHUB_SHA --run-id $env:GITHUB_RUN_ID --out "$PWD/artifacts/release"
+          if ($LASTEXITCODE -ne 0) { throw "release-candidate.mjs failed with $LASTEXITCODE" }
+      - name: Verify the artifact independently of the build script (PowerShell, not Node)
+        shell: pwsh
+        run: |
+          $dir = "$PWD/artifacts/release"
+          $zip = Get-ChildItem $dir -Filter 'OrbitDrive-*-win-x64.zip' | Select-Object -First 1
+          if (-not $zip) { throw 'zip missing' }
+          foreach ($line in Get-Content "$dir/SHA256SUMS") {
+            $hash, $name = $line -split '  ', 2
+            $actual = (Get-FileHash "$dir/$name" -Algorithm SHA256).Hash.ToLower()
+            if ($actual -ne $hash) { throw "checksum mismatch for $name : $actual vs $hash" }
+            "ok  $name  $hash"
+          }
+          $manifest = Get-Content "$dir/release-manifest.json" -Raw | ConvertFrom-Json
+          if ($manifest.commit -ne $env:GITHUB_SHA) { throw 'manifest commit is not this commit' }
+          if ($manifest.published -ne $false) { throw 'manifest must say published=false' }
+          if ($manifest.signing.state -ne 'unsigned') { throw 'signing state must be honest' }
+          if ($manifest.partial) { throw 'a partial build must not be a release candidate' }
+          $out = Join-Path $env:RUNNER_TEMP 'rc-extract'
+          Expand-Archive $zip.FullName -DestinationPath $out
+          $app = Join-Path $out 'OrbitDrive'
+          foreach ($f in 'orbitdrive-agent.exe','OrbitDrive.exe','OrbitDrive.ThumbnailHelper.exe','THIRD_PARTY_NOTICES.md','docs/INSTALL.md','docs/SUPPORT_MATRIX.md','docs/TROUBLESHOOTING.md') { if (-not (Test-Path (Join-Path $app $f))) { throw "missing in archive: $f" } }
+          if (Get-ChildItem $app -Recurse -Filter *.pdb) { throw 'debug symbols must not ship' }
+          $version = & "$app\orbitdrive-agent.exe" version
+          "agent says: $version"
+          if ($version -notmatch [regex]::Escape($env:GITHUB_SHA.Substring(0,12))) { throw 'the published agent does not report this commit' }
+      - name: 'Smoke-run the PUBLISHED agent (not the source build): roots, start, control channel, quit'
+        shell: pwsh
+        run: |
+          $app = Join-Path $env:RUNNER_TEMP 'rc-extract\OrbitDrive'
+          $agent = "$app\orbitdrive-agent.exe"
+          $state = Join-Path $env:RUNNER_TEMP 'rc-state'
+          $share = Join-Path $env:RUNNER_TEMP 'rc-share'
+          New-Item -ItemType Directory $share, $state | Out-Null
+          Set-Content "$share\hello.txt" 'hello'
+          & $agent roots add Share $share --state $state
+          if ($LASTEXITCODE -ne 0) { throw 'roots add failed' }
+          $list = (& $agent roots list --state $state) -join "`n"
+          "roots: $list"
+          if ($list -notmatch 'Share') { throw 'the folder was not listed' }
+          $log = Join-Path $env:RUNNER_TEMP 'rc-agent.log'
+          $p = Start-Process $agent -ArgumentList 'run','--state',$state -RedirectStandardOutput $log -RedirectStandardError "$log.err" -PassThru -NoNewWindow
+          $ready = $false
+          for ($i = 0; $i -lt 40 -and -not $ready; $i++) { Start-Sleep -Milliseconds 500; if ((Test-Path $log) -and ((Get-Content $log -Raw) -match '"event":"ready"')) { $ready = $true } }
+          if (-not $ready) { Get-Content $log, "$log.err" -ErrorAction SilentlyContinue; throw 'the published agent never reported ready' }
+          $status = (& $agent ctl status --state $state) -join "`n"
+          "status: $status"
+          & $agent ctl quit --state $state
+          if (-not $p.WaitForExit(20000)) { $p.Kill(); throw 'the agent did not quit when asked' }
+          if ($p.ExitCode -ne 0) { throw "agent exit code $($p.ExitCode)" }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: orbitdrive-release-candidate-${{ github.sha }}
+          path: artifacts/release/
+          if-no-files-found: error
+          retention-days: 30

@@ -49,6 +49,7 @@ builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy => policy
 var app = builder.Build();
 var store = app.Services.GetRequiredService<Store>();
 var limiter = app.Services.GetRequiredService<RateLimiter>();
+var maintenance = new MaintenanceMode(options);
 var invitations = app.Services.GetRequiredService<Invitations>();
 var metrics = app.Services.GetRequiredService<Metrics>();
 var adminLog = app.Services.GetRequiredService<AdminLog>();
@@ -123,7 +124,15 @@ app.Use(async (context, next) =>
     context.Response.Headers["Cross-Origin-Resource-Policy"] = "same-origin";
     context.Response.Headers.Append("Vary", "Origin");               // the cross-origin answer depends on who asks
     context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
-    try { await next(context); }
+    try
+    {
+        if (maintenance.Active && MaintenanceMode.IsNewWork(context.Request))
+        {
+            context.Response.Headers.RetryAfter = "60";
+            throw new ProtocolException(ErrorCode.Unavailable, "OrbitDrive is being maintained. Transfers already running continue; please try again in a minute.");
+        }
+        await next(context);
+    }
     catch (ProtocolException e) when (!context.Response.HasStarted)
     {
         await WriteJson(context, new ErrorResponse { Error = e.ToInfo() }, StatusFor(e.Code));
@@ -137,6 +146,7 @@ app.UseCors();
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
 
 app.MapGet("/healthz", () => Results.Text("ok"));
+app.MapGet("/readyz", () => maintenance.Active ? Results.Text("maintenance", statusCode: 503) : Results.Text("ready"));
 var gatewayVersion = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 app.MapGet("/v1/meta", (HttpContext context) => WriteJson(context, new GatewayMeta
 {

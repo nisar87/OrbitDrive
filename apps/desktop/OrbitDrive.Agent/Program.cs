@@ -35,6 +35,14 @@ static int Usage()
 }
 
 if (args.Length == 0) return Usage();
+if (args[0] is "version" or "--version")
+{
+    // Release evidence: the exact build that is running (version + commit when built by the release script).
+    var info = typeof(AgentState).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+        .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "unknown";
+    Console.WriteLine($"orbitdrive-agent {info}");
+    return 0;
+}
 var stateDirectory = Option(args, "--state") ?? Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OrbitDrive", "agent");
 
 if (args[0] == "qr" && args.Length >= 2)

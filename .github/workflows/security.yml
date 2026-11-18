@@ -48,6 +48,12 @@ jobs:
       - name: Web dependencies audit
         if: ${{ !cancelled() }}
         run: (cd apps/web && npm ci) && node scripts/audit-check.mjs apps/web
+      - name: Environment definitions are valid; staging and production templates refuse deployment
+        if: ${{ !cancelled() }}
+        run: |
+          node --test tests/web/environments.test.mjs
+          for e in development staging production; do node scripts/validate-environment.mjs infra/environments/$e.json; done
+          if node scripts/validate-environment.mjs infra/environments/production.json --deploy; then echo "production template must not be deployable"; exit 1; fi
       - name: Production web bundle contains only reviewed runtime packages
         if: ${{ !cancelled() }}
         run: node scripts/bundle-check.mjs

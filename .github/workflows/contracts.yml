@@ -23,6 +23,8 @@ jobs:
           node-version: 22
       - name: Generated models match the schema (drift check)
         run: node packages/protocol/generate.mjs --check
+      - name: Release tooling tests (deterministic zip, checksums, manifest honesty)
+        run: node --test tests/release/release-lib.test.mjs
       - name: C# serialization contract tests
         run: dotnet test tests/contracts/OrbitDrive.Protocol.Tests -c Release --logger "console;verbosity=normal"
       - name: TypeScript contract tests (same fixtures)

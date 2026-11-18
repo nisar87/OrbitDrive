@@ -1,0 +1,19 @@
+{
+  "environment": "staging",
+  "status": "template",
+  "firebaseProjectId": "REPLACE_STAGING_PROJECT_ID",
+  "hostingSite": "REPLACE_STAGING_SITE",
+  "authDomain": "REPLACE_STAGING_PROJECT_ID.firebaseapp.com",
+  "webOrigin": "https://REPLACE_STAGING_SITE.web.app",
+  "relayOrigin": "https://relay-staging.REPLACE_DOMAIN",
+  "previewOrigins": [],
+  "authMode": "firebase",
+  "paidResources": false,
+  "gateway": {
+    "AllowedWebOrigins": [
+      "https://REPLACE_STAGING_SITE.web.app"
+    ],
+    "Firebase__ProjectId": "REPLACE_STAGING_PROJECT_ID"
+  },
+  "note": "Project IDs, hosts and domains are configurable placeholders until the owner creates the resources; none of the proposed names is claimed to be available."
+}

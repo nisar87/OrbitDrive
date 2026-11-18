@@ -1,0 +1,19 @@
+{
+  "environment": "development",
+  "status": "deployed",
+  "firebaseProjectId": "orbitdrive-dev",
+  "hostingSite": "orbitdrive-dev",
+  "authDomain": "orbitdrive-dev.firebaseapp.com",
+  "webOrigin": "https://orbitdrive-dev.web.app",
+  "relayOrigin": "https://139-185-60-75.sslip.io",
+  "previewOrigins": [],
+  "authMode": "firebase",
+  "paidResources": false,
+  "gateway": {
+    "AllowedWebOrigins": [
+      "https://orbitdrive-dev.web.app"
+    ],
+    "Firebase__ProjectId": "orbitdrive-dev"
+  },
+  "note": "Project IDs, hosts and domains are configurable placeholders until the owner creates the resources; none of the proposed names is claimed to be available."
+}

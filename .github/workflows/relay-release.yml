@@ -29,7 +29,7 @@ jobs:
       - run: npm ci
         working-directory: tests/integration
       - name: Gateway behaviour with real processes
-        run: node --test tests/integration/slice.test.mjs tests/integration/devices.test.mjs tests/integration/firebase-auth.test.mjs tests/integration/restart.test.mjs tests/integration/faults.test.mjs tests/integration/pairing-limits.test.mjs tests/integration/browse.test.mjs tests/integration/transfers.test.mjs tests/integration/invitations.test.mjs tests/integration/previews.test.mjs tests/integration/archives.test.mjs tests/integration/search.test.mjs tests/integration/multipc.test.mjs tests/integration/uploads.test.mjs tests/integration/admin.test.mjs tests/integration/hardening.test.mjs tests/integration/diagnostics.test.mjs tests/integration/sessions.test.mjs
+        run: node --test tests/integration/slice.test.mjs tests/integration/devices.test.mjs tests/integration/firebase-auth.test.mjs tests/integration/restart.test.mjs tests/integration/faults.test.mjs tests/integration/pairing-limits.test.mjs tests/integration/browse.test.mjs tests/integration/transfers.test.mjs tests/integration/invitations.test.mjs tests/integration/previews.test.mjs tests/integration/archives.test.mjs tests/integration/search.test.mjs tests/integration/multipc.test.mjs tests/integration/uploads.test.mjs tests/integration/admin.test.mjs tests/integration/hardening.test.mjs tests/integration/diagnostics.test.mjs tests/integration/sessions.test.mjs tests/integration/maintenance.test.mjs
       - name: Updater, rollback, monitor and backup scripts
         run: node --test tests/relay/updater.test.mjs
   publish:

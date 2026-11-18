@@ -1,0 +1,19 @@
+{
+  "environment": "production",
+  "status": "template",
+  "firebaseProjectId": "REPLACE_PRODUCTION_PROJECT_ID",
+  "hostingSite": "REPLACE_PRODUCTION_SITE",
+  "authDomain": "REPLACE_PRODUCTION_DOMAIN",
+  "webOrigin": "https://REPLACE_PRODUCTION_DOMAIN",
+  "relayOrigin": "https://relay.REPLACE_PRODUCTION_DOMAIN",
+  "previewOrigins": [],
+  "authMode": "firebase",
+  "paidResources": false,
+  "gateway": {
+    "AllowedWebOrigins": [
+      "https://REPLACE_PRODUCTION_DOMAIN"
+    ],
+    "Firebase__ProjectId": "REPLACE_PRODUCTION_PROJECT_ID"
+  },
+  "note": "Project IDs, hosts and domains are configurable placeholders until the owner creates the resources; none of the proposed names is claimed to be available."
+}
