@@ -29,7 +29,7 @@ const run = (command, args, options = {}) => execFileSync(command, args, { stdio
 const firebaseJson = join(root, 'infra', 'firebase', 'firebase.json');
 const original = readFileSync(firebaseJson, 'utf8');
 try {
-  run('node', [join(root, 'scripts', 'web-security-headers.mjs'), '--write', '--gateway', new URL(env.VITE_GATEWAY_URL).origin]);
+  execFileSync(process.execPath, [join(root, 'scripts', 'web-security-headers.mjs'), '--write', '--gateway', new URL(env.VITE_GATEWAY_URL).origin], { stdio: 'inherit' });   // no shell: the path may contain spaces
   run('npm', ['ci'], { cwd: web });
   run('npm', ['run', 'build'], { cwd: web, env });
   run('npx', ['--yes', 'firebase-tools', 'deploy', '--only', 'hosting', '--project', project], { cwd: join(root, 'infra', 'firebase') });
