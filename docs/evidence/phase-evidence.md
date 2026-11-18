@@ -314,7 +314,7 @@ verify-deployment and both live-agent jobs.
   WebKit turns spaces into `_` in suggested download names — bytes still checked exactly); `b10dd5b` desktop (NTFS coarse
   clock: rewrite within one tick is indistinguishable → test waits 100 ms), `c4c6895` integration (EBUSY: Windows refuses
   to write a file the agent still holds for a moment → test retries up to 10 s). Product fix from the web run: the window
-  cascade pushed later windows off the desktop edge; now clamped. No assertion was weakened.
+  cascade pushed later windows off the desktop edge; now clamped. No assertion was weakened. A final intermittent Firefox e2e failure (pairing field never appeared, web run on `5a0cb98`) was a real product bug: the new service worker's `clients.claim()` fired `controllerchange` on first install and the page reloaded mid-sign-in; fixed in `d4c6dcb` (reload only after the user applied an update) with a unit test that fails on the old code.
 - Native Explorer command: `OrbitDriveShell.dll` built with `/W4 /WX /guard:cf` on windows-2025 and exercised through COM
   (`SHELL EXTENSION TEST PASSED (0 failures)`). **This is not the real Explorer menu.**
 - iPhone-like WebKit emulation has no `Notification` API: the Inbox shows a plain explanation and keeps working (e2e).
