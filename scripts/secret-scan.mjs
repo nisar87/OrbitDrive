@@ -16,6 +16,9 @@ for (const file of execFileSync('git', ['ls-files'], { encoding: 'utf8' }).split
   if (/package-lock\.json$|\.png$|secret-scan\.mjs$/.test(file)) continue;
   let text;
   try { text = readFileSync(file, 'utf8'); } catch { continue; }
+  // The ONLY exemption: the Firebase *web* API key in the committed development web config. It is a public identifier by design (it ships to every
+  // browser), not a credential; access is controlled by Auth/rules and authorised domains. Nothing else in that file or anywhere else is exempt.
+  if (file === 'infra/firebase/web-dev.env') text = text.replace(/^VITE_FIREBASE_API_KEY=AIza[0-9A-Za-z_-]{35}\s*$/m, '');
   for (const [pattern, label] of patterns) if (pattern.test(text)) { console.error(`${file}: possible ${label}`); failures++; }
 }
 if (failures) process.exit(1);
