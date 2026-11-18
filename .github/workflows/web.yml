@@ -40,7 +40,14 @@ jobs:
       - run: dotnet build OrbitDrive.slnx -c Release
       - name: Install browsers
         working-directory: apps/web
-        run: npx playwright install --with-deps chromium firefox webkit
+        # The download has hung for 10+ minutes on some runners (seen twice); bound each attempt and retry, but still fail if all attempts fail.
+        timeout-minutes: 20
+        run: |
+          for attempt in 1 2 3; do
+            if timeout 300 npx playwright install --with-deps chromium firefox webkit; then exit 0; fi
+            echo "browser install attempt $attempt failed or timed out"
+          done
+          exit 1
       - name: Browser tests against the real gateway and agent
         working-directory: apps/web
         env:
