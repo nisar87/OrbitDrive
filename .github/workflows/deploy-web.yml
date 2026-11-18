@@ -2,8 +2,9 @@ name: deploy-web
 # Continuous deployment of the DEVELOPMENT web app to Firebase Hosting (project orbitdrive-dev).
 # Runs only for a commit on main, and only if all seven verification workflows succeeded for that exact commit (main itself is only ever
 # advanced to such commits; this re-checks). Deploys HOSTING ONLY with scripts/deploy-web.mjs: no Firestore, Auth, rules or billing.
-# Needs ONE repository secret, FIREBASE_SERVICE_ACCOUNT_ORBITDRIVE_DEV (a service-account key with the "Firebase Hosting Admin" role, created by
-# `firebase init hosting:github`). Until it exists the job stops at the first step with an explanation; nothing is deployed.
+# Keyless: GitHub's OIDC token is exchanged through Google Workload Identity Federation (pool github-actions, provider github, which only
+# accepts repository nisar87/OrbitDrive on refs/heads/main) for short-lived credentials of the service account github-deploy-hosting
+# (role Firebase Hosting Admin only). No key or secret is stored anywhere.
 on:
   push:
     branches: [main]
@@ -15,19 +16,12 @@ concurrency:
 permissions:
   contents: read
   actions: read
+  id-token: write
 jobs:
   deploy:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    env:
-      SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ORBITDRIVE_DEV }}
     steps:
-      - name: The deploy credential exists
-        run: |
-          if [ -z "$SERVICE_ACCOUNT" ]; then
-            echo "::error::Secret FIREBASE_SERVICE_ACCOUNT_ORBITDRIVE_DEV is not set, so nothing was deployed. Run 'npx firebase-tools init hosting:github' once (see infra/firebase/README.md)."
-            exit 1
-          fi
       - name: All seven verification workflows are green for this exact commit
         env:
           GH_TOKEN: ${{ github.token }}
@@ -43,9 +37,10 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+      - name: Authenticate to Google (keyless)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/821727049510/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: github-deploy-hosting@orbitdrive-dev.iam.gserviceaccount.com
       - name: Deploy hosting only
-        run: |
-          key="$RUNNER_TEMP/firebase-deploy-key.json"
-          (umask 077; printf '%s' "$SERVICE_ACCOUNT" > "$key")
-          GOOGLE_APPLICATION_CREDENTIALS="$key" node scripts/deploy-web.mjs
-          rm -f "$key"
+        run: node scripts/deploy-web.mjs

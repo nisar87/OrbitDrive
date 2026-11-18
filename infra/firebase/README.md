@@ -21,11 +21,10 @@ first deploy. Deploying needs the owner's Firebase login, so it is run by the ow
 
 On every push to `main` that touches the web app or hosting config, the workflow checks that **all seven verification workflows are green for that exact
 commit**, then runs `scripts/deploy-web.mjs` (hosting only). The public web configuration comes from `web-dev.env` (public identifiers, committed);
-`apps/web/.env.local` overrides it on the owner's PC. The only secret is the deploy credential:
+`apps/web/.env.local` overrides it on the owner's PC. The only secret is the deploy credential: There is **no stored secret**: authentication is keyless.
 
-- **One-time setup (owner, on their PC, in the repository folder):** `npx firebase-tools init hosting:github`. Pick the repository `nisar87/OrbitDrive`
-  and project `orbitdrive-dev`; it creates a Hosting-only service account and stores it as the repository secret
-  `FIREBASE_SERVICE_ACCOUNT_ORBITDRIVE_DEV`. **Say no** when it offers to create its own workflow files (this repository already has `deploy-web.yml`),
-  and delete any `firebase-hosting-*.yml` it adds under `.github/workflows/`. No key passes through chat or the repository.
-- Until that secret exists the workflow stops at its first step with an explanation and deploys nothing.
-- Revoke by deleting the secret (and the service account in Google Cloud). Production would need its own project, secret and approval; none exists.
+- GitHub's OIDC token is exchanged through Google Workload Identity Federation (pool `github-actions`, provider `github` in `orbitdrive-dev`) for
+  short-lived credentials of `github-deploy-hosting@orbitdrive-dev.iam.gserviceaccount.com`, which has only the Firebase Hosting Admin role.
+- The provider's attribute condition accepts only repository `nisar87/OrbitDrive` on `refs/heads/main`; the service account trusts only that repository.
+- Revoke by disabling the pool/provider or removing the service account's Workload Identity User binding in Google Cloud. Production would need its own
+  project and approval; none exists.
