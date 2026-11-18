@@ -2,7 +2,7 @@
 // Everything that passes through the agent uses deliberately private names; none of them may appear anywhere in the history or a bundle.
 import { test, before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { startGateway, startAgent, connectIpc, agentCli, tempDir, Browser, pair, sha256, waitFor, readZip } from './harness.mjs';
 
@@ -121,7 +121,10 @@ describe('the support bundle', () => {
     const created = await ipc.send('support_bundle_create', { consent: true });
     assert.equal(created.ok, true, JSON.stringify(created));
     const path = created.data.path;
-    assert.ok(existsSync(path) && path.startsWith(join(state, 'support')));
+    // Compare canonical paths: the same folder can be spelled with a short (8.3) or differently cased name on Windows.
+    const canonical = (p) => { const real = realpathSync.native(p); return process.platform === 'win32' ? real.toLowerCase() : real; };
+    assert.ok(existsSync(path), `no bundle at ${path}`);
+    assert.ok(canonical(path).startsWith(canonical(join(state, 'support'))), `bundle ${canonical(path)} is outside ${canonical(join(state, 'support'))}`);
     const files = new Map(readZip(readFileSync(path), { requireUtf8Flag: false }).map((entry) => [entry.name, entry.data()]));   // plain ASCII names: the UTF-8 flag only matters for the archive feature
     assert.deepEqual([...files.keys()].sort(), ['README.txt', 'about.txt', 'activity.jsonl']);
     const everything = [...files.values()].map((b) => Buffer.from(b).toString('utf8')).join('\n');

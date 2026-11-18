@@ -1,3 +1,4 @@
+using System.Net.WebSockets;
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
@@ -163,13 +164,15 @@ app.Map("/v1/agent-control", async (HttpContext context) =>
 {
     if (!context.WebSockets.IsWebSocketRequest || context.Request.Headers.ContainsKey("Origin"))
         throw new ProtocolException(ErrorCode.InvalidRequest, "Agent WebSocket connections only.");
-    if (hub.PendingHandshakes >= options.MaxPendingHandshakes)
+    if (!hub.TryReserveHandshake(options.MaxPendingHandshakes))      // atomic: concurrent arrivals cannot overshoot the limit
     {
         context.Response.Headers.RetryAfter = "10";
         throw new ProtocolException(ErrorCode.LimitExceeded, "Too many connections are waiting to identify themselves. Try again shortly.");
     }
-    using var socket = await context.WebSockets.AcceptWebSocketAsync();
-    await hub.RunAsync(socket, context.RequestAborted);
+    WebSocket socket;
+    try { socket = await context.WebSockets.AcceptWebSocketAsync(); }
+    catch { hub.ReleaseHandshake(); throw; }                           // never accepted, so RunAsync will not give the slot back
+    using (socket) await hub.RunAsync(socket, context.RequestAborted);
 });
 
 app.MapPost("/v1/pairing-requests/{id}/claim", async (HttpContext context, string id) =>

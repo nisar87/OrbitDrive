@@ -139,8 +139,13 @@ describe('the PC control channel (anonymous until it proves who it is)', () => {
       assert.ok(attempts.filter((a) => !a.opened).length >= 6, 'the extra attempts were refused');
       assert.equal((await fetch(`${small.url}/healthz`)).status, 200, 'the service is still answering');
       await Promise.all(attempts.map((a) => Promise.race([a.closed, new Promise((r) => setTimeout(r, 13_000))])));
-      const later = await connect(small);
-      await new Promise((r) => setTimeout(r, 1000));
+      // A freed slot is reusable at once, but a slow runner may take a moment to complete the upgrade. Try for up to 8 s: a leaked slot never comes back, so a real leak still fails.
+      let later = null;
+      for (let i = 0; i < 4 && !later?.opened; i++) {
+        later?.socket.close();
+        later = await connect(small);
+        for (let t = 0; t < 20 && !later.opened; t++) await new Promise((r) => setTimeout(r, 100));
+      }
       assert.ok(later.opened, 'a new connection is accepted again once the waiting ones are gone');
       later.socket.close();
     } finally { await small.stop(); }

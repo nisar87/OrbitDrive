@@ -75,6 +75,23 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
     /// <summary>Control connections that have not yet proven who they are.</summary>
     public int PendingHandshakes => Volatile.Read(ref _pendingHandshakes);
 
+    /// <summary>
+    /// Takes one waiting slot, or says no when <paramref name="limit"/> are already taken. The check and the increment are one atomic step, so
+    /// many connections arriving at once cannot all pass a check that only one of them should. A slot that was taken must reach
+    /// <see cref="RunAsync"/> (which gives it back) or be given back with <see cref="ReleaseHandshake"/>.
+    /// </summary>
+    public bool TryReserveHandshake(int limit)
+    {
+        while (true)
+        {
+            var current = Volatile.Read(ref _pendingHandshakes);
+            if (current >= limit) return false;
+            if (Interlocked.CompareExchange(ref _pendingHandshakes, current + 1, current) == current) return true;
+        }
+    }
+
+    public void ReleaseHandshake() => Interlocked.Decrement(ref _pendingHandshakes);
+
     public bool IsOnline(string pcId) => _connections.ContainsKey(pcId);
 
     /// <summary>Service is stopping: cut every control connection now so agents reconnect at once instead of waiting out a dead socket.</summary>
@@ -124,8 +141,7 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
         var nonce = Secrets.Token();
         var hello = new AgentConnection(socket, "", 0);
         Envelope? first;
-        Interlocked.Increment(ref _pendingHandshakes);                       // counted until it has said who it is (or been dropped)
-        try
+        try                                                                  // the slot was reserved by the caller: held until it has said who it is (or been dropped)
         {
             await hello.SendAsync(new Envelope
             {
@@ -136,7 +152,7 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
             helloTimeout.CancelAfter(TimeSpan.FromSeconds(10));
             first = await ReceiveAsync(socket, helloTimeout.Token);
         }
-        finally { Interlocked.Decrement(ref _pendingHandshakes); }
+        finally { ReleaseHandshake(); }
         if (first is not { Kind: EnvelopeKind.Req, Action: Actions.Hello, Payload: not null }) { socket.Abort(); return; }
         AgentHello agent;
         try { agent = ProtocolJson.FromElement<AgentHello>(first.Payload.Value); }
