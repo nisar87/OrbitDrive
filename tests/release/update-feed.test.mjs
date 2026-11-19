@@ -111,3 +111,11 @@ test('check-signing-key accepts only the key the app trusts and never prints the
   const junk = join(dir, 'junk.pem'); writeFileSync(junk, 'not a key');
   assert.equal(node('check-signing-key.mjs', '--key', junk, '--keys', keysFile).status, 1);
 });
+
+test('the update key built into the app is one valid ECDSA P-256 public key with the id the release workflow expects', () => {
+  const keys = JSON.parse(readFileSync(new URL('../../apps/desktop/OrbitDrive.Core/Update/update-keys.json', import.meta.url), 'utf8'));
+  assert.deepEqual(Object.keys(keys), ['orbitdrive-update-1']);
+  const key = createPublicKey({ key: Buffer.from(keys['orbitdrive-update-1'], 'base64'), format: 'der', type: 'spki' });
+  assert.equal(key.asymmetricKeyType, 'ec'); assert.equal(key.asymmetricKeyDetails.namedCurve, 'prime256v1');
+  assert.doesNotMatch(JSON.stringify(keys), /PRIVATE/);
+});

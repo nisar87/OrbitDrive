@@ -182,4 +182,16 @@ public sealed class UpdateClientTests : IDisposable
         Assert.Equal(new ReleaseDefaults.Addresses("https://relay.example.test", "https://web.example.test"), ReleaseDefaults.Read(file));
         foreach (var bad in new[] { "garbage", "[]", "{\"gateway\":5}", "{}", new string('x', 5000) }) { File.WriteAllText(file, bad); Assert.Null(ReleaseDefaults.Read(file)); }
     }
+
+    [Fact]
+    public void TheBuiltInUpdateKeyIsOneValidP256PublicKey()
+    {
+        var keys = UpdateTrust.Load();
+        var key = Assert.Single(keys);
+        Assert.Equal("orbitdrive-update-1", key.Key);
+        using var ecdsa = System.Security.Cryptography.ECDsa.Create();
+        ecdsa.ImportSubjectPublicKeyInfo(key.Value, out var read);
+        Assert.Equal(key.Value.Length, read);
+        Assert.Equal(256, ecdsa.KeySize);
+    }
 }

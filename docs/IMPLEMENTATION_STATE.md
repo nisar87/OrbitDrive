@@ -94,7 +94,7 @@ web) works end to end in CI. It is a slice through M1–M2, not completion of th
 ## Next steps (dependency order) — what is still unfinished
 
 Blocked on the owner (cannot be done from the build environment):
-- **Update key** (free, 2 minutes): `node tools/release/make-update-key.mjs`, add the printed private key as GitHub secret `UPDATE_SIGNING_KEY`, give the PUBLIC line to be committed into `update-keys.json`. Then fast-forward `main` to a green commit and `desktop-release` publishes `desktop-dev`.
+- ~~**Update key**~~ DONE 2026-11-19: public key `orbitdrive-update-1` committed (owner created the private key and the GitHub secret `UPDATE_SIGNING_KEY`). Original note: (free, 2 minutes): `node tools/release/make-update-key.mjs`, add the printed private key as GitHub secret `UPDATE_SIGNING_KEY`, give the PUBLIC line to be committed into `update-keys.json`. Then fast-forward `main` to a green commit and `desktop-release` publishes `desktop-dev`.
 - **Verified Firebase test account for CI**: create a user in `orbitdrive-dev`, verify its email, and add repo secrets
   `ORBIT_TEST_EMAIL`, `ORBIT_TEST_PASSWORD`, `ORBIT_FIREBASE_WEB_API_KEY`. Unblocks claim → browse → transfer through the
   live relay in `live-relay.test.mjs` (today it stops at pairing-code issuance) and the first real sign-in.

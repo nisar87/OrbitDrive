@@ -8,7 +8,7 @@
 - Windows build with an in-app **Update now** button: the `desktop-release` workflow (runs only on `main`, only after all seven workflows are green) publishes the GitHub pre-release `desktop-dev` (zip, `SHA256SUMS`, `update.json`). Unsigned for Windows (no certificate yet); updates are authenticated by your own free update key. Until you add that key nothing is published.
 - Windows release-candidate zip from the `release-candidate` workflow (Artifacts of that run) is still produced for every desktop change; it publishes nothing.
 
-## One-time: the update key (free, 2 minutes, makes the Update button work)
+## The update key (done 2026-11-19)
 1. On your PC, in a clone of the repository: `node tools/release/make-update-key.mjs`. It saves the private key under `%USERPROFILE%\.orbitdrive\` (back it up; never commit it) and puts it on your clipboard. It never prints it.
 2. Open https://github.com/nisar87/OrbitDrive/settings/secrets/actions/new, name `UPDATE_SIGNING_KEY`, paste, **Add secret**.
 3. Send the one PUBLIC line it printed (`orbitdrive-update-1  MFkw...`) to Claude, who commits it into `apps/desktop/OrbitDrive.Core/Update/update-keys.json`. After that, every green `main` commit that changes the desktop app publishes a new build and the installed app offers it.
