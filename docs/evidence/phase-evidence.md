@@ -507,3 +507,9 @@ Commit `ec7c8e4` (feature branch); all seven workflows green on that exact SHA (
 - Fix: commit ea91e3d (`Start-App` quotes the state folder). Verified on Windows CI by `tests/desktop/apply-update.test.ps1` test 7 (state names `plain`, `Ann Lee (work)`, `two  spaces  and-dash`) and by `UpdateClientTests`.
 - CI: all seven workflows green on ea91e3d; `main` fast-forwarded to it; `desktop-release` run 44583418554 succeeded; `verify-feed.mjs` against the live feed: version 0.1.4, signed by orbitdrive-update-1.
 - Caveat: updating 0.1.3 -> 0.1.4 still uses the old script once, so the restart may again show empty shares; restart OrbitDrive.exe manually and they return. Later updates use the fixed script.
+
+### D11 WPF History page (2026-11-19)
+- Added `OrbitDrive.Core/ActivityPresenter.cs` (kind -> plain words, sizes, today/other-day times in the owner's time zone, plain-text export; unknown kinds shown as "Other activity", never dropped) with `ActivityPresenterTests` (kinds, unknown kind, sizes, joins, time zone day boundary, export).
+- Added `OrbitDrive.Desktop/HistoryPanel.cs` on the Activity page: lists the agent's stored history (IPC `activity`, newest 200), redraws only on change, Copy as text, Clear history (confirmation, IPC `clear_activity`). Shows only what the agent recorded (no names or paths exist in it).
+- `scripts/desktop-ui-test.ps1` now checks the real window's `HistoryList` for "OrbitDrive started", "Connected to the relay", several entries and no file-system paths.
+- Not yet verified: the WPF project cannot be built locally (no NuGet); evidence is whatever the Windows `desktop` and `desktop-ui` jobs report for the pushed SHA (recorded below once seen).

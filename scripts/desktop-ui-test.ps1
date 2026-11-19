@@ -194,6 +194,13 @@ try {
     Check ((Api 'Get' "/v1/pcs/$pcId/roots" $null $device).status -eq 200) 'Resume restores access'
     Nav 'Activity'
     Check (@(ListItems 'ActivityList').Count -ge 4) 'activity history recorded the session'
+    # The stored history (kept by the agent, shown in plain words) appears on the same page.
+    $historyText = ''
+    for ($i = 0; $i -lt 30 -and $historyText -notmatch 'OrbitDrive started'; $i++) { Start-Sleep -Milliseconds 500; $historyText = (@(ListItems 'HistoryList') -join "`n") }
+    Check ($historyText -match 'OrbitDrive started') 'stored history lists that OrbitDrive started'
+    Check ($historyText -match 'Connected to the relay') 'stored history lists the relay connection'
+    Check (@(ListItems 'HistoryList').Count -ge 2) 'stored history has several entries'
+    Check ($historyText -notmatch '[A-Za-z]:\\') 'stored history shows no file system paths'
     Shot 'activity'
     Nav 'Diagnostics'
     $diagnostics = WaitText 'DiagnosticsText' 'PC id'

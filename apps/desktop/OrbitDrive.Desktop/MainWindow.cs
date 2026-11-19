@@ -24,8 +24,8 @@ public sealed class MainWindow : Window
     // below the 4.5:1 needed for small text, so secondary text is the primary colour at reduced opacity (about 5.5:1
     // light, 7:1 dark) and full strength in Windows high contrast.
     internal const string Muted = "muted";
-    private static void Mute(TextBlock block) => block.Opacity = SystemParameters.HighContrast ? 1.0 : 0.74;
-    private const string Danger = "SystemFillColorCriticalBrush";
+    internal static void Mute(TextBlock block) => block.Opacity = SystemParameters.HighContrast ? 1.0 : 0.74;
+    internal const string Danger = "SystemFillColorCriticalBrush";
 
     private readonly string _stateDirectory;
     private readonly ListBox _nav = new() { Width = 210, BorderThickness = new Thickness(0), Background = Brushes.Transparent, FontSize = 14 };
@@ -71,6 +71,7 @@ public sealed class MainWindow : Window
     private readonly TextBlock _deviceError = MakeText("DeviceError", "", 13, FontWeights.Normal, Danger);
     private readonly TextBlock _transfers = MakeText("TransfersText", "", 14, FontWeights.Normal);
     private readonly ListBox _activity = new() { MinHeight = 200 };
+    private HistoryPanel _history = null!;
     private readonly TextBlock _settingsError = MakeText("SettingsError", "", 13, FontWeights.Normal, Danger);
     private readonly TextBlock _diagnostics = MakeText("DiagnosticsText", "", 13, FontWeights.Normal);
     private readonly Image _pairQr = new() { Width = 220, Height = 220, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 8), Visibility = Visibility.Collapsed };
@@ -299,6 +300,7 @@ public sealed class MainWindow : Window
     private void BuildPages()
     {
         _updates = new UpdatePanel(_stateDirectory, DrainForUpdateAsync, QuitAsync);
+        _history = new HistoryPanel(RunAsync);
         var quit = MakeButton("QuitButton", "Quit OrbitDrive");
         quit.Click += (_, _) => _ = QuitAsync();
         _pause.Click += (_, _) => _ = TogglePauseAsync();
@@ -380,7 +382,7 @@ public sealed class MainWindow : Window
         ScrollViewer.SetHorizontalScrollBarVisibility(_transferList, ScrollBarVisibility.Disabled);
         Page("Transfers", Card(null, _transfers, _transferList,
             MakeText("TransfersHint", "OrbitDrive can see what it has sent to the relay. It cannot see whether a browser finished saving a file.", 13, FontWeights.Normal, Muted)));
-        Page("Activity", Card("This session", _activity));
+        Page("Activity", _history.Card, Card("This session", _activity));
 
         var save = MakeButton("SaveGatewayButton", "Save and connect", accent: true);
         save.Click += (_, _) => _ = RunAsync(_settingsError, client =>
@@ -677,6 +679,7 @@ public sealed class MainWindow : Window
             }
             catch (Exception e) when (e is IpcException or TimeoutException) { }
         }
+        if (_client is not null && _pages.TryGetValue("Activity", out var activityPage) && activityPage.Visibility == Visibility.Visible) await _history.RefreshAsync(_client);
         var approval = status["pendingApproval"];
         _approvalPanel.Visibility = approval is null ? Visibility.Collapsed : Visibility.Visible;
         _approvalText.Text = approval is null ? "" : $"Account: {approval["accountLabel"]}\nBrowser: {approval["browserName"]}\nCode: {approval["confirmationCode"]}\n\nApprove only if this is you and the same code is shown in your browser.";
