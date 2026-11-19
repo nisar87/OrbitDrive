@@ -480,8 +480,10 @@ public sealed class MainWindow : Window
                 {
                     // The agent is launched only when explicitly permitted (see _mayStart), never in an open loop.
                     if (attempt != 0 || !_mayStart) break;
+                    LogActivity("Starting the agent.");
                     var launched = await Program.StartAgentAsync(_stateDirectory);
                     if (Program.StartNote.Length > 0) LogActivity(Program.StartNote);
+                    if (!launched) LogActivity("The agent could not be started.");
                     _mayStart = false;                    // one attempt per permission, also when it failed: never an open loop
                     if (!launched) break;
                 }
