@@ -161,6 +161,21 @@ async function send(job: Internal): Promise<void> {
   }
 }
 
+/**
+ * Tells the PC to drop a half-received file. If the connection is what failed, the message is lost and the PC would keep that upload slot
+ * taken until it times out, refusing new uploads meanwhile (found by the 30-minute Windows soak). So a lost cancel is retried for a while.
+ */
+function cancelOnPc(job: Internal): void {
+  const { session, pcId, uploadId } = job;
+  if (!uploadId) return;
+  void (async () => {
+    for (let attempt = 0; attempt < 6; attempt++) {
+      try { await api.cancelUpload(session, pcId, uploadId); return; }
+      catch (e) { if (!transient(e)) return; await sleep(Math.min(8000, 500 * 2 ** attempt)); }
+    }
+  })();
+}
+
 async function pump() {
   if (running) return;
   running = true;
@@ -170,7 +185,7 @@ async function pump() {
       try { await send(job); }
       catch (e) {
         if (!job.stop) update(job, { phase: 'failed', message: e instanceof ApiError ? fatalText(e) : e instanceof Error ? e.message : 'The upload failed.' });
-        if (job.uploadId) void api.cancelUpload(job.session, job.pcId, job.uploadId).catch(() => undefined);
+        cancelOnPc(job);
       }
     }
   } finally { running = false; await releaseScreen(); }
@@ -201,7 +216,7 @@ export const uploads = {
     job.stop = true;
     job.abort?.abort();
     job.wake?.();
-    if (job.uploadId) void api.cancelUpload(job.session, job.pcId, job.uploadId).catch(() => undefined);
+    cancelOnPc(job);
     update(job, { phase: 'cancelled', message: 'Cancelled. Nothing from this file was kept on the PC.' });
   },
 

@@ -159,6 +159,28 @@ describe('upload sender', () => {
     expect(fin).not.toHaveBeenCalled();
   });
 
+  it('a cancel lost to a dropped connection is retried, so the PC gets its upload slot back', async () => {
+    vi.spyOn(api, 'uploadChunk').mockRejectedValue(new ApiError('network', 'offline', 0));
+    let tries = 0;
+    const cancel = vi.spyOn(api, 'cancelUpload').mockImplementation(async () => { if (++tries < 3) throw new ApiError('network', 'offline', 0); return {} as never; });
+    uploads.enqueue(session, target, [file('a.bin', 5000)], 'reject');
+    await wait(() => last()?.phase === 'failed' || last()?.phase === 'paused');
+    uploads.cancel(last().id);
+    await wait(() => tries >= 3);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(cancel).toHaveBeenCalledTimes(3);                                  // two lost, the third arrived, then it stopped asking
+  });
+
+  it('a cancel the PC really refuses is not retried', async () => {
+    vi.spyOn(api, 'uploadChunk').mockImplementation(() => new Promise(() => undefined));
+    const cancel = vi.spyOn(api, 'cancelUpload').mockRejectedValue(new ApiError('forbidden', 'no', 403));
+    uploads.enqueue(session, target, [file('a.bin', 5000)], 'reject');
+    await wait(() => last()?.phase === 'sending');
+    uploads.cancel(last().id);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
   it('treats a silent link as a dropped connection and pauses instead of hanging', async () => {
     tuning.chunkTimeoutMs = 20;
     vi.spyOn(api, 'uploadChunk').mockImplementation((_s, _p, _u, _o, _d, _h, signal) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new DOMException('x', 'AbortError')))));

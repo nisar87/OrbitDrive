@@ -282,6 +282,48 @@ public sealed class UploadTests : IDisposable
         Assert.Equal(ErrorCode.LimitExceeded, Assert.Throws<ProtocolException>(() => Start("3.bin", 10)).Code);
     }
 
+    // A dropped connection cannot cancel; the slot must not stay taken for the whole idle time (found by the 30-minute Windows soak).
+    [Fact]
+    public void A_browser_at_the_limit_gets_its_own_abandoned_slot_back()
+    {
+        Setup(new UploadOptions { FreeBytes = _ => 100L << 30, MaxActive = 2, AbandonedAfter = TimeSpan.FromMinutes(2) });
+        var first = Start("1.bin", 10); Start("2.bin", 10);
+        _clock.Now += TimeSpan.FromMinutes(3);                                           // both went quiet
+        Start("3.bin", 10);                                                              // the same browser needs a slot: the oldest quiet one is given up
+        Assert.Equal("expired", _uploads.Status(new UploadRef { UploadId = first.UploadId, DeviceId = Device }).State);
+    }
+
+    [Fact]
+    public void Only_as_many_abandoned_slots_as_needed_are_given_up()
+    {
+        Setup(new UploadOptions { FreeBytes = _ => 100L << 30, MaxActive = 3, AbandonedAfter = TimeSpan.FromMinutes(2) });
+        var a = Start("1.bin", 10); var b = Start("2.bin", 10); var c = Start("3.bin", 10);
+        _clock.Now += TimeSpan.FromMinutes(3);
+        Start("4.bin", 10);
+        string StateOf(UploadStarted u) => _uploads.Status(new UploadRef { UploadId = u.UploadId, DeviceId = Device }).State;
+        Assert.Equal("expired", StateOf(a));
+        Assert.Equal("receiving", StateOf(b));
+        Assert.Equal("receiving", StateOf(c));
+    }
+
+    [Fact]
+    public void Recent_uploads_are_never_taken_away_so_the_limit_still_holds()
+    {
+        Setup(new UploadOptions { FreeBytes = _ => 100L << 30, MaxActive = 2, AbandonedAfter = TimeSpan.FromMinutes(2) });
+        Start("1.bin", 10); Start("2.bin", 10);
+        _clock.Now += TimeSpan.FromSeconds(30);
+        Assert.Equal(ErrorCode.LimitExceeded, Assert.Throws<ProtocolException>(() => Start("3.bin", 10)).Code);
+    }
+
+    [Fact]
+    public void Another_browsers_quiet_uploads_are_never_taken_away()
+    {
+        Setup(new UploadOptions { FreeBytes = _ => 100L << 30, MaxActive = 2, AbandonedAfter = TimeSpan.FromMinutes(2) });
+        Start("1.bin", 10, device: "dev-other"); Start("2.bin", 10, device: "dev-other");
+        _clock.Now += TimeSpan.FromMinutes(10);
+        Assert.Equal(ErrorCode.LimitExceeded, Assert.Throws<ProtocolException>(() => Start("3.bin", 10)).Code);   // dev-1 has none of its own to give up
+    }
+
     // ----- names and collisions -----
 
     [Fact]

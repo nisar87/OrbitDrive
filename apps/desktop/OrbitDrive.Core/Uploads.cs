@@ -19,6 +19,11 @@ public sealed class UploadOptions
     public int MaxChunkBytes { get; init; } = 8 * 1024 * 1024;
     public long ReserveFreeBytes { get; init; } = 512L * 1024 * 1024;
     public int MaxActive { get; init; } = 3;
+    /// <summary>
+    /// A receiving upload with no data for this long counts as abandoned (its browser lost the connection or was closed). It is only ever given up
+    /// when the SAME paired browser needs the slot for a new upload; it is not removed otherwise, so a browser that comes back can still resume it.
+    /// </summary>
+    public TimeSpan AbandonedAfter { get; init; } = TimeSpan.FromMinutes(1);
     /// <summary>A session with no data for this long is removed together with its partial file.</summary>
     public TimeSpan IdleTtl { get; init; } = TimeSpan.FromMinutes(45);
     public TimeSpan MaxLifetime { get; init; } = TimeSpan.FromHours(12);
@@ -164,6 +169,7 @@ public sealed class UploadService
             destinationDisplay = root.Name;
         }
 
+        ReclaimAbandoned(request.DeviceId);
         Session session;
         lock (_lock)
         {
@@ -197,6 +203,35 @@ public sealed class UploadService
             UploadId = session.Id, Name = session.Name, Size = session.Size, ChunkBytes = _options.ChunkBytes, ExpiresUnixMs = Expires(session).ToUnixTimeMilliseconds(),
             Collision = session.Collision, Destination = [destinationDisplay, .. folderSegments], QuotaLeftBytes = UploadLimits.QuotaLeft(root),
         };
+    }
+
+    /// <summary>
+    /// A connection that drops in the middle of an upload cannot say "cancel", so its slot would stay taken for the whole idle time and every
+    /// new upload from that browser would be refused meanwhile. When a browser that is at the limit starts a new upload, its own idle uploads are
+    /// given up, oldest first, only as many as needed. Other browsers' uploads and any upload that is receiving data right now are never touched.
+    /// </summary>
+    private void ReclaimAbandoned(string deviceId)
+    {
+        var now = _clock.GetUtcNow();
+        List<Session> idle;
+        lock (_lock)
+        {
+            var active = _sessions.Values.Where(s => s.State == "receiving").ToList();
+            var mine = active.Where(s => s.DeviceId == deviceId).ToList();
+            if (active.Count < _options.MaxActive && mine.Count < _options.MaxActive) return;
+            idle = [.. mine.Where(s => now - s.LastActive >= _options.AbandonedAfter).OrderBy(s => s.LastActive)];
+        }
+        foreach (var session in idle)
+        {
+            if (!session.Gate.Wait(0)) continue;                      // being written right now: it is not abandoned
+            try
+            {
+                if (session.State == "receiving" && now - session.LastActive >= _options.AbandonedAfter)
+                { session.State = "expired"; session.Error = "This upload was replaced by a newer one from the same browser."; End(session); }
+            }
+            finally { session.Gate.Release(); }
+            lock (_lock) { if (_sessions.Values.Count(s => s.State == "receiving") < _options.MaxActive && _sessions.Values.Count(s => s.State == "receiving" && s.DeviceId == deviceId) < _options.MaxActive) break; }
+        }
     }
 
     private void RequireSameDisk(SharedRoot root, string folderFinalPath)

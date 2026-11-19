@@ -95,6 +95,13 @@ async function browseOne() {
   const { entries } = await idOf();
   if (entries.length !== files.size) throw new Error(`listing has ${entries.length} entries`);
 }
+async function cancelWithRetries(uploadId) {
+  for (let attempt = 0; attempt < 6 && !stopping; attempt++) {
+    try { const reply = await owner.post(`/v1/pcs/${pcId}/upload-cancel`, { uploadId }); if (reply.status < 500) return; }
+    catch { /* the connection is down: try again */ }
+    await sleep(Math.min(8000, 500 * 2 ** attempt));
+  }
+}
 let uploadCounter = 0;
 async function uploadOne() {
   const { rootId, inbox } = await dropInbox();
@@ -108,8 +115,9 @@ async function uploadOne() {
     const done = await owner.post(`/v1/pcs/${pcId}/upload-finish`, { uploadId: begun.body.uploadId });
     if (done.status !== 200) throw new Error(`finish ${done.status}`);
   } catch (e) {
-    // A person who gives up cancels the upload. (An upload that is merely left is kept for 45 minutes so it can be resumed, and the PC allows 3 at once.)
-    await owner.post(`/v1/pcs/${pcId}/upload-cancel`, { uploadId: begun.body.uploadId }).catch(() => {});
+    // A person who gives up cancels the upload, and the real web client retries a cancel that a dropped connection lost (an upload that is merely
+    // left keeps one of the PC's 3 slots until it is given up). Same here: bounded retries in the background, so the worker is not held up.
+    void cancelWithRetries(begun.body.uploadId);
     throw e;
   }
   const onDisk = join(drop, 'Inbox', name);
