@@ -321,7 +321,10 @@ try {
     & $AgentExe ctl quit --state $state | Out-Null
     for ($i = 0; $i -lt 80 -and (Agents).Count -ne 0; $i++) { Start-Sleep -Milliseconds 250 }
     [void](WaitText 'StateText' '^Stopped$')
-    $holder = Start-Process -FilePath 'powershell.exe' -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile', '-Command', ('$f=[IO.File]::Open("' + $lockFile + '","OpenOrCreate","ReadWrite","None"); Start-Sleep -Seconds 120'))
+    $holderScript = '$f = [IO.File]::Open(''' + $lockFile + ''', ''OpenOrCreate'', ''ReadWrite'', ''None''); Start-Sleep -Seconds 120'
+    $holder = Start-Process -FilePath 'powershell.exe' -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile', '-EncodedCommand', [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($holderScript)))
+    for ($i = 0; $i -lt 80; $i++) { try { $probe = [IO.File]::Open($lockFile, 'OpenOrCreate', 'ReadWrite', 'None'); $probe.Close(); Start-Sleep -Milliseconds 250 } catch [System.IO.IOException] { break } }
+    Check ($null -ne (Get-Process -Id $holder.Id -ErrorAction SilentlyContinue)) 'the unrelated stand-in program is running and holds the lock'
     Start-Sleep -Seconds 4
     Click 'StartAgentButton'
     Start-Sleep -Seconds 14
