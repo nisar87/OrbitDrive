@@ -3,4 +3,8 @@
     <ProjectReference Include="../../../packages/protocol/csharp/OrbitDrive.Protocol.csproj" />
     <InternalsVisibleTo Include="OrbitDrive.Core.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Update/apply-update.ps1" LogicalName="apply-update.ps1" />
+    <EmbeddedResource Include="Update/update-keys.json" LogicalName="update-keys.json" />
+  </ItemGroup>
 </Project>

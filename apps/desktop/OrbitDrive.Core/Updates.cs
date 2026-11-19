@@ -66,7 +66,7 @@ public sealed class UpdateVerifier(IReadOnlyDictionary<string, byte[]> trustedKe
     public const long MaxFileBytes = 2L << 30;
     public static readonly TimeSpan MaxValidity = TimeSpan.FromDays(90);
     private static readonly TimeSpan Skew = TimeSpan.FromMinutes(5);
-    private static readonly string[] Extensions = [".msix", ".msixbundle", ".msi", ".exe", ".appinstaller"];
+    private static readonly string[] Extensions = [".msix", ".msixbundle", ".msi", ".exe", ".appinstaller", ".zip"];   // ".zip" = the portable build, applied by PortableUpdateLauncher
 
     private static UpdateRejectedException Reject(UpdateRejection reason, string message) => new(reason, message);
 

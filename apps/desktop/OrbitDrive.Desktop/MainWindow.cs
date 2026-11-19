@@ -23,7 +23,7 @@ public sealed class MainWindow : Window
     // Secondary text: the theme's own secondary brush measured about 3.2:1 on cards in real light-theme screenshots,
     // below the 4.5:1 needed for small text, so secondary text is the primary colour at reduced opacity (about 5.5:1
     // light, 7:1 dark) and full strength in Windows high contrast.
-    private const string Muted = "muted";
+    internal const string Muted = "muted";
     private static void Mute(TextBlock block) => block.Opacity = SystemParameters.HighContrast ? 1.0 : 0.74;
     private const string Danger = "SystemFillColorCriticalBrush";
 
@@ -199,7 +199,7 @@ public sealed class MainWindow : Window
         while (_activity.Items.Count > 200) _activity.Items.RemoveAt(_activity.Items.Count - 1); // bounded history
     }
 
-    private static TextBlock MakeText(string id, string text, double size, FontWeight weight, string? brushKey = null)
+    internal static TextBlock MakeText(string id, string text, double size, FontWeight weight, string? brushKey = null)
     {
         var block = new TextBlock { Text = text, FontSize = size, FontWeight = weight, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
         if (brushKey == Muted) Mute(block);
@@ -215,7 +215,7 @@ public sealed class MainWindow : Window
         return block;
     }
 
-    private static Button MakeButton(string id, string text, bool accent = false)
+    internal static Button MakeButton(string id, string text, bool accent = false)
     {
         var button = new Button { Content = text, Padding = new Thickness(16, 7, 16, 7), Margin = new Thickness(0, 4, 8, 4), HorizontalAlignment = HorizontalAlignment.Left, MinHeight = 34 };
         if (accent) button.SetResourceReference(StyleProperty, "AccentButtonStyle");
@@ -224,7 +224,7 @@ public sealed class MainWindow : Window
     }
 
     /// <summary>A rounded surface that groups related controls, optionally under a heading.</summary>
-    private static Border Card(string? heading, params UIElement[] children)
+    internal static Border Card(string? heading, params UIElement[] children)
     {
         var panel = new StackPanel();
         if (heading is not null) panel.Children.Add(new TextBlock { Text = heading, FontSize = 16, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 10) });
@@ -235,7 +235,7 @@ public sealed class MainWindow : Window
         return card;
     }
 
-    private static StackPanel Row(params UIElement[] children)
+    internal static StackPanel Row(params UIElement[] children)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal };
         foreach (var child in children) row.Children.Add(child);
@@ -276,8 +276,29 @@ public sealed class MainWindow : Window
         return panel;
     }
 
+    private UpdatePanel _updates = null!;
+
+    /// <summary>Before an update: stop remote access and wait until no file is being sent (bounded by the caller's token).</summary>
+    private async Task DrainForUpdateAsync(CancellationToken cancellation)
+    {
+        var client = await ConnectAsync();
+        if (client is null) return;                       // the agent is not running: nothing to stop
+        try
+        {
+            await client.SendAsync("pause");
+            while (true)
+            {
+                cancellation.ThrowIfCancellationRequested();
+                if (await client.SendAsync("status") is JsonObject status && (int)status["activeStreams"]! == 0) return;
+                await Task.Delay(500, cancellation);
+            }
+        }
+        catch (IpcException e) { throw new InvalidOperationException(e.Message); }
+    }
+
     private void BuildPages()
     {
+        _updates = new UpdatePanel(_stateDirectory, DrainForUpdateAsync, QuitAsync);
         var quit = MakeButton("QuitButton", "Quit OrbitDrive");
         quit.Click += (_, _) => _ = QuitAsync();
         _pause.Click += (_, _) => _ = TogglePauseAsync();
@@ -294,6 +315,7 @@ public sealed class MainWindow : Window
         Page("Overview",
             Card(null, Row(_stateDot, _stateText), _stateDetail, _meteredWarning, Row(_pause, _start), _summary),
             stats,
+            _updates.Banner,
             Card("When you close this window",
                 MakeText("CloseHint", "Closing this window keeps OrbitDrive running in the notification area so your phone can still reach shared folders. Quit stops remote access.", 13, FontWeights.Normal, Muted), quit));
 
@@ -424,6 +446,7 @@ public sealed class MainWindow : Window
                 MakeText("StartHint", "It starts quietly in the notification area, as you, without administrator rights. Off unless you turn it on.", 13, FontWeights.Normal, Muted),
                 _pauseWhenLocked,
                 MakeText("SleepNote", "While this PC is locked OrbitDrive keeps working unless you tick the box above. When the PC sleeps, shuts down or you sign out, your phone cannot reach it. OrbitDrive never changes your sleep settings or keeps the PC awake.", 13, FontWeights.Normal, Muted)),
+            _updates.Card,
             _settingsError,
             MakeText("PrivacyNote", "Files travel over TLS through the relay, which can process them in transit and stores nothing. This is not end-to-end encryption.", 13, FontWeights.Normal, Muted));
         Page("Diagnostics", Card(null, _diagnostics));

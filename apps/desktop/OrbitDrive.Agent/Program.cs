@@ -1,3 +1,4 @@
+using OrbitDrive.Core;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using OrbitDrive.Agent;
@@ -148,6 +149,12 @@ if (Option(args, "--gateway") is { } gatewayOption)
 {
     try { state.SetGateway(gatewayOption, Option(args, "--web-origin")); }
     catch (Exception e) when (e is ArgumentException or UriFormatException) { Console.Error.WriteLine(e.Message); return 2; }
+}
+else if (state.Gateway is null && ReleaseDefaults.Read(Option(args, "--defaults") ?? Path.Join(AppContext.BaseDirectory, "defaults.json")) is { } defaults)
+{
+    // A release build knows its own relay; the owner can change it in Settings at any time. An invalid shipped value is ignored, never trusted.
+    try { state.SetGateway(defaults.Gateway, defaults.WebOrigin); Emit("defaults_applied", new { }); }
+    catch (Exception e) when (e is ArgumentException or UriFormatException) { }
 }
 using var host = new AgentHost(state, Option(args, "--name") ?? Environment.MachineName, Emit);
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; host.Quit(); };

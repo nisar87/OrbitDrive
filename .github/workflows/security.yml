@@ -29,7 +29,7 @@ jobs:
       - name: No deployment or elevated permissions in ordinary workflows
         run: |
           # relay-release.yml may create a release with the short-lived workflow token; nothing else may write.
-          if grep -RnE --exclude=security.yml --exclude=relay-release.yml --exclude=deploy-web.yml "firebase deploy|id-token: write|contents: write" .github/workflows; then echo "unexpected privileged step"; exit 1; fi
+          if grep -RnE --exclude=security.yml --exclude=relay-release.yml --exclude=deploy-web.yml --exclude=desktop-release.yml "firebase deploy|id-token: write|contents: write" .github/workflows; then echo "unexpected privileged step"; exit 1; fi
       - name: The one deploy workflow stays keyless, hosting-only and main-only
         run: |
           f=.github/workflows/deploy-web.yml
@@ -38,6 +38,16 @@ jobs:
           grep -q "branches: \[main\]" $f
           grep -q "id-token: write" $f
           grep -q "all seven verification" $f
+      - name: The update-feed release workflow is main-only, has no cloud identity and uses its one secret only as a temporary file
+        run: |
+          f=.github/workflows/desktop-release.yml
+          grep -q "branches: \[main\]" $f
+          grep -q "all seven verification" $f
+          grep -q "refs/heads/main" $f
+          if grep -nE "id-token|firebase|google-github-actions|actions: write|pull_request|secrets\.[A-Z_]+" $f | grep -vE "^\s*[0-9]+:\s*#" | grep -vE "secrets\.(UPDATE_SIGNING_KEY|GITHUB_TOKEN)"; then echo "release workflow has an unexpected capability"; exit 1; fi
+          test "$(grep -c 'secrets\.UPDATE_SIGNING_KEY' $f)" = 1
+          grep -q "Remove-Item \$env:KEY_FILE" $f
+          if grep -nE "echo.*UPDATE_SIGNING_KEY|Write-(Host|Output).*UPDATE_SIGNING_KEY|\$env:UPDATE_SIGNING_KEY[^.]" $f | grep -v "IsNullOrWhiteSpace" | grep -vE "WriteAllText"; then echo "signing secret may be printed"; exit 1; fi
       - name: Relay scripts never embed credentials or disable TLS checks
         run: |
           if grep -RnE "curl[^|]*(-k|--insecure)|StrictHostKeyChecking=no|PRIVATE KEY|password=" infra/relay; then echo "unsafe relay script"; exit 1; fi

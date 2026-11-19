@@ -24,7 +24,7 @@ jobs:
         with:
           node-version: 22
       - name: Release tooling tests
-        run: node --test tests/release/release-lib.test.mjs
+        run: node --test tests/release/release-lib.test.mjs tests/release/update-feed.test.mjs
       - name: Build the candidate (self-contained win-x64; agent, thumbnail helper, WPF console)
         shell: pwsh
         run: |
@@ -52,7 +52,7 @@ jobs:
           $out = Join-Path $env:RUNNER_TEMP 'rc-extract'
           Expand-Archive $zip.FullName -DestinationPath $out
           $app = Join-Path $out 'OrbitDrive'
-          foreach ($f in 'orbitdrive-agent.exe','OrbitDrive.exe','OrbitDrive.ThumbnailHelper.exe','THIRD_PARTY_NOTICES.md','docs/INSTALL.md','docs/SUPPORT_MATRIX.md','docs/TROUBLESHOOTING.md') { if (-not (Test-Path (Join-Path $app $f))) { throw "missing in archive: $f" } }
+          foreach ($f in 'orbitdrive-agent.exe','OrbitDrive.exe','OrbitDrive.ThumbnailHelper.exe','defaults.json','THIRD_PARTY_NOTICES.md','docs/INSTALL.md','docs/SUPPORT_MATRIX.md','docs/TROUBLESHOOTING.md') { if (-not (Test-Path (Join-Path $app $f))) { throw "missing in archive: $f" } }
           $symbols = Get-ChildItem $app -Recurse -Filter *.pdb
           if ($symbols) { $symbols | ForEach-Object { $_.FullName }; throw 'debug symbols must not ship' }
           $version = & "$app\orbitdrive-agent.exe" version
