@@ -51,6 +51,7 @@ test('folders are shared only by explicit local action, with validation', async 
   const missing = await ipc.send('add_root', { name: 'Ghost', path: join(root, 'does-not-exist') });
   assert.equal(missing.ok, false);
   assert.match(missing.error, /Folder not found/);
+  for (const relative of ['.', '..', 'relative/folder', '~']) { const r = await ipc.send('add_root', { name: 'Rel', path: relative }); assert.equal(r.ok, false, relative); assert.match(r.error, /full path/); }
   assert.equal((await ipc.send('add_root', { name: 'x'.repeat(65), path: root })).ok, false);
   assert.equal((await ipc.send('add_root', { path: root })).ok, false);
   assert.equal((await ipc.send('remove_root', { rootId: 'nope' })).error, 'That folder is not shared.');

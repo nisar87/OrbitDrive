@@ -111,7 +111,7 @@ if (args[0] == "roots" && args.Length >= 2)
     switch (args[1])
     {
         case "add" when args.Length >= 4:
-            var added = state.AddRoot(args[2], args[3]);
+            var added = state.AddRoot(args[2], Path.GetFullPath(args[3]));   // the command line resolves against the folder the owner is standing in
             Console.WriteLine($"Shared read-only: {added.Name} ({added.RootId}) -> {added.Path}");
             return 0;
         case "list":

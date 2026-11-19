@@ -155,6 +155,8 @@ internal sealed class AgentState
     /// <summary>Only ever called from the local command line / owner console — never from a remote instruction.</summary>
     public SharedRoot AddRoot(string name, string path, bool showHidden = false)
     {
+        // A relative path would be resolved against whatever folder the agent happens to run in; the owner must name the folder in full.
+        if (!Path.IsPathFullyQualified(path)) throw new ArgumentException("Enter the full path of the folder, for example D:\\Shared\\Photos.");
         var full = Path.GetFullPath(path);
         if (!Directory.Exists(full)) throw new DirectoryNotFoundException($"Folder not found: {full}");
         if (name.Length is 0 or > 64) throw new ArgumentException("Root name must be 1-64 characters.");
