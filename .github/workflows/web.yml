@@ -40,14 +40,14 @@ jobs:
       - run: dotnet build OrbitDrive.slnx -c Release
       - name: Install browsers
         working-directory: apps/web
-        # The Ubuntu mirror sometimes stalls for minutes on a single package (seen four times; apt's own timeouts did not always end it). apt gets its
+        # The Ubuntu mirror sometimes stalls for minutes on a single package (seen several times; on slow days the download alone can take 10+ minutes, so an attempt gets 18 minutes). apt gets its
         # own stall timeout and retries, and each ATTEMPT is also bounded: a stuck attempt is asked to stop with SIGINT (so apt releases the dpkg lock),
         # leftovers are cleaned up, and the next attempt starts. The step is still bounded and still fails if the browsers cannot be installed.
-        timeout-minutes: 25
+        timeout-minutes: 40
         run: |
           printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' | sudo tee /etc/apt/apt.conf.d/99ci-network >/dev/null
-          for attempt in 1 2 3; do
-            if timeout --signal=INT --kill-after=60 420 npx playwright install --with-deps chromium firefox webkit; then exit 0; fi
+          for attempt in 1 2; do
+            if timeout --signal=INT --kill-after=60 1080 npx playwright install --with-deps chromium firefox webkit; then exit 0; fi
             echo "browser install attempt $attempt failed or stalled"
             sudo pkill -INT -x apt-get || true; sudo pkill -INT -x dpkg || true; sleep 10
             sudo dpkg --configure -a || true
