@@ -194,12 +194,14 @@ try {
     Check ((Api 'Get' "/v1/pcs/$pcId/roots" $null $device).status -eq 200) 'Resume restores access'
     Nav 'Activity'
     Check (@(ListItems 'ActivityList').Count -ge 4) 'activity history recorded the session'
-    # The stored history (kept by the agent, shown in plain words) appears on the same page.
+    # The stored history (kept by the agent, shown in plain words) appears on the same page. The list is virtualised and newest-first, so the
+    # entries the window can see are the most recent ones: the ones this very test caused (pairing, a file sent, folders changed).
     $historyText = ''
-    for ($i = 0; $i -lt 30 -and $historyText -notmatch 'OrbitDrive started'; $i++) { Start-Sleep -Milliseconds 500; $historyText = (@(ListItems 'HistoryList') -join "`n") }
-    Check ($historyText -match 'OrbitDrive started') 'stored history lists that OrbitDrive started'
-    Check ($historyText -match 'Connected to the relay') 'stored history lists the relay connection'
-    Check (@(ListItems 'HistoryList').Count -ge 2) 'stored history has several entries'
+    for ($i = 0; $i -lt 30 -and $historyText -notmatch 'Pairing finished'; $i++) { Start-Sleep -Milliseconds 500; $historyText = (@(ListItems 'HistoryList') -join "`n") }
+    Check ($historyText -match 'Pairing finished') 'stored history lists the pairing this test did'
+    Check ($historyText -match 'A file was sent to a browser') 'stored history lists the file this test downloaded'
+    Check ($historyText -match 'Shared folders changed') 'stored history lists the shared folder change'
+    Check (@(ListItems 'HistoryList').Count -ge 3) 'stored history has several entries'
     Check ($historyText -notmatch '[A-Za-z]:\\') 'stored history shows no file system paths'
     Shot 'activity'
     Nav 'Diagnostics'
