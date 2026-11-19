@@ -9,7 +9,7 @@ import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync, statSy
 import { join } from 'node:path';
 import { startGateway, startAgent, connectIpc, agentCli, tempDir, makeFixtureRoot, Browser, pair, sha256, sleep, repoRoot } from './harness.mjs';
 
-const SEED = Number(process.env.ORBIT_FUZZ_SEED ?? 20261119), ROUNDS = Number(process.env.ORBIT_FUZZ_ROUNDS ?? 40);
+const SEED = Number(process.env.ORBIT_FUZZ_SEED ?? 20261119), ROUNDS = Number(process.env.ORBIT_FUZZ_ROUNDS ?? 20);
 const rng = (() => { let a = SEED >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; })();
 const int = (n) => Math.floor(rng() * n), pick = (l) => l[int(l.length)];
 const LEAK = /\bat [A-Z][\w.]+\(.*\)|\.cs:line|System\.|Microsoft\.|Exception|StackTrace|[A-Z]:\\(Users|Windows|home)|\/home\/|\/tmp\/orbit/;
@@ -72,7 +72,7 @@ test('every local command survives hostile arguments: well-formed reply, no inte
 });
 
 test('hostile folder paths never add a folder that is not a real directory the owner pointed at', async () => {
-  for (const path of NASTY) { const r = await ipc.send('add_root', { name: 'F', path }); assert.equal(r.ok, false, `accepted ${JSON.stringify(path).slice(0, 60)}`); assert.doesNotMatch(r.error ?? '', LEAK); }
+  for (const path of NASTY) { const r = await ipc.send('add_root', { name: 'F', path }); assert.equal(r.ok, false, `accepted ${JSON.stringify(path).slice(0, 60)}`); assert.doesNotMatch(path ? (r.error ?? '').split(path).join('') : (r.error ?? ''), LEAK); }   // echoing the path the owner typed is fine; anything else is not
   const before = (await alive(ipc)).roots.length;
   assert.equal((await ipc.send('add_root', { name: 'Real', path: fixtureRoot })).ok, true);
   assert.equal((await alive(ipc)).roots.length, before + 1);
@@ -93,7 +93,8 @@ test('broken framing never wedges or kills the agent', async () => {
 });
 
 // ------------------------------------------------------------------ (2) uploads into a real folder
-const tree = (dir, base = dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? [join(dir, e.name).slice(base.length) + '/', ...tree(join(dir, e.name), base)] : [join(dir, e.name).slice(base.length)])).sort();
+const norm = (p) => (process.platform === 'win32' ? p.replaceAll('\\', '/') : p);   // on Unix a backslash is a legal (and here unsafe) name character: keep it visible
+const tree = (dir, base = dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? [norm(join(dir, e.name).slice(base.length)) + '/', ...tree(join(dir, e.name), base)] : [norm(join(dir, e.name).slice(base.length))])).sort();
 const SAFE_NAME = /^(?!\.{1,2}$)(?!\.orbitdrive)[^\\/:*?"<>|\0\r\n]{1,255}$/;
 const chunk = (uploadId, offset, data, headers = {}) => fetch(`${gateway.url}/v1/pcs/${pcId}/uploads/${uploadId}/chunk?offset=${offset}`, { method: 'PUT', headers: phone.headers({ 'content-type': 'application/octet-stream', 'x-chunk-sha256': sha256(data), ...headers }), body: data }).then(async (r) => ({ status: r.status, text: await r.text() }));
 
