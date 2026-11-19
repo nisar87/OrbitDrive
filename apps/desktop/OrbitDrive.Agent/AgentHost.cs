@@ -52,7 +52,7 @@ internal sealed class AgentHost : IDisposable
     private JsonObject ThumbnailStatus()
     {
         var (files, bytes) = _state.Thumbnails.Cache.Stats();
-        return new JsonObject { ["enabled"] = _state.ThumbnailsEnabled, ["available"] = _state.Thumbnails.Available, ["files"] = files, ["bytes"] = bytes };
+        return new JsonObject { ["enabled"] = _state.ThumbnailsEnabled, ["available"] = _state.Thumbnails.Available, ["hasHelper"] = _state.Thumbnails.HasHelper, ["files"] = files, ["bytes"] = bytes };
     }
 
     /// <summary>Non-identifying facts for a support bundle: versions, system type, state and counts. No names, paths or accounts.</summary>

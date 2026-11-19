@@ -125,17 +125,17 @@ try {
     Check $true 'a non-HTTPS relay address is refused'
     SetText 'GatewayBox' $relay; SetText 'WebOriginBox' 'http://localhost:5173'; Click 'SaveGatewayButton'
     Shot 'settings'
-    # Picture previews: off until the owner turns them on; the switch and the status line follow what the agent really stored.
+    # Picture previews: on by default; the switch (also when it is off) and the status line follow what the agent really stored.
     $thumbs = WaitText 'ThumbnailStatus' 'previews|Previews'
     if ($thumbs -match 'not available') { Check $true 'picture previews report honestly that they are not available on this machine' }
     else {
-        Check ($thumbs -match '^Previews are off') 'picture previews are off until the owner turns them on'
-        Toggle 'ThumbnailsToggle'
-        [void](WaitText 'ThumbnailStatus' '^Paired devices can see small previews')
-        Check (IsOn 'ThumbnailsToggle') 'the previews switch turns previews on'
+        Check ($thumbs -match '^Paired devices can see small previews') 'picture previews are on by default'
         Toggle 'ThumbnailsToggle'
         [void](WaitText 'ThumbnailStatus' '^Previews are off')
-        Check (-not (IsOn 'ThumbnailsToggle')) 'the previews switch turns previews off again'
+        Check (-not (IsOn 'ThumbnailsToggle')) 'the previews switch turns previews off, and stays usable while they are off'
+        Toggle 'ThumbnailsToggle'
+        [void](WaitText 'ThumbnailStatus' '^Paired devices can see small previews')
+        Check (IsOn 'ThumbnailsToggle') 'the previews switch turns previews on again'
     }
     Nav 'Overview'
     [void](WaitText 'StateText' '^Online$')

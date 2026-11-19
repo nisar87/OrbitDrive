@@ -7,7 +7,7 @@ using OrbitDrive.Core.Ipc;
 namespace OrbitDrive.Desktop;
 
 /// <summary>
-/// Settings > picture previews: an owner switch (off until turned on) and a button that deletes every stored preview. The agent keeps the
+/// Settings > picture previews: an owner switch (on by default, as in the agent) and a button that deletes every stored preview. The agent keeps the
 /// previews in a private cache on this PC; nothing here shows names or paths, only how many previews exist and how much space they use.
 /// </summary>
 internal sealed class ThumbnailPanel
@@ -50,7 +50,9 @@ internal sealed class ThumbnailPanel
     {
         if (status is null) return;
         var enabled = status["enabled"]?.GetValue<bool>() ?? false;
-        var available = status["available"]?.GetValue<bool>() ?? false;
+        // "available" in the agent means enabled AND a helper exists, so it is false while the owner has switched previews off. The switch must stay usable
+        // then, so what matters here is only whether the helper that makes previews exists on this PC.
+        var available = status["hasHelper"]?.GetValue<bool>() ?? false;
         var files = status["files"]?.GetValue<long>() ?? 0;
         var bytes = status["bytes"]?.GetValue<long>() ?? 0;
         var signature = $"{enabled}|{available}|{files}|{bytes}";

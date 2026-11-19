@@ -157,6 +157,10 @@ test('owner controls: switching thumbnails off or clearing the cache takes effec
   assert.equal(cleared.data.files, 0);
   const off = await ipc.send('set_thumbnails', { enabled: false });
   assert.equal(off.data.enabled, false);
+  // The PC console keeps its switch usable while previews are off, so the agent must still say whether the helper exists ("available" means
+  // enabled AND a helper, so it is false here by design; a console that read it as "no helper" would lock the owner out of turning previews back on).
+  assert.equal(off.data.hasHelper, true, 'the helper is reported present even while previews are switched off');
+  assert.equal(off.data.available, false);
   const denied = await preview(phone, 'photo.png', 'thumb:128');
   assert.equal(denied.body.error.code, 'unavailable');
   assert.equal((await preview(phone, 'photo.png')).status, 201, 'the original is still previewable');
