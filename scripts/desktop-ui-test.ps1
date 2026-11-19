@@ -290,10 +290,14 @@ try {
     for ($i = 0; $i -lt 80 -and (Agents).Count -ne 0; $i++) { Start-Sleep -Milliseconds 250 }
     [void](WaitText 'StateText' '^Stopped$')
     $stuck = Start-Process -FilePath $AgentExe -ArgumentList @('run', '--state', ('"' + $state + '"')) -PassThru -WindowStyle Hidden
-    for ($i = 0; $i -lt 60 -and -not (Test-Path $lockFile); $i++) { Start-Sleep -Milliseconds 250 }
-    Start-Sleep -Seconds 4
+    # Freeze it the moment it holds the lock, before it can answer: if the console attached to it while it still worked, this would not be the case under test.
     Add-Type -Namespace Native -Name Proc -MemberDefinition '[DllImport("ntdll.dll")] public static extern int NtSuspendProcess(System.IntPtr handle);'
+    $held = $false
+    for ($i = 0; $i -lt 1500 -and -not $held; $i++) {
+        try { $probe = [IO.File]::Open($lockFile, 'OpenOrCreate', 'ReadWrite', 'None'); $probe.Close(); Start-Sleep -Milliseconds 10 } catch [System.IO.IOException] { $held = $true }
+    }
     [void][Native.Proc]::NtSuspendProcess($stuck.Handle)
+    Check $held 'the stand-in agent was frozen while holding the lock'
     Click 'StartAgentButton'
     [void](WaitText 'StateText' '^Online$' 90000)
     Check ($null -eq (Get-Process -Id $stuck.Id -ErrorAction SilentlyContinue)) 'a frozen leftover agent of this installation was ended'
