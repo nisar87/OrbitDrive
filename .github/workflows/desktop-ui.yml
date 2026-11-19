@@ -20,9 +20,13 @@ jobs:
           dotnet-version: 10.0.x
       - run: dotnet build apps/desktop/OrbitDrive.Desktop -c Release
       - run: dotnet build services/gateway/OrbitDrive.Gateway -c Release
+      - run: dotnet build apps/desktop/OrbitDrive.ThumbnailHelper -c Release   # the real preview helper, so the console's previews switch is exercised for real
       - name: Drive the real WPF console through UI Automation (real agent + gateway)
         shell: powershell
-        run: ./scripts/desktop-ui-test.ps1 -Exe "apps/desktop/OrbitDrive.Desktop/bin/Release/net10.0-windows/OrbitDrive.exe" -GatewayDll "services/gateway/OrbitDrive.Gateway/bin/Release/net10.0/OrbitDrive.Gateway.dll" -OutDir artifacts
+        run: |
+          $env:ORBITDRIVE_THUMBNAIL_HELPER = (Get-ChildItem apps/desktop/OrbitDrive.ThumbnailHelper/bin/Release -Recurse -Filter OrbitDrive.ThumbnailHelper.exe | Select-Object -First 1).FullName
+          if (-not $env:ORBITDRIVE_THUMBNAIL_HELPER) { throw 'the preview helper was not built' }
+          ./scripts/desktop-ui-test.ps1 -Exe "apps/desktop/OrbitDrive.Desktop/bin/Release/net10.0-windows/OrbitDrive.exe" -GatewayDll "services/gateway/OrbitDrive.Gateway/bin/Release/net10.0/OrbitDrive.Gateway.dll" -OutDir artifacts
       # The build sandbox used for review can read job logs but not artifact storage, so the screenshots are also
       # written to the log (base64, between markers) to make visual review of the real Windows UI possible.
       - name: Publish screenshots in the log for review

@@ -127,7 +127,7 @@ try {
     Shot 'settings'
     # Picture previews: on by default; the switch (also when it is off) and the status line follow what the agent really stored.
     $thumbs = WaitText 'ThumbnailStatus' 'previews|Previews'
-    if ($thumbs -match 'not available') { Check $true 'picture previews report honestly that they are not available on this machine' }
+    if ($thumbs -match 'not available' -and -not $env:ORBITDRIVE_THUMBNAIL_HELPER) { Check $true 'picture previews report honestly that they are not available on this machine' }
     else {
         Check ($thumbs -match '^Paired devices can see small previews') 'picture previews are on by default'
         Toggle 'ThumbnailsToggle'
