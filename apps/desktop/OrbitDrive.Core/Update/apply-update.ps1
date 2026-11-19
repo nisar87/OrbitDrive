@@ -18,6 +18,19 @@ function Done([bool]$ok, [string]$message) {
   $json = @{ ok = $ok; version = $Version; message = $message; at = (Get-Date).ToUniversalTime().ToString('o') } | ConvertTo-Json -Compress
   [IO.File]::WriteAllText($ResultFile, $json)
 }
+
+# Starts OrbitDrive again for the same user state. The argument is ONE string with the folder in quotes: Start-Process joins an array with plain spaces,
+# so a profile path such as "C:\Users\Ann Lee\AppData\..." would otherwise be split, and the app would start with an empty state in the wrong folder
+# (its shared folders and pairing would look lost). The exact command line is also written beside the result file so it can be checked.
+function Start-App {
+  $exe = Join-Path $install 'OrbitDrive.exe'
+  $argumentLine = ''
+  if ($StateDir) { $argumentLine = '--state "' + $StateDir.TrimEnd('\', '/') + '"' }
+  try { [IO.File]::WriteAllText($ResultFile + '.launch.txt', $exe + "`n" + $argumentLine) } catch { }
+  if ($argumentLine) { Start-Process -FilePath $exe -ArgumentList $argumentLine -WorkingDirectory $install | Out-Null }
+  else { Start-Process -FilePath $exe -WorkingDirectory $install | Out-Null }
+}
+
 try {
   if (-not (Test-Path -LiteralPath $Zip -PathType Leaf)) { throw 'The downloaded update is missing.' }
   if ((Get-FileHash -LiteralPath $Zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Sha256.ToLowerInvariant()) { throw 'The downloaded update does not match its checksum; nothing was changed.' }
@@ -61,15 +74,9 @@ try {
   Remove-Item -LiteralPath $new -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue
   Done $true "Updated to $Version."
-  if ($Relaunch) {
-    $args = @(); if ($StateDir) { $args = @('--state', $StateDir) }
-    Start-Process -FilePath (Join-Path $install 'OrbitDrive.exe') -ArgumentList $args -WorkingDirectory $install | Out-Null
-  }
+  if ($Relaunch) { Start-App }
 } catch {
   Done $false $_.Exception.Message
-  if ($Relaunch -and (Test-Path -LiteralPath (Join-Path $install 'OrbitDrive.exe'))) {
-    $args = @(); if ($StateDir) { $args = @('--state', $StateDir) }
-    Start-Process -FilePath (Join-Path $install 'OrbitDrive.exe') -ArgumentList $args -WorkingDirectory $install | Out-Null   # the old version keeps working
-  }
+  if ($Relaunch -and (Test-Path -LiteralPath (Join-Path $install 'OrbitDrive.exe'))) { Start-App }   # the old version keeps working
   exit 1
 }

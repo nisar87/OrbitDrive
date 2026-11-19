@@ -148,6 +148,8 @@ public sealed class UpdateClientTests : IDisposable
         Assert.Contains("Unsafe path in the update", script);
         Assert.DoesNotContain("Stop-Process", script);   // never kills anything
         Assert.DoesNotContain("Invoke-WebRequest", script);
+        Assert.DoesNotContain("-ArgumentList $args", script);              // an array is joined with plain spaces: a profile path with a space would be split in two
+        Assert.Contains("'--state \"' + $StateDir", script);               // the state folder is passed as ONE quoted argument
     }
 
     [Fact]

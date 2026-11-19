@@ -21,10 +21,10 @@ function New-Zip([string]$name, [string[]]$entries) {
   $zip.Dispose()
   $path
 }
-function Run-Apply($install, $zip, $hash, [int]$wait = 20) {
+function Run-Apply($install, $zip, $hash, [int]$wait = 20, [string[]]$extra = @()) {
   $result = Join-Path $work ('result-' + [guid]::NewGuid().ToString('N') + '.json')
-  $p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$script,'-InstallDir',$install,'-Zip',$zip,'-Sha256',$hash,'-Version','9.9.9','-ResultFile',$result,'-WaitSeconds',$wait) -Wait -PassThru -WindowStyle Hidden
-  [pscustomobject]@{ Exit = $p.ExitCode; Result = (Get-Content $result -Raw | ConvertFrom-Json) }
+  $p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$script,'-InstallDir',$install,'-Zip',$zip,'-Sha256',$hash,'-Version','9.9.9','-ResultFile',$result,'-WaitSeconds',$wait) + $extra -Wait -PassThru -WindowStyle Hidden
+  [pscustomobject]@{ Exit = $p.ExitCode; Result = (Get-Content $result -Raw | ConvertFrom-Json); LaunchFile = ($result + '.launch.txt') }
 }
 $good = @('OrbitDrive/OrbitDrive.exe', 'OrbitDrive/orbitdrive-agent.exe', 'OrbitDrive/new.txt')
 
@@ -70,6 +70,22 @@ Check ($r.Exit -ne 0 -and $r.Result.message -match 'still running') 'a running O
 Check (-not $busy.HasExited) '... and was not killed'
 Check (Test-Path "$install\old.txt") '... and the old version is untouched'
 Stop-Process -Id $busy.Id -Force
+
+# 7. restart after the update: the state folder reaches the app as ONE argument even when the profile path contains spaces
+foreach ($stateName in @('plain', 'Ann Lee (work)', 'two  spaces  and-dash')) {
+  # a real (harmless) program stands in for OrbitDrive.exe so that Start-Process really starts something
+  $install = New-Install ('launch-' + [guid]::NewGuid().ToString('N'))
+  $zip = Join-Path $work ('launch-' + [guid]::NewGuid().ToString('N') + '.zip')
+  $archive = [IO.Compression.ZipFile]::Open($zip, 'Create')
+  [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, (Join-Path $env:windir 'System32\whoami.exe'), 'OrbitDrive/OrbitDrive.exe')
+  foreach ($e in @('OrbitDrive/orbitdrive-agent.exe', 'OrbitDrive/new.txt')) { $entry = $archive.CreateEntry($e); $w = New-Object IO.StreamWriter($entry.Open()); $w.Write("content of $e"); $w.Dispose() }
+  $archive.Dispose()
+  $stateDir = Join-Path $work ($stateName + '\agent'); New-Item -ItemType Directory $stateDir -Force | Out-Null
+  $r = Run-Apply $install $zip (Get-FileHash $zip -Algorithm SHA256).Hash 20 @('-Relaunch', '-StateDir', ('"' + $stateDir + '"'))
+  Check ($r.Exit -eq 0 -and $r.Result.ok) "update with a relaunch succeeds ($stateName)"
+  $launch = (Get-Content $r.LaunchFile -Raw -Encoding UTF8) -split "`n"
+  Check ($launch.Count -ge 2 -and $launch[1].Trim() -eq ('--state "' + $stateDir + '"')) "the relaunch passes the whole state folder as one quoted argument ($stateName)"
+}
 
 Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 if ($failures -gt 0) { "$failures check(s) failed"; exit 1 }
