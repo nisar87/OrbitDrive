@@ -478,8 +478,11 @@ public sealed class MainWindow : Window
                 catch (Exception e) when (e is TimeoutException or IOException or UnauthorizedAccessException)
                 {
                     // The agent is launched only when explicitly permitted (see _mayStart), never in an open loop.
-                    if (attempt != 0 || !_mayStart || !Program.StartAgent(_stateDirectory)) break;
-                    _mayStart = false;
+                    if (attempt != 0 || !_mayStart) break;
+                    var launched = await Program.StartAgentAsync(_stateDirectory);
+                    if (Program.StartNote.Length > 0) LogActivity(Program.StartNote);
+                    _mayStart = false;                    // one attempt per permission, also when it failed: never an open loop
+                    if (!launched) break;
                 }
             }
             return null;

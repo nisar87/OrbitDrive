@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using OrbitDrive.Core;
 using OrbitDrive.Core.Ipc;
 
 namespace OrbitDrive.Desktop;
@@ -47,16 +48,49 @@ public static class Program
         return exit;
     }
 
-    /// <summary>Starts the agent as the current user: never elevated, no shell, arguments passed as a list.</summary>
-    public static bool StartAgent(string stateDirectory)
+    /// <summary>What the last <see cref="StartAgentAsync"/> had to do, in plain words, for the console's activity list (empty when nothing unusual).</summary>
+    public static string StartNote { get; private set; } = "";
+
+    /// <summary>
+    /// Starts the agent as the current user: never elevated, no shell, arguments passed as a list. Called only after the console could not reach
+    /// an agent, so an agent that still holds this state folder's lock is either shutting down or no longer answering. A stopping one is given a few
+    /// seconds; one that is still there afterwards, and is this very installation's own program, is ended so a fresh one can start. Without that, one
+    /// stuck process (for example left over from before an update) made every later start give up silently.
+    /// </summary>
+    public static async Task<bool> StartAgentAsync(string stateDirectory)
     {
+        StartNote = "";
         var exe = Path.Join(AppContext.BaseDirectory, "orbitdrive-agent.exe");
         if (!File.Exists(exe)) return false;
+        if (AgentLock.IsHeld(stateDirectory) && !await AgentLock.WaitUntilFreeAsync(stateDirectory, TimeSpan.FromSeconds(5)))
+        {
+            var ended = EndOwnUnresponsiveAgents(exe);
+            StartNote = ended > 0 ? $"An agent from this installation was not answering and was stopped ({ended}); starting a fresh one." : "Another program is holding the agent's lock and could not be identified as OrbitDrive's own agent.";
+            if (ended == 0 || !await AgentLock.WaitUntilFreeAsync(stateDirectory, TimeSpan.FromSeconds(5))) return false;
+        }
         var start = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true };
         start.ArgumentList.Add("run");
         start.ArgumentList.Add("--state");
         start.ArgumentList.Add(stateDirectory);
         using var process = Process.Start(start);
         return process is not null;
+    }
+
+    /// <summary>Ends running copies of exactly this installation's agent program, as this user. Never matches by name alone, never touches another program.</summary>
+    private static int EndOwnUnresponsiveAgents(string exe)
+    {
+        var ended = 0;
+        foreach (var process in Process.GetProcessesByName("orbitdrive-agent"))
+        {
+            try
+            {
+                if (!string.Equals(Path.GetFullPath(process.MainModule?.FileName ?? ""), Path.GetFullPath(exe), StringComparison.OrdinalIgnoreCase)) continue;
+                process.Kill();
+                if (process.WaitForExit(5000)) ended++;
+            }
+            catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException or NotSupportedException) { /* not ours to stop, or already gone */ }
+            finally { process.Dispose(); }
+        }
+        return ended;
     }
 }
