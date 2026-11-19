@@ -158,19 +158,37 @@ public sealed class LocalIpcClient : IAsyncDisposable
         Disconnected?.Invoke();
     }
 
+    /// <summary>How long a request may take, writing it and waiting for the answer each. Settable so tests do not have to wait 30 seconds.</summary>
+    public TimeSpan ReplyTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
     public async Task<JsonNode?> SendAsync(string command, JsonObject? args = null, CancellationToken cancellation = default)
     {
         var id = Interlocked.Increment(ref _next).ToString(System.Globalization.CultureInfo.InvariantCulture);
         var completion = new TaskCompletionSource<JsonObject>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[id] = completion;
         var bytes = Encoding.UTF8.GetBytes(new JsonObject { ["id"] = id, ["cmd"] = command, ["args"] = args ?? [] }.ToJsonString() + "\n");
-        await _gate.WaitAsync(cancellation).ConfigureAwait(false);
-        try { await _pipe.WriteAsync(bytes, cancellation).ConfigureAwait(false); await _pipe.FlushAsync(cancellation).ConfigureAwait(false); }
-        catch (IOException) { throw new IpcException("The OrbitDrive agent is not running."); }
-        finally { _gate.Release(); }
-        var reply = await completion.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellation).ConfigureAwait(false);
+        // The time limit covers the whole request. It used to start only after the message was written and flushed, but flushing a pipe waits for the
+        // other side to read, so an agent that had frozen made the first request wait for ever and every later one queue behind it: the console
+        // then looked connected while nothing ever answered.
+        var write = WriteAsync(bytes, cancellation);
+        _ = write.ContinueWith(static t => _ = t.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        JsonObject reply;
+        try
+        {
+            await write.WaitAsync(ReplyTimeout, cancellation).ConfigureAwait(false);
+            reply = await completion.Task.WaitAsync(ReplyTimeout, cancellation).ConfigureAwait(false);
+        }
+        finally { _pending.TryRemove(id, out _); }
         if (reply["ok"]?.GetValue<bool>() != true) throw new IpcException(reply["error"]?.GetValue<string>() ?? "Request failed.");
         return reply["data"];
+    }
+
+    private async Task WriteAsync(byte[] bytes, CancellationToken cancellation)
+    {
+        await _gate.WaitAsync(cancellation).ConfigureAwait(false);
+        try { await _pipe.WriteAsync(bytes, cancellation).ConfigureAwait(false); }   // no Flush: it only waits for the reader, and the bytes are already on the pipe
+        catch (IOException) { throw new IpcException("The OrbitDrive agent is not running."); }
+        finally { _gate.Release(); }
     }
 
     public async ValueTask DisposeAsync()
