@@ -23,7 +23,8 @@ function New-Zip([string]$name, [string[]]$entries) {
 }
 function Run-Apply($install, $zip, $hash, [int]$wait = 20, [string[]]$extra = @()) {
   $result = Join-Path $work ('result-' + [guid]::NewGuid().ToString('N') + '.json')
-  $p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$script,'-InstallDir',$install,'-Zip',$zip,'-Sha256',$hash,'-Version','9.9.9','-ResultFile',$result,'-WaitSeconds',$wait) + $extra -Wait -PassThru -WindowStyle Hidden
+  $argumentList = @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$script,'-InstallDir',$install,'-Zip',$zip,'-Sha256',$hash,'-Version','9.9.9','-ResultFile',$result,'-WaitSeconds',$wait) + $extra
+  $p = Start-Process powershell.exe -ArgumentList $argumentList -Wait -PassThru -WindowStyle Hidden
   [pscustomobject]@{ Exit = $p.ExitCode; Result = (Get-Content $result -Raw | ConvertFrom-Json); LaunchFile = ($result + '.launch.txt') }
 }
 $good = @('OrbitDrive/OrbitDrive.exe', 'OrbitDrive/orbitdrive-agent.exe', 'OrbitDrive/new.txt')
