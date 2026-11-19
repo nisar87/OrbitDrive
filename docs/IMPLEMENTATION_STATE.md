@@ -85,7 +85,7 @@ web) works end to end in CI. It is a slice through M1–M2, not completion of th
 - Gateway registrations/grants persist only when `OrbitDrive:DataDirectory` is set. The live relay has it enabled since 2026-11-17 (owner re-ran the bootstrap; directory present, still empty). Pending pairings and download capabilities never survive a restart (by design).
 - Device credential and dev token live in `localStorage`; no CSP yet.
 - Same-size rewrite that restores the timestamp between prepare and read is not detected.
-- Agent-side busy limits (16 requests, 4 streams) and pending-request caps have no dedicated tests yet.
+- Agent-side busy limits: burst test added (`busy.test.mjs`, 2026-11-20); the 4-stream cap is in `transfers.test.mjs`.
 - Hard-link refusal is Windows-only; root volume-identity binding not implemented.
 - Relay Dockerfile and firebase.json are unvalidated drafts.
 - Console screenshots (9 per run) exist as CI artifacts but have not been visually reviewed by anyone.

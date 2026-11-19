@@ -541,3 +541,4 @@ Commit `ec7c8e4` (feature branch); all seven workflows green on that exact SHA (
 
 ### Agent/relay busy limits under a burst (2026-11-20)
 - New `tests/integration/busy.test.mjs` (real gateway + agent): bursts of 800 simultaneous listings (far beyond the agent's 16 at once and the relay's 64 per PC). Every answer must be complete data or a 429 `limit_exceeded` saying the PC is busy; no hang (<60 s), no 5xx, no crash; the test fails if the limit is never reached ("would prove nothing"); afterwards three normal requests, `status` online with 0 active streams, and a second burst behaves the same (slots given back). Passed 3 of 3 locally; CI result below. The concurrent-transfer cap was already covered in `transfers.test.mjs`.
+- CI: all seven workflows green on 13689b8 first time, including `busy.test.mjs` on Windows and Linux; `main` fast-forwarded; `desktop-release` succeeded (no app change in this commit, so 0.1.8 is functionally 0.1.7).
