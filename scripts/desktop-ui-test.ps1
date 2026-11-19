@@ -301,6 +301,7 @@ try {
     Click 'StartAgentButton'
     try { [void](WaitText 'StateText' '^Online$' 90000) }
     catch {
+        Nav 'Activity'
         Write-Host "DIAGNOSTIC stand-in alive: $($null -ne (Get-Process -Id $stuck.Id -ErrorAction SilentlyContinue)); agents: $((Agents).Count)"
         Write-Host ("DIAGNOSTIC activity: " + ((@(ListItems 'ActivityList')) -join ' | '))
         throw
