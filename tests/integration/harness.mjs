@@ -245,15 +245,15 @@ export class Browser {
     if (this.device) headers['x-orbitdrive-device'] = `${this.device.id}.${this.device.secret}`;
     return headers;
   }
-  async call(method, path, body) {
+  async call(method, path, body, extraHeaders = {}) {
     const response = await fetch(this.gateway.url + path, {
-      method, headers: this.headers(body === undefined ? {} : { 'content-type': 'application/json' }), body: body === undefined ? undefined : JSON.stringify(body),
+      method, headers: this.headers({ ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...extraHeaders }), body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await response.text();
     return { status: response.status, body: text ? JSON.parse(text) : null, headers: response.headers };
   }
   get(path) { return this.call('GET', path); }
-  post(path, body) { return this.call('POST', path, body); }
+  post(path, body, extraHeaders) { return this.call('POST', path, body, extraHeaders); }
 }
 
 /** Runs the whole real pairing flow: PC issues a code, browser claims it, the PC owner approves locally. */

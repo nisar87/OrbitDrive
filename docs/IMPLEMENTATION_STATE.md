@@ -102,7 +102,7 @@ Blocked on the owner (cannot be done from the build environment):
   code-signing identity, a service-account key (Firestore, FCM, token revocation), review of the console screenshots.
 
 Not blocked, in order:
-1. W3/D3 remainder: idempotency keys for retried mutations; Firestore when credentials exist. (Durable store, leases, fault suite and ADR-1 done.)
+1. W3/D3 remainder: Firestore when credentials exist. (Durable store, leases, fault suite and ADR-1 done; **idempotency keys for retried "start work" requests done** — see phase evidence, 2026-11-19.)
 2. W2 remainder: real-phone camera scan (owner device needed). (`OrbitDrive__TrustedProxies` was set on the live relay by the owner on 2026-11-17.)
    **Accepted risk AR-1 (owner-authorised 2026-11-18, expires 2026-12-17):** `picomatch` GHSA-fc5q-39xc-vjpf in build/test tooling only — NOT fixed; see `docs/security/accepted-risks.md`. The `security` workflow fails again on expiry, on any new picomatch release, or if it becomes reachable some other way. Re-review before 2026-12-17.
    After that: D6/W6 (Explorer send-to-phone, incoming files).

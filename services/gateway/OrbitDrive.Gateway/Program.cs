@@ -27,6 +27,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<Store>();
 builder.Services.AddSingleton<Invitations>();
 builder.Services.AddSingleton<RateLimiter>();
+builder.Services.AddSingleton<IdempotencyStore>();
 builder.Services.AddSingleton<Metrics>();
 builder.Services.AddSingleton<AdminLog>();
 builder.Services.AddSingleton<AgentHub>();
@@ -43,12 +44,13 @@ else
 builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy => policy
     .WithOrigins(options.AllowedWebOrigins)
     .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")
-    .WithHeaders("Authorization", "Content-Type", "X-OrbitDrive-Device", "X-Chunk-Sha256", "Range", "If-Range")
-    .WithExposedHeaders("Content-Range", "Accept-Ranges", "ETag", "Content-Length", "Content-Disposition", "Retry-After")));
+    .WithHeaders("Authorization", "Content-Type", "X-OrbitDrive-Device", "X-Chunk-Sha256", "Range", "If-Range", IdempotencyStore.Header)
+    .WithExposedHeaders("Content-Range", "Accept-Ranges", "ETag", "Content-Length", "Content-Disposition", "Retry-After", IdempotencyStore.ReplayHeader)));
 
 var app = builder.Build();
 var store = app.Services.GetRequiredService<Store>();
 var limiter = app.Services.GetRequiredService<RateLimiter>();
+var idempotency = app.Services.GetRequiredService<IdempotencyStore>();
 var maintenance = new MaintenanceMode(options);
 var invitations = app.Services.GetRequiredService<Invitations>();
 var metrics = app.Services.GetRequiredService<Metrics>();
@@ -111,6 +113,63 @@ void Throttle(HttpContext context, string key, int perMinute, string message)
 BrowserDeviceRecord AuthorizeBrowser(HttpContext context, string? pcId = null) =>
     store.Authorize(Authenticate(context), context.Request.Headers["X-OrbitDrive-Device"].ToString(), pcId);
 
+// A retried "start work" request with the same Idempotency-Key returns the first answer instead of starting the work again (see IdempotencyStore).
+async Task RunIdempotent(HttpContext context, string key, Func<Task> next)
+{
+    var identity = Authenticate(context);                       // who is asking comes first; an anonymous caller never reaches the key table
+    if (!IdempotencyStore.ValidKey(key)) throw new ProtocolException(ErrorCode.InvalidRequest, "The Idempotency-Key must be 8 to 128 letters, digits, '-', '_', '.' or ':'.");
+    var feature = context.Features.Get<IHttpMaxRequestBodySizeFeature>()!;
+    if (!feature.IsReadOnly && context.Request.Path.Value!.EndsWith("/archives", StringComparison.Ordinal)) feature.MaxRequestBodySize = 192 * 1024;
+    var limit = feature.MaxRequestBodySize ?? 64 * 1024;
+    using var buffer = new MemoryStream();
+    var chunk = new byte[8192];
+    int read;
+    while ((read = await context.Request.Body.ReadAsync(chunk, context.RequestAborted)) > 0)
+    {
+        if (buffer.Length + read > limit) throw new ProtocolException(ErrorCode.TooLarge, "The request is too large.");
+        buffer.Write(chunk, 0, read);
+    }
+    var body = buffer.ToArray();
+    context.Request.Body = new MemoryStream(body);
+    var scope = IdempotencyStore.Scope(identity.Uid, context.Request.Headers["X-OrbitDrive-Device"].ToString(), key);
+    var decision = idempotency.Begin(scope, identity.Uid, IdempotencyStore.Fingerprint(context.Request.Method, context.Request.Path.Value!, body));
+    switch (decision.Outcome)
+    {
+        case IdempotencyStore.Outcome.Replay:
+            context.Response.Headers[IdempotencyStore.ReplayHeader] = "true";
+            context.Response.StatusCode = decision.Status;
+            context.Response.ContentType = decision.ContentType;
+            await context.Response.Body.WriteAsync(decision.Body!, context.RequestAborted);
+            return;
+        case IdempotencyStore.Outcome.Mismatch:
+            throw new ProtocolException(ErrorCode.Conflict, "This Idempotency-Key was already used for a different request. Use a new key for a new request.");
+        case IdempotencyStore.Outcome.InFlight:
+            context.Response.Headers.RetryAfter = "1";
+            throw new ProtocolException(ErrorCode.Conflict, "The first request with this Idempotency-Key is still running. Wait a moment and retry.");
+        case IdempotencyStore.Outcome.Full:
+            context.Response.Headers.RetryAfter = "60";
+            throw new ProtocolException(ErrorCode.LimitExceeded, "Too many different Idempotency-Keys are in use. Wait before starting more.");
+    }
+    var original = context.Response.Body;
+    var tee = new TeeStream(original, IdempotencyStore.MaxStoredBody);
+    context.Response.Body = tee;
+    var stored = false;
+    try
+    {
+        await next();
+        if (context.Response.StatusCode is >= 200 and < 300 && !tee.Overflowed)
+        {
+            idempotency.Complete(scope, context.Response.StatusCode, context.Response.ContentType ?? "application/json; charset=utf-8", tee.Captured);
+            stored = true;
+        }
+    }
+    finally
+    {
+        context.Response.Body = original;
+        if (!stored) idempotency.Abandon(scope);
+    }
+}
+
 // Uniform security headers and typed errors. Bodies/capabilities are never logged.
 app.Use(async (context, next) =>
 {
@@ -131,7 +190,10 @@ app.Use(async (context, next) =>
             context.Response.Headers.RetryAfter = "60";
             throw new ProtocolException(ErrorCode.Unavailable, "OrbitDrive is being maintained. Transfers already running continue; please try again in a minute.");
         }
-        await next(context);
+        if (IdempotencyStore.Applies(context.Request) && context.Request.Headers[IdempotencyStore.Header].ToString() is { Length: > 0 } idempotencyKey)
+            await RunIdempotent(context, idempotencyKey, () => next(context));
+        else
+            await next(context);
     }
     catch (ProtocolException e) when (!context.Response.HasStarted)
     {
@@ -248,7 +310,11 @@ app.MapPost("/v1/pcs/{pcId}/directory-queries", async (HttpContext context, stri
 });
 
 // A selection of many items carries many sealed identifiers; these two routes accept a larger body than other JSON routes (still under the 256 KiB control-message cap).
-static void AllowLargerBody(HttpContext context) => context.Features.Get<IHttpMaxRequestBodySizeFeature>()!.MaxRequestBodySize = 192 * 1024;
+static void AllowLargerBody(HttpContext context)
+{
+    var feature = context.Features.Get<IHttpMaxRequestBodySizeFeature>()!;
+    if (!feature.IsReadOnly) feature.MaxRequestBodySize = 192 * 1024;   // already read (and capped) by the idempotency step when a key was sent
+}
 
 // ----- D8: archives, search and entry checks. The PC does the work; the gateway only authorises the browser for that PC. -----
 app.MapPost("/v1/pcs/{pcId}/archives", async (HttpContext context, string pcId) =>

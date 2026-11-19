@@ -29,17 +29,30 @@ export function saveDevice(uid: string, device: Session['device']): void {
   if (device) localStorage.setItem(deviceKey(uid), JSON.stringify(device)); else localStorage.removeItem(deviceKey(uid));
 }
 
+/** Requests that START work on a PC. A lost answer must never make the PC do it twice, so these carry an Idempotency-Key and may be retried with the same one. */
+export function startsWork(method: string, path: string): boolean {
+  return method === 'POST' && (path === '/v1/download-sessions' || /^\/v1\/pcs\/[^/]+\/(archives|searches|uploads)$/.test(path));
+}
+export const retryTuning = { networkRetries: 2, delayMs: 600 };
+const newKey = (): string => (globalThis.crypto?.randomUUID?.() ?? `k${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`);
+
 async function call<K extends keyof ProtocolTypeMap>(type: K, session: Session | null, method: string, path: string, body?: unknown): Promise<ProtocolTypeMap[K]> {
   const headers: Record<string, string> = {};
+  const idempotent = startsWork(method, path);
+  if (idempotent) headers['Idempotency-Key'] = newKey();
   const token = session ? (tokenProvider ? await tokenProvider() : session.idToken) : null;
   if (token) headers.Authorization = `Bearer ${token}`;
   if (session?.device) headers['X-OrbitDrive-Device'] = `${session.device.id}.${session.device.secret}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  let response: Response;
-  try {
-    response = await fetch(GATEWAY_URL + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', referrerPolicy: 'no-referrer' });
-  } catch {
-    throw new ApiError('network', 'Cannot reach the OrbitDrive service. Check your connection.', 0);
+  let response: Response | undefined;
+  for (let attempt = 0; response === undefined; attempt++) {
+    try {
+      response = await fetch(GATEWAY_URL + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', referrerPolicy: 'no-referrer' });
+    } catch {
+      // Only a request that carries its Idempotency-Key is retried: the service answers the repeat with the first answer instead of starting the work again.
+      if (!idempotent || attempt >= retryTuning.networkRetries) throw new ApiError('network', 'Cannot reach the OrbitDrive service. Check your connection.', 0);
+      await new Promise((resolve) => setTimeout(resolve, retryTuning.delayMs * (attempt + 1)));
+    }
   }
   const json: unknown = await response.json().catch(() => null);
   if (!response.ok) {
