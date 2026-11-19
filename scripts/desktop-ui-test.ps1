@@ -298,7 +298,10 @@ try {
     }
     [void][Native.Proc]::NtSuspendProcess($stuck.Handle)
     Check $held 'the stand-in agent was frozen while holding the lock'
-    Click 'StartAgentButton'
+    # Two routes, both must end the same way: the console never reached the frozen agent (Start is shown and pressed), or it attached just before the
+    # freeze and has to notice the silence itself (about a minute) and replace it.
+    try { Click 'StartAgentButton' } catch { Write-Host 'console had attached to the frozen agent; waiting for it to notice the silence' }
+    for ($i = 0; $i -lt 600 -and (Get-Process -Id $stuck.Id -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Milliseconds 250 }
     try { [void](WaitText 'StateText' '^Online$' 90000) }
     catch {
         Nav 'Activity'
