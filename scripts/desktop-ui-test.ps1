@@ -283,6 +283,47 @@ try {
     Click 'StartAgentButton'
     [void](WaitText 'StateText' '^Online$' 60000)
     Check ((Agents).Count -eq 1) 'the owner can start it again explicitly'
+
+    # A leftover agent of this installation holds the agent lock but no longer answers (as after an interrupted update): Start must replace it.
+    $lockFile = Join-Path $state 'agent.lock'
+    & $AgentExe ctl quit --state $state | Out-Null
+    for ($i = 0; $i -lt 80 -and (Agents).Count -ne 0; $i++) { Start-Sleep -Milliseconds 250 }
+    [void](WaitText 'StateText' '^Stopped$')
+    $stuck = Start-Process -FilePath $AgentExe -ArgumentList @('run', '--state', ('"' + $state + '"')) -PassThru -WindowStyle Hidden
+    for ($i = 0; $i -lt 60 -and -not (Test-Path $lockFile); $i++) { Start-Sleep -Milliseconds 250 }
+    Start-Sleep -Seconds 4
+    Add-Type -Namespace Native -Name Proc -MemberDefinition '[DllImport("ntdll.dll")] public static extern int NtSuspendProcess(System.IntPtr handle);'
+    [void][Native.Proc]::NtSuspendProcess($stuck.Handle)
+    Click 'StartAgentButton'
+    [void](WaitText 'StateText' '^Online$' 90000)
+    Check ($null -eq (Get-Process -Id $stuck.Id -ErrorAction SilentlyContinue)) 'a frozen leftover agent of this installation was ended'
+    Check ((Agents).Count -eq 1) 'exactly one agent runs after replacing the frozen one'
+    Nav 'Activity'
+    $note = $false
+    for ($i = 0; $i -lt 20 -and -not $note; $i++) { $note = ((@(ListItems 'ActivityList') -join "`n") -match 'was not answering and was stopped'); if (-not $note) { Start-Sleep -Milliseconds 500 } }
+    Check $note 'the console says plainly that it stopped a leftover agent'
+    Nav 'Overview'
+
+    # A different program holding the lock is NOT this installation's agent: it must never be killed.
+    & $AgentExe ctl quit --state $state | Out-Null
+    for ($i = 0; $i -lt 80 -and (Agents).Count -ne 0; $i++) { Start-Sleep -Milliseconds 250 }
+    [void](WaitText 'StateText' '^Stopped$')
+    $holder = Start-Process -FilePath 'powershell.exe' -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile', '-Command', ('$f=[IO.File]::Open("' + $lockFile + '","OpenOrCreate","ReadWrite","None"); Start-Sleep -Seconds 120'))
+    Start-Sleep -Seconds 4
+    Click 'StartAgentButton'
+    Start-Sleep -Seconds 14
+    Check ($null -ne (Get-Process -Id $holder.Id -ErrorAction SilentlyContinue)) 'an unrelated program holding the lock is left alone'
+    Check ((Agents).Count -eq 0) 'no agent was started while something else holds the lock'
+    Nav 'Activity'
+    $unknown = $false
+    for ($i = 0; $i -lt 20 -and -not $unknown; $i++) { $unknown = ((@(ListItems 'ActivityList') -join "`n") -match 'could not be identified'); if (-not $unknown) { Start-Sleep -Milliseconds 500 } }
+    Check $unknown 'the console says it could not identify the program holding the lock'
+    Nav 'Overview'
+    Stop-Process -Id $holder.Id -Force
+    Start-Sleep -Seconds 1
+    Click 'StartAgentButton'
+    [void](WaitText 'StateText' '^Online$' 60000)
+    Check ((Agents).Count -eq 1) 'once the lock is free the agent starts again'
     Shot 'overview-online-final'
 
     # Keyboard reachability on every page.
