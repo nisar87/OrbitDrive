@@ -299,7 +299,12 @@ try {
     [void][Native.Proc]::NtSuspendProcess($stuck.Handle)
     Check $held 'the stand-in agent was frozen while holding the lock'
     Click 'StartAgentButton'
-    [void](WaitText 'StateText' '^Online$' 90000)
+    try { [void](WaitText 'StateText' '^Online$' 90000) }
+    catch {
+        Write-Host "DIAGNOSTIC stand-in alive: $($null -ne (Get-Process -Id $stuck.Id -ErrorAction SilentlyContinue)); agents: $((Agents).Count)"
+        Write-Host ("DIAGNOSTIC activity: " + ((@(ListItems 'ActivityList')) -join ' | '))
+        throw
+    }
     Check ($null -eq (Get-Process -Id $stuck.Id -ErrorAction SilentlyContinue)) 'a frozen leftover agent of this installation was ended'
     Check ((Agents).Count -eq 1) 'exactly one agent runs after replacing the frozen one'
     Nav 'Activity'

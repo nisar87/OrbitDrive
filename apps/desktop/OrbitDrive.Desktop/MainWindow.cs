@@ -71,6 +71,7 @@ public sealed class MainWindow : Window
     private readonly TextBlock _deviceError = MakeText("DeviceError", "", 13, FontWeights.Normal, Danger);
     private readonly TextBlock _transfers = MakeText("TransfersText", "", 14, FontWeights.Normal);
     private readonly ListBox _activity = new() { MinHeight = 200 };
+    private int _unanswered;
     private HistoryPanel _history = null!;
     private ThumbnailPanel _thumbnails = null!;
     private readonly TextBlock _settingsError = MakeText("SettingsError", "", 13, FontWeights.Normal, Danger);
@@ -310,7 +311,7 @@ public sealed class MainWindow : Window
         // Start is offered only while the agent is not running; pressing it is an explicit owner decision, so it
         // also clears the crash-restart budget.
         _start.Visibility = Visibility.Collapsed;
-        _start.Click += (_, _) => { _restarts.Reset(); _gaveUp = false; _stoppedOnPurpose = false; _mayStart = true; _ = RefreshAsync(); };
+        _start.Click += (_, _) => { _restarts.Reset(); _gaveUp = false; _stoppedOnPurpose = false; _mayStart = true; _unanswered = 0; if (_client is { } silent) { _client = null; _ = silent.DisposeAsync().AsTask(); } _ = RefreshAsync(); };
         _stateText.Margin = new Thickness(0);
         var stats = new System.Windows.Controls.Primitives.UniformGrid { Columns = 3, Margin = new Thickness(0, 0, -14, 0) };
         stats.Children.Add(Stat(_statFolders, "Shared folders"));
@@ -581,8 +582,16 @@ public sealed class MainWindow : Window
     {
         if (_quitting) return;
         JsonObject? status = null;
-        try { if (await ConnectAsync() is { } client) status = await client.SendAsync("status") as JsonObject; }
-        catch (Exception e) when (e is IpcException or TimeoutException) { }
+        try { if (await ConnectAsync() is { } client) { status = await client.SendAsync("status") as JsonObject; _unanswered = 0; } }
+        catch (Exception e) when (e is IpcException or TimeoutException) { if (e is TimeoutException) _unanswered++; }
+        // An agent that accepts the connection but never answers (frozen, or stuck while shutting down) would otherwise stay "connected" for ever, and a
+        // replacement would never be started. Two unanswered checks in a row end that connection; the normal bounded restart path takes over from there.
+        if (_unanswered >= 2 && _client is { } silent)
+        {
+            _unanswered = 0;
+            LogActivity("The agent stopped answering; replacing it.");
+            _ = silent.DisposeAsync().AsTask();
+        }
         if (status is null)
         {
             (_stateText.Text, _stateDetail.Text) =
