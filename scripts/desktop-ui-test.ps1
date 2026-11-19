@@ -309,6 +309,13 @@ try {
         Write-Host ("DIAGNOSTIC activity: " + ((@(ListItems 'ActivityList')) -join ' | '))
         throw
     }
+    if (Get-Process -Id $stuck.Id -ErrorAction SilentlyContinue) {
+        Nav 'Overview'
+        Write-Host ("DIAGNOSTIC state: " + (Find 'StateText').Current.Name + " / " + (Find 'StateDetail').Current.Name)
+        Nav 'Activity'
+        Write-Host ("DIAGNOSTIC activity: " + ((@(ListItems 'ActivityList')) -join ' | '))
+        Write-Host ("DIAGNOSTIC agents: " + ((Agents | ForEach-Object { $_.Id }) -join ','))
+    }
     Check ($null -eq (Get-Process -Id $stuck.Id -ErrorAction SilentlyContinue)) 'a frozen leftover agent of this installation was ended'
     Check ((Agents).Count -eq 1) 'exactly one agent runs after replacing the frozen one'
     Nav 'Activity'
