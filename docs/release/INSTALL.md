@@ -1,4 +1,4 @@
-# Installing, updating and removing OrbitDrive (release candidate)
+# Installing, updating and removing OrbitDrive (development build)
 
 **Status: release candidate, unsigned, no installer.** This build is a self-contained folder (no separate .NET install needed). There is no MSIX/installer yet
 (needs the owner's signing identity), so Windows SmartScreen will warn that the publisher is unknown. Only run files whose checksum you verified.
@@ -12,12 +12,18 @@
 1. Extract the zip to a folder you own, for example `C:\Users\<you>\OrbitDrive\` (not `Program Files`: this build runs as you, without administrator rights, and needs no elevation).
 2. Start `OrbitDrive.exe`. It lives in the notification area (tray). Closing the window keeps it running; **Quit** in the tray menu stops it.
 3. Open **Shared folders** and add the folders you want to reach from your phone. Everything is **read-only** unless you switch uploads on for a folder.
-4. Set the relay address and web address given to you by the person who deployed the service (Settings, or `orbitdrive-agent run --gateway <https-url> --web-origin <https-url>`).
+4. The relay and web addresses of the development service are already filled in from `defaults.json` next to `OrbitDrive.exe` (only used while none is set; plain-http non-local addresses are ignored). Change them in Settings if you use another service.
 5. Pair a phone: open the web address on the phone, sign in, choose "Pair a PC", enter or scan the code, and **approve on the PC** after checking that the code on both screens matches.
 
-## 3. Update
-Until the signed installer exists, update by hand: Quit from the tray, extract the new zip over (or next to) the old folder, start it again. Your folders, paired browsers and settings are kept in
-`%LOCALAPPDATA%\OrbitDrive\agent` and survive. The in-app signed-update engine is built and tested, but no update feed has been published.
+## 3. Update (no reinstall, no uninstall)
+Install once. After that, open **Settings > Software updates** and press **Check for updates**, then **Update now** when one is offered (the app also checks by itself shortly after it starts and every few hours, and shows a banner on Overview).
+**Update now** downloads the new build, checks the signature, size and SHA-256 against the signed update notice, waits for running transfers to finish (new ones are paused), swaps the program folder, and starts the new version.
+Nothing in `%LOCALAPPDATA%\OrbitDrive\agent` (folders, paired browsers, settings) is touched. If anything fails, the old version is put back and started again, and the app tells you what happened.
+- This build is **not Windows-code-signed**, so SmartScreen may warn the first time you run the downloaded zip ("More info" > "Run anyway"). Later updates are applied by OrbitDrive itself from a file whose signature it verified, so they do not trigger that warning.
+- The update key is separate from a Windows certificate: it proves "this came from the OrbitDrive project", it is not trusted by Windows.
+- Install the program in a folder you own (not `Program Files`), because the updater replaces the folder without administrator rights.
+- If the app says "Updates are not set up in this build yet", the owner has not yet added the update key; see `OWNER_HANDOFF.md`.
+- Manual fallback: Quit from the tray, extract a newer zip over the old folder, start it again.
 
 ## 4. Uninstall (nothing else is left behind except what you choose to keep)
 1. Quit from the tray. If "start when I sign in" was on, switch it off first (it only adds one value, `OrbitDrive`, under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`).
