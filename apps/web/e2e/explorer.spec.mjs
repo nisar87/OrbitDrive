@@ -126,6 +126,18 @@ test('history: back, forward, up, breadcrumbs, the browser Back button and the f
 // Regression for a CI failure on Firefox: opening a folder with Enter must leave keyboard focus in the list however long the browser takes to
 // draw the new rows. Focus used to be restored one animation frame after the click, which can come before React has drawn the new place.
 // Chromium lets the test make the machine slow on purpose (CDP CPU throttling), so the gap is wide instead of a matter of luck.
+test('the folder path is shown whole at the top of a share, also on a phone (found in a screenshot review: it was clipped)', async ({ page }, info) => {
+  await pairAndOpen(page, info);
+  const crumbs = explorer(page).getByRole('navigation', { name: 'Breadcrumb' });
+  const fit = await crumbs.evaluate((nav) => ({ scroll: nav.scrollWidth, client: nav.clientWidth, first: nav.querySelector('button').getBoundingClientRect().left - nav.getBoundingClientRect().left }));
+  expect(fit.scroll, 'a two-level path needs no scrolling').toBeLessThanOrEqual(fit.client);
+  expect(fit.first, 'the first part of the path is not cut off').toBeGreaterThanOrEqual(0);
+  if (isPhone(info)) {
+    const box = await crumbs.boundingBox();
+    expect(box.width, 'on a phone the path has the full width of the window').toBeGreaterThan(page.viewportSize().width * 0.8);
+  }
+});
+
 test('keyboard focus stays in the list after opening and leaving a folder, even on a very slow machine', async ({ page, browserName }, info) => {
   test.skip(isPhone(info) || browserName !== 'chromium', 'keyboard test; CPU throttling is a Chromium feature');
   await pairAndOpen(page, info);

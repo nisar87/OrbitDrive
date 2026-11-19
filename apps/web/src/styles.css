@@ -64,6 +64,9 @@ input { min-height: 44px; padding: 8px 12px; border-radius: 6px; border: 1px sol
   .details .when, .privacy, .taskbar-label { display: none; }
   .details .num { width: 5.5rem; }
   .account { display: none; }
+  /* On a phone the address bar gets its own full-width row under the buttons, so the folder path is never squeezed or clipped. */
+  .toolbar:not(.second) { flex-wrap: wrap; }
+  .toolbar:not(.second) .breadcrumbs { order: 9; flex: 1 1 100%; margin: 4px 0 2px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 @media (forced-colors: active) { .window { border: 1px solid CanvasText; } button { border: 1px solid ButtonText; } }

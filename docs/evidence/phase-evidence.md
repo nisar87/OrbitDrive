@@ -514,3 +514,7 @@ Commit `ec7c8e4` (feature branch); all seven workflows green on that exact SHA (
 - `scripts/desktop-ui-test.ps1` now checks the real window's `HistoryList` for "OrbitDrive started", "Connected to the relay", several entries and no file-system paths.
 - Not yet verified: the WPF project cannot be built locally (no NuGet); evidence is whatever the Windows `desktop` and `desktop-ui` jobs report for the pushed SHA (recorded below once seen).
 - CI result: first push 435b7b0 — desktop (WPF build + unit tests) green, desktop-ui failed only because my assertion looked for the oldest entry in a virtualised list (screenshot showed the page rendering correctly). Assertion changed to the newest entries this test causes (pairing, file sent, folders changed), not weakened in what it proves about the page. eb40c32: all seven workflows green, `main` fast-forwarded, `desktop-release` succeeded, live feed verified: 0.1.5 signed by orbitdrive-update-1.
+
+### Visual review finding: phone breadcrumb clipped (2026-11-19)
+- Reviewing the committed screenshots (no score is claimed): the desktop Explorer is consistent and legible; the emulated phone screenshot showed the folder path clipped on its left ("e PC › Test Share") because it shared one row with four toolbar buttons.
+- Fix: below 640 px the breadcrumb takes its own full-width row (`styles.css`). New Playwright test in `explorer.spec.mjs` asserts a two-level path needs no scrolling, its first part is not cut off, and on phone projects it spans >80% of the window. Emulation only; not real-phone evidence.
