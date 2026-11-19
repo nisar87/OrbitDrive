@@ -72,6 +72,7 @@ public sealed class MainWindow : Window
     private readonly TextBlock _transfers = MakeText("TransfersText", "", 14, FontWeights.Normal);
     private readonly ListBox _activity = new() { MinHeight = 200 };
     private HistoryPanel _history = null!;
+    private ThumbnailPanel _thumbnails = null!;
     private readonly TextBlock _settingsError = MakeText("SettingsError", "", 13, FontWeights.Normal, Danger);
     private readonly TextBlock _diagnostics = MakeText("DiagnosticsText", "", 13, FontWeights.Normal);
     private readonly Image _pairQr = new() { Width = 220, Height = 220, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 8), Visibility = Visibility.Collapsed };
@@ -301,6 +302,7 @@ public sealed class MainWindow : Window
     {
         _updates = new UpdatePanel(_stateDirectory, DrainForUpdateAsync, QuitAsync);
         _history = new HistoryPanel(RunAsync);
+        _thumbnails = new ThumbnailPanel(RunAsync);
         var quit = MakeButton("QuitButton", "Quit OrbitDrive");
         quit.Click += (_, _) => _ = QuitAsync();
         _pause.Click += (_, _) => _ = TogglePauseAsync();
@@ -448,6 +450,7 @@ public sealed class MainWindow : Window
                 MakeText("StartHint", "It starts quietly in the notification area, as you, without administrator rights. Off unless you turn it on.", 13, FontWeights.Normal, Muted),
                 _pauseWhenLocked,
                 MakeText("SleepNote", "While this PC is locked OrbitDrive keeps working unless you tick the box above. When the PC sleeps, shuts down or you sign out, your phone cannot reach it. OrbitDrive never changes your sleep settings or keeps the PC awake.", 13, FontWeights.Normal, Muted)),
+            _thumbnails.Card,
             _updates.Card,
             _settingsError,
             MakeText("PrivacyNote", "Files travel over TLS through the relay, which can process them in transit and stores nothing. This is not end-to-end encryption.", 13, FontWeights.Normal, Muted));
@@ -680,6 +683,7 @@ public sealed class MainWindow : Window
             catch (Exception e) when (e is IpcException or TimeoutException) { }
         }
         if (_client is not null && _pages.TryGetValue("Activity", out var activityPage) && activityPage.Visibility == Visibility.Visible) await _history.RefreshAsync(_client);
+        if (_client is not null && _pages.TryGetValue("Settings", out var settingsPage) && settingsPage.Visibility == Visibility.Visible) await _thumbnails.RefreshAsync(_client);
         var approval = status["pendingApproval"];
         _approvalPanel.Visibility = approval is null ? Visibility.Collapsed : Visibility.Visible;
         _approvalText.Text = approval is null ? "" : $"Account: {approval["accountLabel"]}\nBrowser: {approval["browserName"]}\nCode: {approval["confirmationCode"]}\n\nApprove only if this is you and the same code is shown in your browser.";

@@ -125,6 +125,18 @@ try {
     Check $true 'a non-HTTPS relay address is refused'
     SetText 'GatewayBox' $relay; SetText 'WebOriginBox' 'http://localhost:5173'; Click 'SaveGatewayButton'
     Shot 'settings'
+    # Picture previews: off until the owner turns them on; the switch and the status line follow what the agent really stored.
+    $thumbs = WaitText 'ThumbnailStatus' 'previews|Previews'
+    if ($thumbs -match 'not available') { Check $true 'picture previews report honestly that they are not available on this machine' }
+    else {
+        Check ($thumbs -match '^Previews are off') 'picture previews are off until the owner turns them on'
+        Toggle 'ThumbnailsToggle'
+        [void](WaitText 'ThumbnailStatus' '^Paired devices can see small previews')
+        Check (IsOn 'ThumbnailsToggle') 'the previews switch turns previews on'
+        Toggle 'ThumbnailsToggle'
+        [void](WaitText 'ThumbnailStatus' '^Previews are off')
+        Check (-not (IsOn 'ThumbnailsToggle')) 'the previews switch turns previews off again'
+    }
     Nav 'Overview'
     [void](WaitText 'StateText' '^Online$')
     Check $true 'console shows Online once the agent reaches the relay'
