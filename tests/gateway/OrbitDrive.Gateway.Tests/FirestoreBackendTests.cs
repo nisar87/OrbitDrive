@@ -1,4 +1,5 @@
 using Google.Cloud.Firestore;
+using Microsoft.Extensions.DependencyInjection;
 using OrbitDrive.Gateway;
 using OrbitDrive.Protocol;
 using Xunit;
@@ -161,5 +162,81 @@ public sealed class FirestoreBackendTests
         store.SetPreferences("alice", new OwnerPreferences { HistoryRetentionDays = 30, NotifyInvitations = true, DiagnosticsConsent = false });
         await backend.FlushAsync(TimeSpan.FromSeconds(30));
         Assert.Equal(30, (await db.Collection("owners").Document("alice").GetSnapshotAsync()).GetValue<int>("historyRetentionDays"));
+    }
+
+    // ---- shutdown lifecycle (regression: 0.1.25 crashed with ObjectDisposedException because the container disposed one instance three times) ----
+
+    [Fact]
+    public async Task Disposing_repeatedly_and_concurrently_is_safe()
+    {
+        if (EmulatorMissing()) return;
+        var backend = new FirestoreSnapshotBackend(NewProject(), TimeProvider.System);
+        await backend.DisposeAsync();
+        await backend.DisposeAsync();
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(async () => await backend.DisposeAsync())));
+        await backend.StopAsync(CancellationToken.None);   // stopping a stopped backend is a no-op too
+    }
+
+    [Fact]
+    public async Task The_container_disposing_the_same_instance_through_every_registration_does_not_crash()
+    {
+        if (EmulatorMissing()) return;
+        var db = NewProject();
+        var services = new ServiceCollection();
+        services.AddSingleton(_ => new FirestoreSnapshotBackend(db, TimeProvider.System));
+        services.AddSingleton<ISnapshotBackend>(sp => sp.GetRequiredService<FirestoreSnapshotBackend>());
+        services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService>(sp => sp.GetRequiredService<FirestoreSnapshotBackend>());   // the same three registrations Program.cs makes
+        var provider = services.BuildServiceProvider();
+        var backend = provider.GetRequiredService<FirestoreSnapshotBackend>();
+        _ = provider.GetRequiredService<ISnapshotBackend>();
+        _ = provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>().ToList();
+        backend.Load();
+        await provider.DisposeAsync();                       // used to throw ObjectDisposedException from the second disposal
+        await backend.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Shutdown_while_writes_are_in_flight_stores_everything_accepted_before_it()
+    {
+        if (EmulatorMissing()) return;
+        var db = NewProject();
+        var backend = new FirestoreSnapshotBackend(db, TimeProvider.System);
+        var store = Open(backend);
+        for (var i = 0; i < 40; i++) store.UpsertPc($"pc{i}", [(byte)i], $"PC {i}", "0.1.0");
+        store.SetSuspended("alice", true);
+        var dispose = backend.DisposeAsync().AsTask();       // no flush first: shutdown itself must finish the writes
+        await dispose.WaitAsync(TimeSpan.FromSeconds(30));
+
+        await using var again = new FirestoreSnapshotBackend(db, TimeProvider.System);
+        var reopened = Open(again);
+        Assert.True(reopened.IsSuspended("alice"));
+        Assert.Equal(40, (await db.Collection("pcs").GetSnapshotAsync()).Count);
+    }
+
+    [Fact]
+    public async Task A_change_after_shutdown_is_refused_without_throwing_and_starts_no_writer()
+    {
+        if (EmulatorMissing()) return;
+        var db = NewProject();
+        var backend = new FirestoreSnapshotBackend(db, TimeProvider.System);
+        var store = Open(backend);
+        store.UpsertPc("pc1", [1], "Before", "0.1.0");
+        await backend.DisposeAsync();
+        store.UpsertPc("pc2", [2], "After", "0.1.0");        // the request that raced shutdown: must not throw into the caller
+        await Task.Delay(300);
+        var stored = (await db.Collection("pcs").GetSnapshotAsync()).Select(d => d.Id).ToList();
+        Assert.Equal(["pc1"], stored);
+    }
+
+    [Fact]
+    public async Task Concurrent_saves_and_shutdown_never_throw_or_hang()
+    {
+        if (EmulatorMissing()) return;
+        var db = NewProject();
+        var backend = new FirestoreSnapshotBackend(db, TimeProvider.System);
+        var store = Open(backend);
+        var writers = Enumerable.Range(0, 4).Select(w => Task.Run(() => { for (var i = 0; i < 25; i++) store.UpsertPc($"w{w}-{i}", [(byte)i], "PC", "0.1.0"); })).ToArray();
+        await Task.WhenAll(writers.Append(Task.Run(async () => { await Task.Delay(5); await backend.DisposeAsync(); }))).WaitAsync(TimeSpan.FromSeconds(60));
+        await backend.DisposeAsync();
     }
 }

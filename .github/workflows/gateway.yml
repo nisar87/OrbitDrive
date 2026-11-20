@@ -36,5 +36,13 @@ jobs:
         run: |
           export JAVA_HOME="$JAVA_HOME_21_X64"; export PATH="$JAVA_HOME/bin:$PATH"; java -version
           npx firebase emulators:exec --only firestore --project demo-orbit "dotnet test ../gateway/OrbitDrive.Gateway.Tests -c Release --no-build --filter FullyQualifiedName~FirestoreBackendTests --logger 'console;verbosity=normal'"
+      - name: Real gateway and agent processes on the Firestore emulator (clean SIGTERM shutdown, restarts)
+        working-directory: tests/emulators
+        env:
+          ORBIT_REQUIRE_FIRESTORE: '1'
+        run: |
+          export JAVA_HOME="$JAVA_HOME_21_X64"; export PATH="$JAVA_HOME/bin:$PATH"
+          dotnet build ../../apps/desktop/OrbitDrive.Agent -c Release
+          npx firebase emulators:exec --only firestore --project demo-orbit "node --test --test-timeout=300000 --test-reporter=spec ../integration/firestore-restart.test.mjs"
       - name: Relay updater, rollback, monitor and backup scripts (real gateway builds)
         run: node --test tests/relay/updater.test.mjs
