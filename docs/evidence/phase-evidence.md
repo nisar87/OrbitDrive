@@ -565,3 +565,9 @@ Commit 037f90d: contracts, security, gateway, desktop, desktop-ui, integration a
 ## Owner decision: code signing deferred (2026-11-20)
 
 The owner decided not to buy a code-signing certificate during development. It will be done once the product is final. Until then builds stay unsigned (SmartScreen "unknown publisher" warning is expected) and updates are protected by the ECDSA-signed manifest. Nothing else is blocked by this.
+
+Follow-up (6f8169c): the resend fix was too narrow. On Windows the next request after the over-size piece (a status GET) hit the same closed pooled connection. The over-size request now sends `connection: close`, so it never shares a connection with later requests; assertions unchanged.
+
+## Simulated sleep/wake (6f8169c)
+
+New test in `faults.test.mjs`: freeze the agent process (SIGSTOP on Linux, NtSuspendProcess on Windows) beyond the lease → relay reports the PC offline and answers `pc_offline` at once → resume → the agent reconnects with a new generation, same PC identity, same grant (no re-pairing) and browsing works. Passed on Linux and on windows-2025 in CI. This is SIMULATED: the machine clock and network keep running, so it is not evidence of real sleep/resume, lock/unlock or Wi-Fi change; those remain on the Windows 11 checklist.
