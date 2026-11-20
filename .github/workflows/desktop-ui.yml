@@ -27,6 +27,11 @@ jobs:
           $env:ORBITDRIVE_THUMBNAIL_HELPER = (Get-ChildItem apps/desktop/OrbitDrive.ThumbnailHelper/bin/Release -Recurse -Filter OrbitDrive.ThumbnailHelper.exe | Select-Object -First 1).FullName
           if (-not $env:ORBITDRIVE_THUMBNAIL_HELPER) { throw 'the preview helper was not built' }
           ./scripts/desktop-ui-test.ps1 -Exe "apps/desktop/OrbitDrive.Desktop/bin/Release/net10.0-windows/OrbitDrive.exe" -GatewayDll "services/gateway/OrbitDrive.Gateway/bin/Release/net10.0/OrbitDrive.Gateway.dll" -OutDir artifacts
+      - name: Local control pipe is closed to a different Windows user (throwaway account, real agent)
+        shell: powershell
+        run: |
+          dotnet build apps/desktop/OrbitDrive.Agent -c Release
+          ./scripts/second-user-pipe-test.ps1 -AgentExe "apps/desktop/OrbitDrive.Agent/bin/Release/net10.0/orbitdrive-agent.exe"
       # The build sandbox used for review can read job logs but not artifact storage, so the screenshots are also
       # written to the log (base64, between markers) to make visual review of the real Windows UI possible.
       - name: Publish screenshots in the log for review
