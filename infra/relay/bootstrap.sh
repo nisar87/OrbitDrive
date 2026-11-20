@@ -3,13 +3,20 @@
 # After this, the host maintains itself: releases are pulled and health-checked, the gateway is supervised,
 # certificates renew, security updates install, logs rotate, backups run. No inbound SSH is needed for routine work.
 #   sudo bash bootstrap.sh --host <public-hostname> --firebase-project <id> --web-origin <https://origin> [--channel dev]
+#   --web-origin may be repeated (every origin may call the relay from a browser); --also-host may be repeated (more names this relay answers to,
+#   e.g. the previous hostname during a move, so installed apps and open sites keep working).
 set -euo pipefail
-HOST=""; PROJECT=""; ORIGIN=""; CHANNEL=dev
+HOST=""; PROJECT=""; ORIGIN=""; CHANNEL=dev; ORIGINS=(); ALSO_HOSTS=()
 REPO_RAW=${ORBIT_REPO_RAW:-https://raw.githubusercontent.com/nisar87/OrbitDrive/main}
 while [ $# -gt 0 ]; do case "$1" in
-  --host) HOST=$2; shift 2;; --firebase-project) PROJECT=$2; shift 2;; --web-origin) ORIGIN=$2; shift 2;; --channel) CHANNEL=$2; shift 2;;
+  --host) HOST=$2; shift 2;; --firebase-project) PROJECT=$2; shift 2;; --web-origin) ORIGINS+=("$2"); shift 2;; --also-host) ALSO_HOSTS+=("$2"); shift 2;; --channel) CHANNEL=$2; shift 2;;
   *) echo "unknown option $1" >&2; exit 2;; esac; done
-[[ $HOST =~ ^[a-z0-9.-]+$ && $PROJECT =~ ^[a-z0-9-]{4,40}$ && $ORIGIN =~ ^https://[a-z0-9.-]+$ && $CHANNEL =~ ^[a-z]+$ ]] || { echo "usage: bootstrap.sh --host H --firebase-project P --web-origin https://O" >&2; exit 2; }
+[[ $HOST =~ ^[a-z0-9.-]+$ && $PROJECT =~ ^[a-z0-9-]{4,40}$ && $CHANNEL =~ ^[a-z]+$ ]] || { echo "usage: bootstrap.sh --host H --firebase-project P --web-origin https://O" >&2; exit 2; }
+ORIGIN=${ORIGINS[0]:-}
+[[ $ORIGIN =~ ^https://[a-z0-9.-]+$ ]] || { echo "need at least one valid --web-origin https://..." >&2; exit 2; }
+for o in "${ORIGINS[@]}"; do [[ $o =~ ^https://[a-z0-9.-]+$ ]] || { echo "bad --web-origin $o" >&2; exit 2; }; done
+for h in "${ALSO_HOSTS[@]}"; do [[ $h =~ ^[a-z0-9.-]+$ ]] || { echo "bad --also-host $h" >&2; exit 2; }; done
+SITES=$HOST; for h in "${ALSO_HOSTS[@]}"; do SITES="$SITES, $h"; done
 [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 1; }
 
 # Swap first: package installs and the .NET runtime need headroom on a 1 GB host.
@@ -33,7 +40,7 @@ done
 cat >/etc/orbitdrive/gateway.env <<ENV
 ASPNETCORE_ENVIRONMENT=Production
 OrbitDrive__Firebase__ProjectId=$PROJECT
-OrbitDrive__AllowedWebOrigins__0=$ORIGIN
+$(i=0; for o in "${ORIGINS[@]}"; do echo "OrbitDrive__AllowedWebOrigins__$i=$o"; i=$((i+1)); done)
 OrbitDrive__TrustedProxies__0=127.0.0.1
 OrbitDrive__TrustedProxies__1=::1
 OrbitDrive__DataDirectory=/var/lib/orbitdrive-gateway
@@ -83,7 +90,7 @@ unit orbitdrive-backup "OrbitDrive configuration backup" /usr/local/bin/orbitdri
 
 # HTTPS: Caddy obtains and renews the certificate automatically. Responses are streamed, never buffered.
 cat >/etc/caddy/Caddyfile <<CADDY
-$HOST {
+$SITES {
 	header Strict-Transport-Security "max-age=31536000"
 	handle /relay-status.json {
 		root * /var/lib/orbitdrive/public

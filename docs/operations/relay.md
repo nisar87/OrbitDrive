@@ -35,6 +35,18 @@ sudo bash bootstrap.sh --host 139-185-60-75.sslip.io --firebase-project orbitdri
 
 Then set `"enabled": true` in `infra/relay/environments/dev.json` so deployment verification and monitoring start.
 
+## Moving to the real domain (myorbitdrive.app)
+
+DNS: `relay.myorbitdrive.app` A record to the relay's IP (Namecheap, done 2026-11-20); `app.myorbitdrive.app` CNAME to `orbitdrive-dev.web.app` (Firebase Hosting custom domain, plus `app.myorbitdrive.app` under Authentication, Authorized domains). Then, once on the host (the script is idempotent; the old names keep working because they are kept as extra hosts and origins):
+
+```sh
+curl -fsSL -o bootstrap.sh https://raw.githubusercontent.com/nisar87/OrbitDrive/main/infra/relay/bootstrap.sh
+sudo bash bootstrap.sh --host relay.myorbitdrive.app --also-host 139-185-60-75.sslip.io --firebase-project orbitdrive-dev \
+  --web-origin https://app.myorbitdrive.app --web-origin https://orbitdrive-dev.web.app
+```
+
+Caddy then obtains a certificate for the new name on the first request (it needs ports 80 and 443 open and the DNS record to resolve). Check `https://relay.myorbitdrive.app/relay-status.json`.
+
 ## Recovery when automation fails
 
 - SSH from the owner's IP still works (`ubuntu@139.185.60.75`); the Oracle console can change the SSH rule if the IP changes.
