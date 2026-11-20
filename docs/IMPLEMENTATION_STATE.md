@@ -89,7 +89,7 @@ web) works end to end in CI. It is a slice through M1–M2, not completion of th
 - Hard-link refusal is Windows-only; root volume-identity binding not implemented.
 - Relay Dockerfile and firebase.json are unvalidated drafts.
 - Console screenshots (9 per run) exist as CI artifacts but have not been visually reviewed by anyone.
-- The local channel relies on the OS same-user pipe restriction; a second-Windows-user denial test has not been run.
+- The local channel relies on the OS same-user pipe restriction. A second-Windows-user denial test now runs in CI (2026-11-20, `scripts/second-user-pipe-test.ps1`, real throwaway local account on windows-2025: refused with access denied). It does not cover a user in a remote or elevated session on a real PC.
 
 ## Next steps (dependency order) — what is still unfinished
 
