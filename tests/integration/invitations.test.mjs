@@ -180,6 +180,9 @@ test('an offline PC leaves the offer waiting (nothing is copied to the relay); i
   const [offer] = await send(phone, [write('while-away.txt', 'still on the PC')]);
   ipc.close();
   await agent.stop();
+  // The relay notices a closed connection a moment after the process is gone (longer on Windows); asking before it
+  // has noticed would race, so wait until it reports the source away, then assert the refusal.
+  await waitFor(async () => (await inbox(phone)).find((i) => i.invitationId === offer.invitationId)?.sourceOnline === false, 30_000, 'relay notices the PC is away');
   const waiting = await phone.post(`/v1/invitations/${offer.invitationId}/accept`);
   assert.equal(waiting.status, 503);
   assert.equal(waiting.body.error.code, 'pc_offline');
