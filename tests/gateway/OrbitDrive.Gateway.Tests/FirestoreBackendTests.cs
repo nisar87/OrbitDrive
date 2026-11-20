@@ -157,9 +157,9 @@ public sealed class FirestoreBackendTests
         await using var backend = new FirestoreSnapshotBackend(db, TimeProvider.System);
         var store = Open(backend);
         for (var i = 0; i < 30; i++) store.UpsertPc($"pc{i}", [(byte)i], $"PC {i}", "0.1.0");
+        store.SetPreferences("alice", new OwnerPreferences { HistoryRetentionDays = 1, NotifyInvitations = true, DiagnosticsConsent = false });
         store.SetPreferences("alice", new OwnerPreferences { HistoryRetentionDays = 30, NotifyInvitations = true, DiagnosticsConsent = false });
-        store.SetPreferences("alice", new OwnerPreferences { HistoryRetentionDays = 90, NotifyInvitations = true, DiagnosticsConsent = false });
         await backend.FlushAsync(TimeSpan.FromSeconds(30));
-        Assert.Equal(90, (await db.Collection("owners").Document("alice").GetSnapshotAsync()).GetValue<int>("historyRetentionDays"));
+        Assert.Equal(30, (await db.Collection("owners").Document("alice").GetSnapshotAsync()).GetValue<int>("historyRetentionDays"));
     }
 }
