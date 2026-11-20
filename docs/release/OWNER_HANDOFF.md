@@ -4,7 +4,8 @@
 
 ## What exists now (real, verified)
 - Development web app: https://orbitdrive-dev.web.app (Firebase project `orbitdrive-dev`, free Spark plan), auto-deployed from `main` after all seven workflows pass; the deploy is keyless.
-- Development relay: https://139-185-60-75.sslip.io (Oracle Always Free, self-updating from GitHub releases).
+- Development relay: https://relay.myorbitdrive.app (Oracle Always Free, self-updating from GitHub releases; the old https://139-185-60-75.sslip.io name still answers)
+- Development web app: https://app.myorbitdrive.app (Firebase Hosting custom domain; https://orbitdrive-dev.web.app still works).
 - Windows build with an in-app **Update now** button: the `desktop-release` workflow (runs only on `main`, only after all seven workflows are green) publishes the GitHub pre-release `desktop-dev` (zip, `SHA256SUMS`, `update.json`). Unsigned for Windows (no certificate yet); updates are authenticated by your own free update key. Until you add that key nothing is published.
 - Windows release-candidate zip from the `release-candidate` workflow (Artifacts of that run) is still produced for every desktop change; it publishes nothing.
 

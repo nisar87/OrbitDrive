@@ -4,13 +4,16 @@
   "firebaseProjectId": "orbitdrive-dev",
   "hostingSite": "orbitdrive-dev",
   "authDomain": "orbitdrive-dev.firebaseapp.com",
-  "webOrigin": "https://orbitdrive-dev.web.app",
-  "relayOrigin": "https://139-185-60-75.sslip.io",
-  "previewOrigins": [],
+  "webOrigin": "https://app.myorbitdrive.app",
+  "relayOrigin": "https://relay.myorbitdrive.app",
+  "previewOrigins": [
+    "https://orbitdrive-dev.web.app"
+  ],
   "authMode": "firebase",
   "paidResources": false,
   "gateway": {
     "AllowedWebOrigins": [
+      "https://app.myorbitdrive.app",
       "https://orbitdrive-dev.web.app"
     ],
     "Firebase__ProjectId": "orbitdrive-dev"
