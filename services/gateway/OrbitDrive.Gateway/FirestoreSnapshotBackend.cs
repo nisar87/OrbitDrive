@@ -27,14 +27,11 @@ public sealed class FirestoreSnapshotBackend : ISnapshotBackend, IHostedService,
     private long _acceptedGeneration, _storedGeneration;
     private Dictionary<string, string> _stored = [];   // document path -> content fingerprint of what Firestore currently holds
     private Exception? _lastError;
-    private bool _closed;                      // set once shutdown starts: later saves are refused (logged), never queued for a worker that is going away
-    private readonly Lazy<Task> _dispose;      // shutdown runs exactly once however many callers (or container registrations) ask for it
 
     /// <param name="legacy">The previous file backend: when Firestore holds nothing yet, its content is imported once (so switching backends never drops existing pairings).</param>
     public FirestoreSnapshotBackend(FirestoreDb db, TimeProvider time, ILogger? log = null, TimeSpan? retryDelay = null, ISnapshotBackend? legacy = null)
     {
         _db = db; _time = time; _log = log; _retryDelay = retryDelay ?? TimeSpan.FromSeconds(2); _legacy = legacy;
-        _dispose = new Lazy<Task>(ShutDownAsync, LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
     /// <summary>Creates the database client. Uses GOOGLE_APPLICATION_CREDENTIALS, or the emulator when FIRESTORE_EMULATOR_HOST is set.</summary>
@@ -94,18 +91,14 @@ public sealed class FirestoreSnapshotBackend : ISnapshotBackend, IHostedService,
 
     public void Save(Store.Snapshot snapshot)
     {
-        lock (_gate)
-        {
-            if (_closed) { _log?.LogError("Control metadata changed after the Firestore backend shut down; the change is NOT stored"); return; }
-            _pending = snapshot; _acceptedGeneration++;
-        }
+        lock (_gate) { _pending = snapshot; _acceptedGeneration++; }
         StartWorker();
         if (_wake.CurrentCount == 0) _wake.Release();
     }
 
     private void StartWorker()
     {
-        lock (_gate) { if (!_closed) _worker ??= Task.Run(() => RunAsync(_stop.Token)); }
+        lock (_gate) _worker ??= Task.Run(() => RunAsync(_stop.Token));
     }
 
     private async Task RunAsync(CancellationToken stop)
@@ -205,23 +198,10 @@ public sealed class FirestoreSnapshotBackend : ISnapshotBackend, IHostedService,
         catch (TimeoutException e) { _log?.LogError(e, "Shutting down with control metadata not yet stored in Firestore"); }
     }
 
-    /// <summary>Safe to call any number of times, from any number of threads (the DI container disposes every registration that points at this instance): all callers wait for the one shutdown.</summary>
-    public ValueTask DisposeAsync() => new(_dispose.Value);
-
-    private async Task ShutDownAsync()
+    public async ValueTask DisposeAsync()
     {
-        lock (_gate) _closed = true;                       // from here no new save is accepted; what was accepted is flushed below
-        try
-        {
-            try { await FlushAsync(TimeSpan.FromSeconds(10)); }
-            catch (TimeoutException e) { _log?.LogError(e, "Shutting down with control metadata not yet stored in Firestore"); }
-            try { _stop.Cancel(); } catch (ObjectDisposedException) { /* already cancelled and disposed */ }
-            Task? worker; lock (_gate) worker = _worker;
-            if (worker is not null)
-                try { await worker.WaitAsync(TimeSpan.FromSeconds(5)); }
-                catch (TimeoutException) { _log?.LogError("The Firestore writer did not stop within 5 seconds"); }
-                catch (OperationCanceledException) { }
-        }
-        finally { _stop.Dispose(); }
+        await _stop.CancelAsync();
+        if (_worker is not null) try { await _worker; } catch (OperationCanceledException) { }
+        _stop.Dispose();
     }
 }
