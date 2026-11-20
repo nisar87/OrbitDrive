@@ -133,14 +133,13 @@ public static class Secrets
 /// </summary>
 public sealed class Store
 {
-    private sealed record PcDto(string PcId, string Spki, string Name, string AgentVersion, string? OwnerUid, long LastSeenUnixMs);
-    private sealed record DeviceDto(string Id, string OwnerUid, string Name, string SecretHash, bool Active, bool Revoked, string[] PcIds);
-    private sealed record PrefDto(string OwnerUid, int HistoryRetentionDays, bool NotifyInvitations, bool DiagnosticsConsent);
-    private sealed record Snapshot(int Version, PcDto[] Pcs, DeviceDto[] Devices, string[]? Suspended = null, PrefDto[]? Prefs = null);
+    public sealed record PcDto(string PcId, string Spki, string Name, string AgentVersion, string? OwnerUid, long LastSeenUnixMs);
+    public sealed record DeviceDto(string Id, string OwnerUid, string Name, string SecretHash, bool Active, bool Revoked, string[] PcIds);
+    public sealed record PrefDto(string OwnerUid, int HistoryRetentionDays, bool NotifyInvitations, bool DiagnosticsConsent);
+    public sealed record Snapshot(int Version, PcDto[] Pcs, DeviceDto[] Devices, string[]? Suspended = null, PrefDto[]? Prefs = null);
 
     private readonly GatewayOptions options;
     private readonly TimeProvider time;
-    private readonly string? _file;
     private readonly Lock _gate = new();
     private readonly Dictionary<string, PcRecord> _pcs = [];
     private readonly Dictionary<string, BrowserDeviceRecord> _devices = [];
@@ -149,16 +148,17 @@ public sealed class Store
     private readonly HashSet<string> _suspended = [];
     private readonly Dictionary<string, OwnerPreferences> _prefs = [];
 
-    public Store(GatewayOptions options, TimeProvider time)
+    private readonly ISnapshotBackend? _backend;
+
+    /// <summary>The store keeps every record in memory (one gateway instance); <paramref name="backend"/> makes the durable parts survive a restart. Null = a file under DataDirectory when configured, otherwise nothing persists.</summary>
+    public Store(GatewayOptions options, TimeProvider time, ISnapshotBackend? backend = null)
     {
         this.options = options; this.time = time;
-        if (options.DataDirectory.Length == 0) return;
-        Directory.CreateDirectory(options.DataDirectory);
-        _file = Path.Join(options.DataDirectory, "registrations.json");
-        if (!File.Exists(_file)) return;
+        _backend = backend ?? (options.DataDirectory.Length == 0 ? null : new FileSnapshotBackend(options.DataDirectory, time));
+        if (_backend is null) return;
         try
         {
-            var snapshot = System.Text.Json.JsonSerializer.Deserialize<Snapshot>(File.ReadAllText(_file)) ?? throw new System.Text.Json.JsonException("empty");
+            if (_backend.Load() is not { } snapshot) return;
             if (snapshot.Version != 1) throw new System.Text.Json.JsonException("unknown snapshot version");
             foreach (var pc in snapshot.Pcs)
                 _pcs[pc.PcId] = new PcRecord { PcId = pc.PcId, PublicKeySpki = Convert.FromBase64String(pc.Spki), Name = pc.Name, AgentVersion = pc.AgentVersion, OwnerUid = pc.OwnerUid, LastSeen = DateTimeOffset.FromUnixTimeMilliseconds(pc.LastSeenUnixMs) };
@@ -175,22 +175,18 @@ public sealed class Store
         {
             // An unreadable snapshot never grants access: keep it aside for investigation and start with no grants.
             _pcs.Clear(); _devices.Clear(); _suspended.Clear(); _prefs.Clear();
-            File.Move(_file, _file + ".corrupt-" + time.GetUtcNow().ToUnixTimeSeconds(), overwrite: true);
+            _backend.QuarantineUnreadable();
         }
     }
 
-    /// <summary>Writes the snapshot atomically. Called with the gate held, after every durable change.</summary>
+    /// <summary>Hands the backend the full durable state. Called with the gate held, after every durable change.</summary>
     private void Save()
     {
-        if (_file is null) return;
-        var snapshot = new Snapshot(1,
+        if (_backend is null) return;
+        _backend.Save(new Snapshot(1,
             [.. _pcs.Values.Select(p => new PcDto(p.PcId, Convert.ToBase64String(p.PublicKeySpki), p.Name, p.AgentVersion, p.OwnerUid, p.LastSeen.ToUnixTimeMilliseconds()))],
             [.. _devices.Values.Where(d => d.Active || d.Revoked).Select(d => new DeviceDto(d.Id, d.OwnerUid, d.Name, Convert.ToBase64String(d.SecretHash), d.Active, d.Revoked, [.. d.PcIds]))],
-            [.. _suspended], [.. _prefs.Select(e => new PrefDto(e.Key, e.Value.HistoryRetentionDays, e.Value.NotifyInvitations, e.Value.DiagnosticsConsent))]);
-        var temp = _file + ".tmp";
-        File.WriteAllText(temp, System.Text.Json.JsonSerializer.Serialize(snapshot));
-        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temp, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-        File.Move(temp, _file, overwrite: true);
+            [.. _suspended], [.. _prefs.Select(e => new PrefDto(e.Key, e.Value.HistoryRetentionDays, e.Value.NotifyInvitations, e.Value.DiagnosticsConsent))]));
     }
 
     public PcRecord UpsertPc(string pcId, byte[] spki, string name, string agentVersion)
