@@ -41,3 +41,5 @@ jobs:
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/desktop/apply-update.test.ps1
       - name: Core filesystem policy tests on Windows
         run: dotnet test tests/desktop/OrbitDrive.Core.Tests -c Release --logger "console;verbosity=normal"
+      - name: Parser fuzz smoke (seeded random and corpus inputs against the sniffer, image probe, path rules, version labels and line reader)
+        run: dotnet run --project tests/fuzz/OrbitDrive.Fuzz -c Release -- smoke 20000

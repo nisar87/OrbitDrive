@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Version pinned here, not in Directory.Packages.props, so this test tool never triggers a desktop release. -->
+    <PackageReference Include="SharpFuzz" VersionOverride="2.2.0" />
+    <ProjectReference Include="../../../apps/desktop/OrbitDrive.Core/OrbitDrive.Core.csproj" />
+    <Content Include="../corpus/**/*" Link="corpus/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
