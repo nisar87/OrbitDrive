@@ -71,6 +71,8 @@ Firebase is back in scope (owner, 2026-11-17): project `orbitdrive-dev` was crea
 The first vertical slice (pair → browse approved root → hash-verified ranged download, across Windows agent, gateway and
 web) works end to end in CI. It is a slice through M1–M2, not completion of those milestones.
 
+Latest (2026-11-20): QR/address fix released as 0.1.10 (a release's `defaults.json` `supersedes` list moves a PC off earlier default addresses; owner confirmed the QR scans again). Gateway durable metadata now sits behind `ISnapshotBackend` (file backend unchanged, contract tests with an in-memory backend; seven workflows green on `9744006`, `main` fast-forwarded). **Next (W3):** a Firestore backend. It cannot be built or run in the agent's sandbox (no NuGet, emulator download blocked), so it will be verified only in CI against the Firestore emulator; live Firestore still needs the owner's service-account key.
+
 ## Blockers needing the owner
 
 1. **Firebase service-account key** (owner to create and store as a secret) for Firestore (W3), revocation checks and FCM (W6). Auth itself needs none.
