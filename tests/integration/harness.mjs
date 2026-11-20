@@ -153,7 +153,8 @@ export function agentCliRaw(stateDir, ...args) {
 export async function connectIpc(pipeName) {
   const { connect } = await import('node:net');
   const socket = connect(process.platform === 'win32' ? `\\\\.\\pipe\\${pipeName}` : `/tmp/CoreFxPipe_${pipeName}`);
-  await once(socket, 'connect');
+  const connectTimer = setTimeout(() => socket.destroy(new Error(`could not connect to the agent's control channel ${pipeName} within 30 s`)), 30_000);
+  try { await once(socket, 'connect'); } finally { clearTimeout(connectTimer); }
   const pending = new Map(), events = [];
   let buffer = '', next = 0, closed = false;
   socket.on('data', (chunk) => {
@@ -172,7 +173,13 @@ export async function connectIpc(pipeName) {
     events, socket,
     get closed() { return closed; },
     raw: (text) => new Promise((resolve) => { pending.set(null, resolve); pending.set(undefined, resolve); socket.write(text); }),
-    send: (cmd, args) => new Promise((resolve) => { const id = String(++next); pending.set(id, resolve); socket.write(JSON.stringify({ id, cmd, args }) + '\n'); }),
+    // A command that gets no reply fails by name after a minute, instead of leaving the whole test file waiting for the CI job limit.
+    send: (cmd, args, timeoutMs = 60_000) => new Promise((resolve, reject) => {
+      const id = String(++next);
+      const timer = setTimeout(() => { pending.delete(id); reject(new Error(`the agent gave no reply to IPC command '${cmd}' within ${timeoutMs} ms (socket closed: ${closed})`)); }, timeoutMs);
+      pending.set(id, (message) => { clearTimeout(timer); resolve(message); });
+      socket.write(JSON.stringify({ id, cmd, args }) + '\n');
+    }),
     close: () => socket.destroy(),
   };
 }
