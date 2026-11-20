@@ -73,3 +73,11 @@ settings), behaviour within 1 GB under load, and the two GitHub workflows agains
 - Pairing attempt limits are per client address. The gateway only believes `X-Forwarded-For` from `OrbitDrive__TrustedProxies`
   (the bootstrap sets `127.0.0.1` and `::1`, i.e. Caddy on the same host). Without it every visitor shares Caddy's
   address and the 10-per-minute pairing limit becomes a single global bucket.
+
+
+## Switching the relay to Firestore (durable metadata)
+
+1. In the Firebase console (project `orbitdrive-dev`): Project settings, Service accounts, Generate new private key. Never paste or upload the file anywhere.
+2. From your own computer: `scp firebase-key.json <relay-user>@relay.myorbitdrive.app:/tmp/firebase-key.json`, then on the relay: `sudo install -m 0640 -o root -g orbitdrive /tmp/firebase-key.json /etc/orbitdrive/firebase-key.json && rm /tmp/firebase-key.json`. Delete the copy on your computer.
+3. Re-run the pinned bootstrap with the same arguments as before plus `--use-firestore`. Existing pairings are imported once from the old file store (which is left untouched as a backup).
+4. Check `journalctl -u orbitdrive-gateway` for "importing" and no Firestore errors, then confirm a PC stays paired after `sudo systemctl restart orbitdrive-gateway`.
