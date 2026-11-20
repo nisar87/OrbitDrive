@@ -575,3 +575,5 @@ New test in `faults.test.mjs`: freeze the agent process (SIGSTOP on Linux, NtSus
 ## Integration run on f981b01 (honest log)
 
 All seven workflows green on f981b01 (simulated sleep/wake test and the upload connection fix included). The `integration` workflow needed a rerun: attempt 1 passed on Windows but the Ubuntu job stalled silently until its 30-minute limit after the first five test files had reported; the rerun passed on both. The stalled test file was not identified (the spec reporter prints per file, so the log does not say which). Hangs of this kind have now appeared on three commits (9cf9f37, 330dea5, f981b01), on both operating systems, so they remain an open reliability item: next step is a per-file timeout and a report of which files were still running when the limit hits.
+
+CI follow-up (3917a94): the integration job now runs with `--test-timeout=600000`, so a stalled test fails by name after 10 minutes instead of silently using the 30-minute job limit. All seven workflows green on this SHA; `main` fast-forwarded (workflow-only change, no desktop release).
