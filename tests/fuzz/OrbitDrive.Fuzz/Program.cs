@@ -17,7 +17,7 @@ var targets = new Dictionary<string, Action<byte[]>>
     ["line"] = Line,
 };
 
-if (args.Length >= 1 && args[0] == "smoke") return Smoke(args);
+if (args.Length >= 1 && args[0] == "smoke") return Smoke(args, targets);
 if (args.Length == 0 || !targets.TryGetValue(args[0], out var target))
 {
     Console.Error.WriteLine("usage: OrbitDrive.Fuzz <" + string.Join('|', targets.Keys) + "> [--afl]  |  smoke [iterations] [seed]");
@@ -79,7 +79,7 @@ static void Line(byte[] data)
     catch (Exception e) when (e is IOException or InvalidDataException) { /* documented refusals: truncated or oversized message */ }
 }
 
-static int Smoke(string[] args)
+static int Smoke(string[] args, Dictionary<string, Action<byte[]>> targets)
 {
     var iterations = args.Length > 1 ? int.Parse(args[1]) : 20_000;
     var seed = args.Length > 2 ? int.Parse(args[2]) : 20261120;
