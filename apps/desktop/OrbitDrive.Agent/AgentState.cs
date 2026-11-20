@@ -183,6 +183,31 @@ internal sealed class AgentState
         Save([.. _roots]);
     }
 
+    private static string SameAddress(string address) => address.Trim().TrimEnd('/').ToLowerInvariant();
+
+    /// <summary>
+    /// After an update: moves the relay and/or web address to the new shipped default ONLY when the stored one is exactly an address an earlier release shipped
+    /// (listed in the release's "supersedes"). An address the owner typed that is not on that list is never changed. Returns whether anything changed.
+    /// </summary>
+    public bool MigrateSupersededAddresses(ReleaseDefaults.Addresses defaults)
+    {
+        if (defaults.Superseded is not { Count: > 0 } old) return false;
+        var earlier = old.Select(SameAddress).ToHashSet();
+        var changed = false;
+        if (Gateway is not null && earlier.Contains(SameAddress(Gateway)) && SameAddress(defaults.Gateway) != SameAddress(Gateway))
+        {
+            Gateway = ValidateGateway(defaults.Gateway).GetLeftPart(UriPartial.Authority);
+            changed = true;
+        }
+        if (WebOrigin is not null && defaults.WebOrigin is not null && earlier.Contains(SameAddress(WebOrigin)) && SameAddress(defaults.WebOrigin) != SameAddress(WebOrigin))
+        {
+            WebOrigin = new Uri(defaults.WebOrigin).GetLeftPart(UriPartial.Authority);
+            changed = true;
+        }
+        if (changed) Save([.. _roots]);
+        return changed;
+    }
+
     /// <summary>Owner-only transfer limits. Out-of-range values are refused rather than silently adjusted.</summary>
     public void SetLimits(int maxUploadKBps, int maxConcurrentTransfers)
     {

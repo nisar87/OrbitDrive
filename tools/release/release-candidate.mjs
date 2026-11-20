@@ -56,7 +56,7 @@ entries.push({ name: 'OrbitDrive/THIRD_PARTY_NOTICES.md', data: Buffer.from(noti
 // Addresses the build starts with (development environment by default), applied by the agent only while no relay is configured.
 const environment = JSON.parse(readFileSync(join(root, 'infra', 'environments', `${arg('environment', 'development')}.json`), 'utf8'));
 if (environment.status === 'template') throw new Error(`Environment ${environment.environment} is still a template; it cannot be built into a release.`);
-entries.push({ name: 'OrbitDrive/defaults.json', data: Buffer.from(JSON.stringify({ gateway: environment.relayOrigin, webOrigin: environment.webOrigin, environment: environment.environment }, null, 2) + '\n') });
+entries.push({ name: 'OrbitDrive/defaults.json', data: Buffer.from(JSON.stringify({ gateway: environment.relayOrigin, webOrigin: environment.webOrigin, supersedes: environment.supersededAddresses ?? [], environment: environment.environment }, null, 2) + '\n') });
 
 // Owner documentation travels with the artifact.
 for (const doc of ['docs/release/INSTALL.md', 'docs/release/SUPPORT_MATRIX.md', 'docs/release/TROUBLESHOOTING.md'])

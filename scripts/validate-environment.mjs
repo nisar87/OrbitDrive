@@ -29,6 +29,17 @@ export function validateEnvironment(env, { deploy = false, others = [] } = {}) {
     try { checkGatewayOrigin(origin); } catch (e) { add(`${name}: ${e.message}`); }
     if (/\*/.test(origin)) add(`${name}: wildcards are not allowed`);
   }
+  // Addresses earlier releases shipped as defaults; a PC still holding exactly one of them is moved to the current ones. Plain origins only.
+  if (env.supersededAddresses !== undefined) {
+    const list = env.supersededAddresses;
+    if (!Array.isArray(list) || list.length > 16) add('supersededAddresses must be a list of at most 16 origins');
+    else for (const a of list) {
+      let ok = false;
+      try { const u = new URL(a); ok = u.protocol === 'https:' && u.pathname === '/' && !u.search && !u.hash && !u.username && u.origin === a; } catch { /* not a URL */ }
+      if (!ok) add(`supersededAddresses: ${String(a)} is not a plain https origin`);
+      if (a === env.relayOrigin || a === env.webOrigin) add(`supersededAddresses must not contain the current address ${a}`);
+    }
+  }
   if (env.webOrigin === env.relayOrigin) add('the relay must be its own origin: large downloads never go through Hosting');
   if (/\.(web\.app|firebaseapp\.com)$/.test(new URL(placeholder(env.relayOrigin) ? 'https://x.invalid' : env.relayOrigin).hostname)) add('the relay must not be a Firebase Hosting address');
   if (env.environment === 'production' && (env.previewOrigins ?? []).length) add('production must not list preview origins');

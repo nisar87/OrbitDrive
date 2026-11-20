@@ -186,6 +186,19 @@ public sealed class UpdateClientTests : IDisposable
     }
 
     [Fact]
+    public void Superseded_addresses_are_read_bounded_and_only_from_text()
+    {
+        Directory.CreateDirectory(_dir);
+        var file = Path.Join(_dir, "defaults.json");
+        File.WriteAllText(file, "{\"gateway\":\"https://r.example.test\",\"webOrigin\":\"https://w.example.test\",\"supersedes\":[\"https://old.example.test\",5,\"\",null]}");
+        Assert.Equal(["https://old.example.test"], ReleaseDefaults.Read(file)!.Superseded);
+        File.WriteAllText(file, "{\"gateway\":\"https://r.example.test\",\"supersedes\":\"https://old.example.test\"}");
+        Assert.Null(ReleaseDefaults.Read(file)!.Superseded);
+        File.WriteAllText(file, "{\"gateway\":\"https://r.example.test\",\"supersedes\":[" + string.Join(",", Enumerable.Range(0, 40).Select(i => $"\"https://o{i}.example.test\"")) + "]}");
+        Assert.Equal(16, ReleaseDefaults.Read(file)!.Superseded!.Count);
+    }
+
+    [Fact]
     public void TheBuiltInUpdateKeyIsOneValidP256PublicKey()
     {
         var keys = UpdateTrust.Load();

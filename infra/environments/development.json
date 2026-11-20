@@ -18,5 +18,9 @@
     ],
     "Firebase__ProjectId": "orbitdrive-dev"
   },
-  "note": "Project IDs, hosts and domains are configurable placeholders until the owner creates the resources; none of the proposed names is claimed to be available."
+  "note": "Project IDs, hosts and domains are configurable placeholders until the owner creates the resources; none of the proposed names is claimed to be available.",
+  "supersededAddresses": [
+    "https://139-185-60-75.sslip.io",
+    "https://orbitdrive-dev.web.app"
+  ]
 }

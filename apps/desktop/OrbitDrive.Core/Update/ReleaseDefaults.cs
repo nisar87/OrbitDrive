@@ -8,7 +8,8 @@ namespace OrbitDrive.Core;
 /// </summary>
 public static class ReleaseDefaults
 {
-    public sealed record Addresses(string Gateway, string? WebOrigin);
+    /// <param name="Superseded">Addresses EARLIER releases shipped as defaults. A PC still holding exactly one of them (never an address the owner typed) is moved to the new default.</param>
+    public sealed record Addresses(string Gateway, string? WebOrigin, IReadOnlyList<string>? Superseded = null);
 
     public static Addresses? Read(string path)
     {
@@ -20,7 +21,14 @@ public static class ReleaseDefaults
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("gateway", out var gateway) || gateway.ValueKind != JsonValueKind.String) return null;
             var web = root.TryGetProperty("webOrigin", out var w) && w.ValueKind == JsonValueKind.String ? w.GetString() : null;
-            return new Addresses(gateway.GetString()!, web);
+            List<string>? superseded = null;
+            if (root.TryGetProperty("supersedes", out var old) && old.ValueKind == JsonValueKind.Array)
+            {
+                superseded = [];
+                foreach (var item in old.EnumerateArray().Take(16))
+                    if (item.ValueKind == JsonValueKind.String && item.GetString() is { Length: > 0 and <= 200 } text) superseded.Add(text);
+            }
+            return new Addresses(gateway.GetString()!, web, superseded is { Count: > 0 } ? superseded : null);
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException) { return null; }
     }

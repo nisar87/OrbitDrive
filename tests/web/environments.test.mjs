@@ -63,3 +63,10 @@ test('command line: deploy mode exits non-zero for templates, zero for developme
   assert.equal(run('production', '--deploy').status, 1);
   assert.equal(run('development', '--deploy').status, 0);
 });
+
+test('supersededAddresses: plain https origins only, never the current address', () => {
+  const withList = (list) => ({ ...dev, supersededAddresses: list });
+  assert.deepEqual(validateEnvironment(withList(['https://old.example.test']), { deploy: true }), []);
+  for (const bad of [['http://old.example.test'], ['https://old.example.test/path'], ['https://user@old.example.test'], ['not a url'], [dev.webOrigin], [dev.relayOrigin], 'https://x.test'])
+    assert.notDeepEqual(validateEnvironment(withList(bad), { deploy: true }), [], JSON.stringify(bad));
+});

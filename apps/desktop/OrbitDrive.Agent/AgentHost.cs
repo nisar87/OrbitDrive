@@ -129,6 +129,7 @@ internal sealed class AgentHost : IDisposable
                 ["pcId"] = _state.PcId,
                 ["pcName"] = _pcName,
                 ["gateway"] = _state.Gateway,
+                ["webOrigin"] = _state.WebOrigin,
                 ["maxUploadKBps"] = _state.MaxUploadKBps,
                 ["maxConcurrentTransfers"] = _state.MaxConcurrentTransfers,
                 ["agentVersion"] = ControlClient.AgentVersion,
