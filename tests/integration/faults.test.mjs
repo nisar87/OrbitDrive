@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { createHash, generateKeyPairSync, sign, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
-import { startGateway, startAgent, startProxy, kill, agentCli, tempDir, makeFixtureRoot, writeLargeFile, Browser, pair, sleep, freePort } from './harness.mjs';
+import { startGateway, startAgent, startProxy, kill, freeze, thaw, agentCli, tempDir, makeFixtureRoot, writeLargeFile, Browser, pair, sleep, freePort } from './harness.mjs';
 
 const HEARTBEAT = 1, LEASE = 3;
 const dataDir = tempDir('faults-data');
@@ -124,6 +124,29 @@ test('agent crash: offline is reported at once, and the restarted agent serves t
   assert.equal(agent.identity.pcId, pcId, 'same PC identity after the crash');
   assert.equal(agent.identity.ownerBound, true);
   assert.equal((await phone.get(`/v1/pcs/${pcId}/roots`)).status, 200);
+});
+
+test('SIMULATED sleep: a frozen agent goes offline within the lease; when it wakes it reconnects with the same grant and nothing is re-paired', { timeout: 120_000 }, async () => {
+  // Freezing the process stops timers, heartbeats and reads at once, as sleep does. The machine clock and network stay up, so this is NOT
+  // evidence of real sleep/resume (that needs a real PC); it proves how the relay and the agent behave around a total stop and restart.
+  agent.drain();
+  const before = Number(agent.identity.generation);
+  freeze(agent);
+  try {
+    await until(async () => !(await online()), (LEASE + 6) * 1000, 'the relay marking the frozen PC offline');
+    const refused = await phone.get(`/v1/pcs/${pcId}/roots`);
+    assert.deepEqual([refused.status, refused.body.error.code], [503, 'pc_offline']);
+    await sleep(LEASE * 1000);                                 // stay frozen well past the lease, as a laptop would
+  } finally { thaw(agent); }
+  await until(online, 60_000, 'the woken agent coming back online');
+  const again = await agent.next('connected', 30_000);
+  assert.ok(Number(again.generation) > before, 'a new connection generation after waking');
+  agent.identity = again;
+  assert.equal(again.pcId, pcId, 'same PC identity');
+  assert.equal((await phone.get(`/v1/pcs/${pcId}/roots`)).status, 200, 'the grant still works: no re-pairing');
+  const roots = await phone.get(`/v1/pcs/${pcId}/roots`);
+  const page = await phone.post(`/v1/pcs/${pcId}/directory-queries`, { rootId: roots.body.roots[0].rootId, pageSize: 50 });
+  assert.equal(page.status, 200, 'browsing works straight after waking');
 });
 
 async function prepareBig() {

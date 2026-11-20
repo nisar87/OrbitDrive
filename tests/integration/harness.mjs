@@ -79,6 +79,19 @@ export async function kill(processLike) {
 }
 
 /**
+ * Freezes a process without ending it, the way system sleep stops everything at once: no timers, no heartbeats, sockets
+ * left open. SIMULATED sleep only: the machine, its clock and its network stay up (real sleep/resume needs a real PC).
+ */
+function setSuspended(pid, suspended) {
+  if (process.platform !== 'win32') { process.kill(pid, suspended ? 'SIGSTOP' : 'SIGCONT'); return; }
+  const script = `Add-Type -MemberDefinition '[DllImport("ntdll.dll")] public static extern int NtSuspendProcess(IntPtr h); [DllImport("ntdll.dll")] public static extern int NtResumeProcess(IntPtr h);' -Name N -Namespace W; ` +
+    `$p = [Diagnostics.Process]::GetProcessById(${Number(pid)}); [void][W.N]::${suspended ? 'NtSuspendProcess' : 'NtResumeProcess'}($p.Handle)`;
+  execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { stdio: 'pipe' });
+}
+export const freeze = (processLike) => setSuspended(processLike.pid, true);
+export const thaw = (processLike) => setSuspended(processLike.pid, false);
+
+/**
  * Fault-injecting TCP proxy in front of a gateway. `blackhole()` silently stops forwarding in both directions without
  * closing anything (a pulled cable / dead NAT mapping / half-open connection); `heal()` drops the dead connections and
  * forwards again.
