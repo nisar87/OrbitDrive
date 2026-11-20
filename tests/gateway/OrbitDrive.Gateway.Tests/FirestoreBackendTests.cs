@@ -80,7 +80,7 @@ public sealed class FirestoreBackendTests
         store.DeleteAccount("alice");
         await first.FlushAsync(TimeSpan.FromSeconds(20));
 
-        Assert.Empty((await db.Collection("devices").GetSnapshotAsync()).Documents.Where(d => d.GetValue<string>("ownerUid") == "alice" && d.GetValue<bool>("active")));
+        Assert.DoesNotContain((await db.Collection("devices").GetSnapshotAsync()).Documents, d => d.GetValue<string>("ownerUid") == "alice" && d.GetValue<bool>("active"));
         await using var second = new FirestoreSnapshotBackend(db, TimeProvider.System);
         var reopened = Open(second);
         Assert.Empty(reopened.PcsOwnedBy("alice"));
@@ -102,7 +102,7 @@ public sealed class FirestoreBackendTests
 
         var collections = new List<string>();
         await foreach (var c in db.ListRootCollectionsAsync()) collections.Add(c.Id);
-        Assert.Equal(["devices", "meta", "owners", "pcs"].Where(collections.Contains).Order(), collections.Order());
+        Assert.All(collections, c => Assert.Contains(c, new[] { "devices", "meta", "owners", "pcs" }));
         var stored = string.Join("\n", (await db.Collection("devices").GetSnapshotAsync()).Documents.Select(d => string.Join(",", d.ToDictionary().Select(e => $"{e.Key}={e.Value}"))));
         Assert.DoesNotContain(deviceSecret, stored);      // only a hash of the device secret is stored
         Assert.DoesNotContain(secret, stored);            // and never the pairing secret
