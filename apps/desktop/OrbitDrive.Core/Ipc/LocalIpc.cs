@@ -91,6 +91,9 @@ public sealed class LocalIpcServer(string pipeName, Func<string, JsonObject, Can
                 }
                 catch (Exception e) when (e is IpcException or JsonException or InvalidOperationException or FormatException)
                 { reply["error"] = e is IpcException ? e.Message : "Malformed request."; }
+                // A command that fails on the disk (a name already taken, a folder that is gone, no permission) must answer with an error: letting it escape closed the console's connection with no reply at all.
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                { reply["error"] = "That could not be done on this PC's disk."; }
                 await WriteAsync(pipe, gate, reply, cancellation).ConfigureAwait(false);
             }
         }

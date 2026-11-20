@@ -160,6 +160,7 @@ public sealed class SupportBundle(ActivityLog activity, Func<IReadOnlyDictionary
 {
     public const int KeepBundles = 5;
     private static readonly JsonSerializerOptions BundleJson = new(JsonSerializerDefaults.Web) { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+    private static int _sequence;
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
 
     private (string Name, string Description, string Content)[] Build()
@@ -190,7 +191,8 @@ public sealed class SupportBundle(ActivityLog activity, Func<IReadOnlyDictionary
         if (!consent) throw new ArgumentException("A support bundle is only made when the owner says yes.");
         var items = Build();
         Directory.CreateDirectory(directory);
-        var path = Path.Join(directory, $"orbitdrive-support-{_clock.GetUtcNow():yyyyMMdd-HHmmss-fff}.zip");
+        // Two bundles can be asked for within the same millisecond (a fast machine, a frozen test clock): a per-process sequence keeps names unique and still sorted oldest to newest.
+        var path = Path.Join(directory, $"orbitdrive-support-{_clock.GetUtcNow():yyyyMMdd-HHmmss-fff}-{Interlocked.Increment(ref _sequence) % 10000:D4}.zip");
         var temporary = path + ".part";
         using (var file = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
         using (var zip = new ZipArchive(file, ZipArchiveMode.Create))

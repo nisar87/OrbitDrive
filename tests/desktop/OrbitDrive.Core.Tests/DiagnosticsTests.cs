@@ -222,6 +222,18 @@ public sealed class DiagnosticsTests : IDisposable
     }
 
     [Fact]
+    public void Bundles_asked_for_in_the_same_instant_get_different_files()
+    {
+        var clock = new Clock(); var log = new ActivityLog(_dir, clock: clock); log.Record("connected");
+        var bundle = Bundle(log, clock: clock);                                   // the clock never moves: same millisecond every time
+        var paths = Enumerable.Range(0, 8).Select(_ => bundle.Create(true)).ToList();
+        Assert.Equal(8, paths.Distinct().Count());
+        Assert.All(paths.Take(3), p => Assert.False(File.Exists(p)));           // only the oldest beyond the limit are removed
+        Assert.All(paths.Skip(3), p => Assert.True(File.Exists(p)));            // the newest five are kept
+        Assert.Equal(SupportBundle.KeepBundles, Directory.GetFiles(Path.Join(_dir, "support"), "*.zip").Length);
+    }
+
+    [Fact]
     public void Old_bundles_are_deleted_so_the_support_folder_stays_small()
     {
         var clock = new Clock(); var log = new ActivityLog(_dir, clock: clock); log.Record("connected");

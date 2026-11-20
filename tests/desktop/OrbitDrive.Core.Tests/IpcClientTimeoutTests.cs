@@ -60,4 +60,23 @@ public sealed class IpcClientTimeoutTests
         Assert.Equal("online", data!["state"]!.GetValue<string>());
         await reply;
     }
+
+    // A command that fails on the disk must come back as an error reply, and the same connection must keep working afterwards.
+    [Fact]
+    public async Task A_disk_failure_in_a_command_is_an_error_reply_and_the_connection_stays_open()
+    {
+        var name = "orbit-test-" + Guid.NewGuid().ToString("N");
+        var server = new LocalIpcServer(name, (command, _, _) => command == "status" ? throw new IOException("name already taken") : Task.FromResult<JsonNode?>(new JsonObject { ["ok"] = true }));
+        using var stop = new CancellationTokenSource();
+        var running = server.RunAsync(stop.Token);
+        await using var client = await LocalIpcClient.ConnectAsync(name, TimeSpan.FromSeconds(5));
+        client.ReplyTimeout = TimeSpan.FromSeconds(10);
+
+        var failure = await Assert.ThrowsAsync<IpcException>(() => client.SendAsync("status"));
+        Assert.DoesNotContain("name already taken", failure.Message);               // no internal detail leaks to the console
+        var next = await client.SendAsync("pause");                                 // same connection, still answered
+        Assert.NotNull(next);
+        await stop.CancelAsync();
+        try { await running; } catch (OperationCanceledException) { }
+    }
 }
