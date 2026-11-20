@@ -557,3 +557,7 @@ Cause found in attempt 3's log: "an offline PC leaves the offer waiting" failed 
 Separately found by the Windows UI test: `LocalIpcClient.SendAsync` flushed the pipe, and a flush waits for the reader, so a frozen agent hung the console forever. The time limit now covers the write; the flush is gone.
 
 Update (98612bb): the `uploads.test.mjs` failure was reproducible on Windows, not a flake. The request after the over-size piece ("more than the declared size") reused an HTTP connection the relay had just closed when it refused the 8 MiB piece, and failed with ECONNRESET before being sent; the test then left an upload open, which caused the cascade (a left-over `.orbitdrive-partial`, a leftover quota, no free slot). The test now sends that request again on a fresh connection when, and only when, the connection error appears; its assertion (HTTP 400, nothing stored) is unchanged.
+
+## 0.1.8 published (console recovers from a stuck leftover agent)
+
+Commit 037f90d: contracts, security, gateway, desktop, desktop-ui, integration and web all green on that exact SHA (Windows integration passed after the two test fixes above). `main` fast-forwarded to 037f90d; `desktop-release` run 8 succeeded; `verify-feed` reports version 0.1.8, signed by orbitdrive-update-1, sha256 e1a0716b…a0bc. The agent-recovery behaviour is proven on real Windows only by the UI test (frozen same-install agent replaced; unrelated lock holder never killed). The owner's own PC has not yet confirmed it. The first update to 0.1.8 still runs the older console once.
