@@ -1,6 +1,7 @@
 using System.Text;
 using OrbitDrive.Core;
 using OrbitDrive.Core.Ipc;
+using OrbitDrive.Protocol;
 using SharpFuzz;
 
 // Fuzz targets for the PC-side parsers that read bytes or text from outside the trust boundary.
@@ -49,10 +50,17 @@ static void Probe(byte[] data)
     string[] types = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/svg+xml", "text/plain"];
     var type = types[data.Length == 0 ? 0 : data[0] % types.Length];
     ReadOnlySpan<byte> body = data.Length == 0 ? ReadOnlySpan<byte>.Empty : data.AsSpan(1);
+    // TryReadSize reports what the header says, however absurd; Require is the gate every caller goes through, so the limits are asserted on it.
     var ok = ImageProbe.TryReadSize(body, type, out var width, out var height);
-    if (ok && (width <= 0 || height <= 0 || width > ImageProbe.MaxDimension || height > ImageProbe.MaxDimension || (long)width * height > ImageProbe.MaxPixels))
-        Broken($"accepted size {width}x{height}");
     if (!ok && (width != 0 || height != 0)) Broken("size set although refused");
+    if (ok && (width < 0 || height < 0)) Broken($"negative size {width}x{height}");
+    try
+    {
+        var (w, h) = ImageProbe.Require(body, type);
+        if (w <= 0 || h <= 0 || w > ImageProbe.MaxDimension || h > ImageProbe.MaxDimension || (long)w * h > ImageProbe.MaxPixels)
+            Broken($"Require accepted size {w}x{h}");
+    }
+    catch (ProtocolException e) when (e.Code is ErrorCode.InvalidRequest or ErrorCode.LimitExceeded) { /* documented refusals */ }
 }
 
 static void Segment(byte[] data)
