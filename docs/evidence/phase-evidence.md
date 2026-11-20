@@ -571,3 +571,7 @@ Follow-up (6f8169c): the resend fix was too narrow. On Windows the next request 
 ## Simulated sleep/wake (6f8169c)
 
 New test in `faults.test.mjs`: freeze the agent process (SIGSTOP on Linux, NtSuspendProcess on Windows) beyond the lease → relay reports the PC offline and answers `pc_offline` at once → resume → the agent reconnects with a new generation, same PC identity, same grant (no re-pairing) and browsing works. Passed on Linux and on windows-2025 in CI. This is SIMULATED: the machine clock and network keep running, so it is not evidence of real sleep/resume, lock/unlock or Wi-Fi change; those remain on the Windows 11 checklist.
+
+## Integration run on f981b01 (honest log)
+
+All seven workflows green on f981b01 (simulated sleep/wake test and the upload connection fix included). The `integration` workflow needed a rerun: attempt 1 passed on Windows but the Ubuntu job stalled silently until its 30-minute limit after the first five test files had reported; the rerun passed on both. The stalled test file was not identified (the spec reporter prints per file, so the log does not say which). Hangs of this kind have now appeared on three commits (9cf9f37, 330dea5, f981b01), on both operating systems, so they remain an open reliability item: next step is a per-file timeout and a report of which files were still running when the limit hits.
