@@ -26,12 +26,12 @@ jobs:
           dotnet tool install --global SharpFuzz.CommandLine
           echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
           afl-fuzz -h 2>&1 | head -1 || true
-      - name: Build and instrument
+      - name: Build, then a seeded smoke run on the plain build (an instrumented build only runs under afl-fuzz)
         run: |
           dotnet build tests/fuzz/OrbitDrive.Fuzz -c Release
-          sharpfuzz tests/fuzz/OrbitDrive.Fuzz/bin/Release/net10.0/OrbitDrive.Core.dll
-      - name: Smoke first (seeded, no AFL), so a plain failure is found cheaply
-        run: dotnet tests/fuzz/OrbitDrive.Fuzz/bin/Release/net10.0/OrbitDrive.Fuzz.dll smoke 5000
+          dotnet tests/fuzz/OrbitDrive.Fuzz/bin/Release/net10.0/OrbitDrive.Fuzz.dll smoke 5000
+      - name: Instrument OrbitDrive.Core for AFL
+        run: sharpfuzz tests/fuzz/OrbitDrive.Fuzz/bin/Release/net10.0/OrbitDrive.Core.dll
       - name: Fuzz each target
         env:
           AFL_SKIP_BIN_CHECK: '1'
