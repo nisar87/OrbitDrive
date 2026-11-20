@@ -54,10 +54,13 @@ jobs:
             echo "::endgroup::"
           done
           exit $failed
+      - name: Pack findings and the final corpus (AFL file names contain colons, which artifacts refuse)
+        if: always()
+        run: if [ -d out ]; then tar czf fuzz-out.tgz out; fi
       - name: Keep findings and the final corpus
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz-findings
-          path: out
+          path: fuzz-out.tgz
           if-no-files-found: ignore
