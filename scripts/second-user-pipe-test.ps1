@@ -40,9 +40,10 @@ try {
   Check ($owner -eq 'CONNECTED') "the agent's own user can connect ($owner)"
 
   # 2. A different local user cannot.
-  $password = [guid]::NewGuid().ToString('N') + 'aA1!'
-  net user $user $password /add | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw "could not create the throwaway account $user" }
+  # 14 characters or fewer, or `net user` stops to ask a question; upper, lower, digit and symbol satisfy the complexity rule.
+  $password = 'Zq9!' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+  $made = (& net.exe user $user $password /add 2>&1 | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0) { throw "could not create the throwaway account $user (exit $LASTEXITCODE): $made" }
   $userCreated = $true
   $credential = New-Object System.Management.Automation.PSCredential(".\$user", (ConvertTo-SecureString $password -AsPlainText -Force))
   $otherOut = Join-Path $shared 'other.txt'
