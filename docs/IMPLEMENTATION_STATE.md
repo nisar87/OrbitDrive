@@ -77,7 +77,7 @@ web) works end to end in CI. It is a slice through M1–M2, not completion of th
 2. **Real Windows 11 machine (standard user)** for the Explorer modern-menu spike (D0/D6), lifecycle and DPI evidence.
 3. **Physical Android / iPhone** for the 1 GiB native-download spike (W0) and all device claims.
 4. **Relay host**: development relay exists (Oracle Always Free, `https://139-185-60-75.sslip.io`). Still needed for cross-network proof: a verified Firebase test account and the repo secrets `ORBIT_TEST_EMAIL`, `ORBIT_TEST_PASSWORD`, `ORBIT_FIREBASE_WEB_API_KEY`; a real domain later.
-5. **Code-signing identity** for D10.
+5. **Code-signing identity** for D10. DEFERRED by the owner (2026-11-20) until the product is final; builds stay unsigned meanwhile.
 6. **Decision (optional)**: ADR-1 keeps a plain WebSocket envelope instead of SignalR — see `docs/architecture/decisions.md`; say so if you prefer SignalR.
 
 ## Known gaps in what exists

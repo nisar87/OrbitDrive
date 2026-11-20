@@ -561,3 +561,7 @@ Update (98612bb): the `uploads.test.mjs` failure was reproducible on Windows, no
 ## 0.1.8 published (console recovers from a stuck leftover agent)
 
 Commit 037f90d: contracts, security, gateway, desktop, desktop-ui, integration and web all green on that exact SHA (Windows integration passed after the two test fixes above). `main` fast-forwarded to 037f90d; `desktop-release` run 8 succeeded; `verify-feed` reports version 0.1.8, signed by orbitdrive-update-1, sha256 e1a0716b…a0bc. The agent-recovery behaviour is proven on real Windows only by the UI test (frozen same-install agent replaced; unrelated lock holder never killed). The owner's own PC has not yet confirmed it. The first update to 0.1.8 still runs the older console once.
+
+## Owner decision: code signing deferred (2026-11-20)
+
+The owner decided not to buy a code-signing certificate during development. It will be done once the product is final. Until then builds stay unsigned (SmartScreen "unknown publisher" warning is expected) and updates are protected by the ECDSA-signed manifest. Nothing else is blocked by this.
