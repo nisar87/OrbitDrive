@@ -24,6 +24,14 @@ builder.WebHost.ConfigureKestrel(kestrel =>
 });
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(TimeProvider.System);
+if (options.Firestore.ProjectId.Length > 0)
+{
+    // Durable control metadata in Firestore (write-behind; flushed on shutdown). The file backend is used otherwise.
+    builder.Services.AddSingleton(sp => new FirestoreSnapshotBackend(FirestoreSnapshotBackend.Connect(options.Firestore.ProjectId), sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILoggerFactory>().CreateLogger("Firestore"),
+        legacy: options.Firestore.ImportFromDataDirectory.Length > 0 && File.Exists(Path.Join(options.Firestore.ImportFromDataDirectory, "registrations.json")) ? new FileSnapshotBackend(options.Firestore.ImportFromDataDirectory, sp.GetRequiredService<TimeProvider>()) : null));
+    builder.Services.AddSingleton<ISnapshotBackend>(sp => sp.GetRequiredService<FirestoreSnapshotBackend>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<FirestoreSnapshotBackend>());
+}
 builder.Services.AddSingleton<Store>();
 builder.Services.AddSingleton<Invitations>();
 builder.Services.AddSingleton<RateLimiter>();

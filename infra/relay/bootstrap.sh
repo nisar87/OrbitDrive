@@ -6,10 +6,10 @@
 #   --web-origin may be repeated (every origin may call the relay from a browser); --also-host may be repeated (more names this relay answers to,
 #   e.g. the previous hostname during a move, so installed apps and open sites keep working).
 set -euo pipefail
-HOST=""; PROJECT=""; ORIGIN=""; CHANNEL=dev; ORIGINS=(); ALSO_HOSTS=()
+HOST=""; PROJECT=""; ORIGIN=""; CHANNEL=dev; ORIGINS=(); ALSO_HOSTS=(); USE_FIRESTORE=0
 REPO_RAW=${ORBIT_REPO_RAW:-https://raw.githubusercontent.com/nisar87/OrbitDrive/main}
 while [ $# -gt 0 ]; do case "$1" in
-  --host) HOST=$2; shift 2;; --firebase-project) PROJECT=$2; shift 2;; --web-origin) ORIGINS+=("$2"); shift 2;; --also-host) ALSO_HOSTS+=("$2"); shift 2;; --channel) CHANNEL=$2; shift 2;;
+  --host) HOST=$2; shift 2;; --firebase-project) PROJECT=$2; shift 2;; --web-origin) ORIGINS+=("$2"); shift 2;; --also-host) ALSO_HOSTS+=("$2"); shift 2;; --channel) CHANNEL=$2; shift 2;; --use-firestore) USE_FIRESTORE=1; shift;;
   *) echo "unknown option $1" >&2; exit 2;; esac; done
 [[ $HOST =~ ^[a-z0-9.-]+$ && $PROJECT =~ ^[a-z0-9-]{4,40}$ && $CHANNEL =~ ^[a-z]+$ ]] || { echo "usage: bootstrap.sh --host H --firebase-project P --web-origin https://O" >&2; exit 2; }
 ORIGIN=${ORIGINS[0]:-}
@@ -36,6 +36,18 @@ for tool in orbitdrive-update orbitdrive-monitor orbitdrive-backup; do
   curl -fsSL -o "/usr/local/bin/$tool" "$REPO_RAW/infra/relay/bin/$tool" && chmod 0755 "/usr/local/bin/$tool"
 done
 
+# Optional: durable control metadata in Firestore instead of the local file. The service-account key is NOT handled here: the owner copies it to
+# /etc/orbitdrive/firebase-key.json (mode 0640, group orbitdrive) and this refuses to switch until it is there. The previous file store is imported once.
+STORE_ENV="OrbitDrive__DataDirectory=/var/lib/orbitdrive-gateway"
+if [ "$USE_FIRESTORE" = 1 ]; then
+  KEY=/etc/orbitdrive/firebase-key.json
+  [ -s "$KEY" ] || { echo "FATAL: --use-firestore needs the service-account key at $KEY (copy it there first; never paste it into a chat)." >&2; exit 1; }
+  chgrp orbitdrive "$KEY"; chmod 0640 "$KEY"
+  STORE_ENV="OrbitDrive__Firestore__ProjectId=$PROJECT
+OrbitDrive__Firestore__ImportFromDataDirectory=/var/lib/orbitdrive-gateway
+GOOGLE_APPLICATION_CREDENTIALS=$KEY"
+fi
+
 # Gateway configuration. No secrets: Firebase tokens are verified against Google's public keys.
 cat >/etc/orbitdrive/gateway.env <<ENV
 ASPNETCORE_ENVIRONMENT=Production
@@ -43,7 +55,7 @@ OrbitDrive__Firebase__ProjectId=$PROJECT
 $(i=0; for o in "${ORIGINS[@]}"; do echo "OrbitDrive__AllowedWebOrigins__$i=$o"; i=$((i+1)); done)
 OrbitDrive__TrustedProxies__0=127.0.0.1
 OrbitDrive__TrustedProxies__1=::1
-OrbitDrive__DataDirectory=/var/lib/orbitdrive-gateway
+$STORE_ENV
 DOTNET_gcServer=0
 DOTNET_GCHeapHardLimit=0x18000000
 ENV

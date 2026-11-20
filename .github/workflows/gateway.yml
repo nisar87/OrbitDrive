@@ -23,5 +23,18 @@ jobs:
         run: dotnet build services/gateway/OrbitDrive.Gateway -c Release
       - name: Unit tests
         run: dotnet test tests/gateway/OrbitDrive.Gateway.Tests -c Release --logger "console;verbosity=normal"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install test-only emulator tooling
+        working-directory: tests/emulators
+        run: npm ci
+      - name: Firestore backend against the real Firestore emulator (a missing emulator fails the step)
+        working-directory: tests/emulators
+        env:
+          ORBIT_REQUIRE_FIRESTORE: '1'
+        run: |
+          export JAVA_HOME="$JAVA_HOME_21_X64"; export PATH="$JAVA_HOME/bin:$PATH"; java -version
+          npx firebase emulators:exec --only firestore --project demo-orbit "dotnet test ../gateway/OrbitDrive.Gateway.Tests -c Release --no-build --filter FullyQualifiedName~FirestoreBackendTests --logger 'console;verbosity=normal'"
       - name: Relay updater, rollback, monitor and backup scripts (real gateway builds)
         run: node --test tests/relay/updater.test.mjs

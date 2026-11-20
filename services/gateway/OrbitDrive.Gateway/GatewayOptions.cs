@@ -6,6 +6,14 @@ public sealed class DevIdentityOptions
     public string Secret { get; set; } = "";
 }
 
+public sealed class FirestoreOptions
+{
+    /// <summary>When set, durable control metadata lives in this Firestore project instead of a local file. Credentials come from GOOGLE_APPLICATION_CREDENTIALS (never from configuration), or from FIRESTORE_EMULATOR_HOST for tests.</summary>
+    public string ProjectId { get; set; } = "";
+    /// <summary>A folder holding the previous file store (registrations.json). Imported once when Firestore is still empty; never written to.</summary>
+    public string ImportFromDataDirectory { get; set; } = "";
+}
+
 public sealed class FirebaseOptions
 {
     public const string GoogleKeysUrl = "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
@@ -24,6 +32,7 @@ public sealed class GatewayOptions
     public DevIdentityOptions DevIdentity { get; set; } = new();
     /// <summary>Where durable registrations and grants are kept. Empty = memory only (everything is forgotten on restart).</summary>
     public string DataDirectory { get; set; } = "";
+    public FirestoreOptions Firestore { get; set; } = new();
     public int PairingTtlSeconds { get; set; } = 120;
     /// <summary>Pairing-code attempts allowed per minute, counted separately per client address and per account.</summary>
     public int PairingClaimsPerMinute { get; set; } = 10;
@@ -90,6 +99,11 @@ public sealed class GatewayOptions
             throw new InvalidOperationException("OrbitDrive:DevIdentity:Secret must be at least 32 characters.");
         if (!DevIdentity.Enabled && !firebase) throw new InvalidOperationException("No identity verifier is configured.");
         if (firebase && !System.Text.RegularExpressions.Regex.IsMatch(Firebase.ProjectId, "^[a-z0-9-]{4,40}$")) throw new InvalidOperationException("OrbitDrive:Firebase:ProjectId is not a valid project id.");
+        if (Firestore.ProjectId.Length > 0)
+        {
+            if (!System.Text.RegularExpressions.Regex.IsMatch(Firestore.ProjectId, "^[a-z0-9-]{4,40}$")) throw new InvalidOperationException("OrbitDrive:Firestore:ProjectId is not a valid project id.");
+            if (DataDirectory.Length > 0) throw new InvalidOperationException("Configure either OrbitDrive:DataDirectory or OrbitDrive:Firestore, not both: two copies of the grants could disagree.");
+        }
         if (OperatorUids.Any(u => u.Length is 0 or > 128 || u.Any(char.IsWhiteSpace))) throw new InvalidOperationException("OperatorUids must be non-empty user ids without spaces.");
         if (OperatorMaxAuthAgeSeconds is < 60 or > 3600) throw new InvalidOperationException("OperatorMaxAuthAgeSeconds must be 60-3600.");
         if (MaxPendingHandshakes < 1) throw new InvalidOperationException("MaxPendingHandshakes must be at least 1.");
