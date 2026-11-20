@@ -207,7 +207,10 @@ describe('receiving a file', () => {
     // Refused before its body is read: the relay answers 400/413, or (Windows) closes the connection while the sender is still writing.
     const tooBig = await putChunk(phone, started.uploadId, 0, Buffer.alloc(8 * 2 ** 20 + 1)).catch((e) => ({ status: 'reset', cause: e?.cause?.code }));
     assert.ok([400, 413].includes(tooBig.status) || (tooBig.status === 'reset' && ['ECONNRESET', 'EPIPE'].includes(tooBig.cause)), `${tooBig.status} ${tooBig.cause}`);
-    const pastEnd = await putChunk(phone, started.uploadId, 0, randomData(6000, 32));                // more than the declared 5000
+    // The refusal above may have made the relay close the connection the HTTP client keeps for reuse; a request that
+    // lands on that dead connection fails before it is ever sent. Send it again on a fresh one (the assertion on the answer is unchanged).
+    const sendPastEnd = () => putChunk(phone, started.uploadId, 0, randomData(6000, 32));                // more than the declared 5000
+    const pastEnd = await sendPastEnd().catch((e) => ['ECONNRESET', 'EPIPE', 'UND_ERR_SOCKET'].includes(e?.cause?.code) ? sendPastEnd() : Promise.reject(e));
     assert.equal(pastEnd.status, 400);
     assert.equal((await statusOf(phone, started.uploadId)).body.committedBytes, '0');
     await cancel(phone, started.uploadId);
