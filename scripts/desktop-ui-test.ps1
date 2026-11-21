@@ -33,6 +33,18 @@ function WaitText([string]$id, [string]$pattern, [int]$timeoutMs = 30000) {
 }
 function Click([string]$id) { (Find $id).GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() }
 function SetText([string]$id, [string]$value) { (Find $id).GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($value) }
+# Answers the Yes/No confirmation a destructive action shows (a modal message box owned by the console).
+function ConfirmYes {
+    $yes = New-Object System.Windows.Automation.PropertyCondition($AE::NameProperty, 'Yes')
+    for ($i = 0; $i -lt 50; $i++) {
+        foreach ($w in $AE::RootElement.FindAll($Scope::Children, (New-Object System.Windows.Automation.PropertyCondition($AE::ProcessIdProperty, $script:win.Current.ProcessId)))) {
+            $b = $w.FindFirst($Scope::Descendants, $yes)
+            if ($b) { $b.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke(); return }
+        }
+        Start-Sleep -Milliseconds 200
+    }
+    throw 'no confirmation dialog appeared'
+}
 function Nav([string]$page) {
     $condition = New-Object System.Windows.Automation.PropertyCondition($AE::NameProperty, $page)
     $item = (Find 'Navigation').FindFirst($Scope::Descendants, $condition)
@@ -157,6 +169,7 @@ try {
     $code = WaitText 'PairCode' '^[A-Z2-9]{6}-[A-Z2-9]{10}$'
     Check $true 'a one-time pairing code is shown'
     $qr = Find 'PairQr'
+    Check ((Exists 'PairExpiry') -and ((Find 'PairExpiry').Current.Name -match '^Expires in [01]:\d\d$')) 'the pairing panel counts down how long the code lasts'
     Check ($qr.Current.BoundingRectangle.Width -ge 200 -and $qr.Current.BoundingRectangle.Height -ge 200) 'a QR code image is shown with the pairing code'
     $signIn = (Api 'Post' '/v1/dev/sign-in' @{ email = 'owner@example.test' }).body
     $auth = @{ Authorization = "Bearer $($signIn.idToken)" }
@@ -265,11 +278,12 @@ try {
     Nav 'Devices'
     for ($i = 0; $i -lt 60 -and @(ListItems 'DevicesList').Count -eq 0; $i++) { Start-Sleep -Milliseconds 250 }
     $paired = @(ListItems 'DevicesList')
-    Check ($paired.Count -eq 1 -and $paired[0] -eq 'Pixel 9') 'the paired browser is listed on the PC'
-    $condition = New-Object System.Windows.Automation.PropertyCondition($AE::NameProperty, 'Pixel 9')
+    Check ($paired.Count -eq 1 -and $paired[0] -match '^Pixel 9, ') 'the paired browser is listed on the PC, with when it was last seen'
+    $condition = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::ListItem)
     (Find 'DevicesList').FindFirst($Scope::Descendants, $condition).GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
     Shot 'devices-paired'
     Click 'RevokeDeviceButton'
+    ConfirmYes
     $after = $null
     for ($i = 0; $i -lt 50; $i++) { $after = Api 'Get' "/v1/pcs/$pcId/roots" $null $device; if ($after.status -eq 404) { break }; Start-Sleep -Milliseconds 200 }
     Check ($after.status -eq 404) 'removing the device on the PC ends that browser''s access'

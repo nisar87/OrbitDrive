@@ -1,0 +1,113 @@
+<UserControl x:Class="OrbitDrive.Desktop.Views.DevicesPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:OrbitDrive.Desktop.Controls"
+             xmlns:vm="clr-namespace:OrbitDrive.Desktop.ViewModels"
+             IsTabStop="False" Focusable="False">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+        <Style x:Key="Style.DeviceItem" TargetType="ListBoxItem" BasedOn="{StaticResource Style.CardItem}">
+            <Setter Property="AutomationProperties.Name" Value="{Binding AutomationName}"/>
+        </Style>
+    </UserControl.Resources>
+
+    <StackPanel MaxWidth="{StaticResource Page.MaxWidth}">
+        <Grid Margin="0,0,0,16">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBlock Text="Devices" Style="{StaticResource Style.Text.PageTitle}" AutomationProperties.HeadingLevel="Level1" VerticalAlignment="Center"/>
+            <!-- One main action at a time: while a request waits for an answer, Approve is the main action and pairing is secondary. -->
+            <Button Grid.Column="1" Content="Pair a device" Command="{Binding PairCommand}" Style="{DynamicResource AccentButtonStyle}" Padding="{StaticResource Inset.Button}"
+                    MinHeight="{StaticResource Size.TouchTarget}" Visibility="{Binding NoApproval, Converter={StaticResource BoolToVisibility}}" AutomationProperties.AutomationId="PairButton"/>
+            <Button Grid.Column="1" Content="Pair a device" Command="{Binding PairCommand}" Padding="{StaticResource Inset.Button}"
+                    MinHeight="{StaticResource Size.TouchTarget}" Visibility="{Binding ShowApproval, Converter={StaticResource BoolToVisibility}}" AutomationProperties.AutomationId="PairButton"/>
+        </Grid>
+
+        <!-- A device is asking to connect: the owner must see the confirmation code before approving. -->
+        <Border Style="{StaticResource Style.Card}" Visibility="{Binding ShowApproval, Converter={StaticResource BoolToVisibility}}" BorderBrush="{DynamicResource SystemFillColorCautionBrush}">
+            <StackPanel>
+                <TextBlock Text="A device wants to connect" Style="{StaticResource Style.Text.Section}"/>
+                <TextBlock Style="{StaticResource Style.Text.Base}" TextWrapping="Wrap" AutomationProperties.AutomationId="ApprovalText">
+                    <Run Text="Browser: "/><Run Text="{Binding ApprovalBrowser, Mode=OneWay}" FontWeight="SemiBold"/><LineBreak/>
+                    <Run Text="Account: "/><Run Text="{Binding ApprovalAccount, Mode=OneWay}" FontWeight="SemiBold"/><LineBreak/>
+                    <Run Text="Code: "/><Run Text="{Binding ApprovalCode, Mode=OneWay}" FontFamily="{StaticResource Font.Display}" FontSize="26" FontWeight="SemiBold"/>
+                </TextBlock>
+                <TextBlock Text="Approve only if this is you and the same code is shown in your browser." Style="{StaticResource Style.Text.Muted}" Margin="0,8,0,14"/>
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="Approve" Command="{Binding ApproveCommand}" Style="{DynamicResource AccentButtonStyle}" Padding="{StaticResource Inset.Button}" Margin="0,0,8,0"
+                            MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="ApproveButton"/>
+                    <Button Content="Deny" Command="{Binding DenyCommand}" Padding="{StaticResource Inset.Button}" MinHeight="{StaticResource Size.TouchTarget}"
+                            AutomationProperties.AutomationId="DenyButton"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Pairing: nothing until the owner asks, then QR + short code + how long it lasts. -->
+        <Border Style="{StaticResource Style.Card}">
+            <StackPanel>
+                <TextBlock Text="Pair a new device" Style="{StaticResource Style.Text.Section}"/>
+                <TextBlock Text="Create a one-time code, then scan it with your phone or open the link in the OrbitDrive web app. The code expires after two minutes."
+                           Style="{StaticResource Style.Text.Muted}" Visibility="{Binding NoPairing, Converter={StaticResource BoolToVisibility}}" AutomationProperties.AutomationId="PairHelp"/>
+                <StackPanel Visibility="{Binding HasPairing, Converter={StaticResource BoolToVisibility}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <!-- The bitmap carries its own white quiet zone, so it scans on light and dark themes. -->
+                        <Image Source="{Binding PairQr}" Width="208" Height="208" VerticalAlignment="Top" RenderOptions.BitmapScalingMode="NearestNeighbor"
+                               AutomationProperties.AutomationId="PairQr" AutomationProperties.Name="Pairing QR code"/>
+                        <StackPanel Grid.Column="1" Margin="20,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="Or type this code" Style="{StaticResource Style.Text.Muted}"/>
+                            <TextBlock Text="{Binding PairCode}" FontFamily="{StaticResource Font.Display}" FontSize="26" FontWeight="SemiBold" Margin="0,2,0,2"
+                                       AutomationProperties.AutomationId="PairCode"/>
+                            <TextBlock Text="{Binding Expiry}" Style="{StaticResource Style.Text.Strong}" Margin="0,0,0,12" AutomationProperties.AutomationId="PairExpiry"/>
+                            <TextBlock Text="Link" Style="{StaticResource Style.Text.Muted}"/>
+                            <TextBox Text="{Binding PairLink, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0" Background="Transparent" Padding="0,2,0,2"
+                                     AutomationProperties.AutomationId="PairLink" AutomationProperties.Name="Pairing link"/>
+                            <Button Content="Copy link" Command="{Binding CopyLinkCommand}" HorizontalAlignment="Left" Margin="0,8,0,0" Padding="12,5,12,5"
+                                    AutomationProperties.AutomationId="CopyLinkButton"/>
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Text="{Binding PairHelp}" Style="{StaticResource Style.Text.Muted}" Margin="0,12,0,0"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource Style.Card}">
+            <StackPanel>
+                <TextBlock Text="Paired devices" Style="{StaticResource Style.Text.Section}"/>
+                <c:EmptyState Glyph="&#xE8EA;" Title="No devices paired yet" TitleAutomationId="DevicesEmpty"
+                              Message="Pair a phone or browser to open your shared folders from anywhere."
+                              Visibility="{Binding NoDevices, Converter={StaticResource BoolToVisibility}}"/>
+                <ListBox ItemsSource="{Binding Devices}" SelectedItem="{Binding Selected, Mode=TwoWay}" ItemContainerStyle="{StaticResource Style.DeviceItem}"
+                         Visibility="{Binding HasDevices, Converter={StaticResource BoolToVisibility}}" Background="Transparent" BorderThickness="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                         AutomationProperties.AutomationId="DevicesList" AutomationProperties.Name="Paired devices">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:DeviceItem}">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="&#xE8EA;" Style="{StaticResource Style.Text.Icon}" FontSize="22" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="{Binding Name}" Style="{StaticResource Style.Text.Strong}" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding LastSeenText}" Style="{StaticResource Style.Text.Muted}"/>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource Style.Card}" Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel>
+                <TextBlock Text="{Binding SelectedHeading}" Style="{StaticResource Style.Text.Section}"/>
+                <Button Content="Remove this device" Command="{Binding RemoveCommand}" HorizontalAlignment="Left" Padding="{StaticResource Inset.Button}"
+                        MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="RevokeDeviceButton"/>
+                <TextBlock Text="It loses access right away and has to be paired again to come back." Style="{StaticResource Style.Text.Muted}" Margin="0,8,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,16" Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
+            <TextBlock Text="&#xE783;" Style="{StaticResource Style.Text.Icon}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" Margin="0,2,8,0" VerticalAlignment="Top"/>
+            <TextBlock Text="{Binding Error}" Style="{StaticResource Style.Text.Base}" TextWrapping="Wrap" AutomationProperties.AutomationId="DeviceError"/>
+        </StackPanel>
+    </StackPanel>
+</UserControl>

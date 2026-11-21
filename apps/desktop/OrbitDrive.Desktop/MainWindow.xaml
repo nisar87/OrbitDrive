@@ -15,6 +15,9 @@
         <DataTemplate DataType="{x:Type vm:FoldersPageViewModel}">
             <views:FoldersPage/>
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:DevicesPageViewModel}">
+            <views:DevicesPage/>
+        </DataTemplate>
         <!-- TRANSITIONAL: a page not yet rebuilt is shown as it was. -->
         <DataTemplate DataType="{x:Type vm:LegacyPageViewModel}">
             <ContentPresenter Content="{Binding View}"/>

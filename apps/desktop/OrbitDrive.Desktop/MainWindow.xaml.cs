@@ -25,12 +25,13 @@ public sealed partial class MainWindow : Window
         _host = new ConsoleHost(stateDirectory, Dispatcher);
         var legacy = new LegacyConsole(_host, this);
 
-        string[] legacyNames = ["Devices", "Transfers", "Activity", "Settings", "Diagnostics"];
-        string[] legacyGlyphs = ["\uE8EA", "\uE896", "\uE81C", "\uE713", "\uE9D9"];
+        string[] legacyNames = ["Transfers", "Activity", "Settings", "Diagnostics"];
+        string[] legacyGlyphs = ["\uE896", "\uE81C", "\uE713", "\uE9D9"];
         var home = new HomePageViewModel(_host, title => _shell!.GoTo(title), legacy.Updates);
         var folders = new FoldersPageViewModel(_host, PickFolder, Confirm);
-        var items = new List<NavItem> { new("\uE80F", home, "Ctrl+1"), new("\uE8B7", folders, "Ctrl+2") };
-        items.AddRange(legacyNames.Select((name, i) => new NavItem(legacyGlyphs[i], new LegacyPageViewModel(name, legacy.Pages[name]), $"Ctrl+{i + 3}")));
+        var devices = new DevicesPageViewModel(_host, Confirm, CopyText);
+        var items = new List<NavItem> { new("\uE80F", home, "Ctrl+1"), new("\uE8B7", folders, "Ctrl+2"), new("\uE8EA", devices, "Ctrl+3") };
+        items.AddRange(legacyNames.Select((name, i) => new NavItem(legacyGlyphs[i], new LegacyPageViewModel(name, legacy.Pages[name]), $"Ctrl+{i + 4}")));
         _shell = new ShellViewModel(items);
         legacy.CurrentPageName = () => _shell.SelectedTitle;
         DataContext = _shell;
@@ -65,6 +66,12 @@ public sealed partial class MainWindow : Window
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choose a folder to share (read-only)" };
         return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
+    }
+
+    private static void CopyText(string text)
+    {
+        try { Clipboard.SetText(text); }
+        catch (System.Runtime.InteropServices.COMException) { /* another program holds the clipboard; the link stays selectable on the page */ }
     }
 
     private bool Confirm(string title, string message) =>
