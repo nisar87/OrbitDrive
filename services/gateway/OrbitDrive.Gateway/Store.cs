@@ -76,6 +76,9 @@ public sealed class DownloadSessionRecord
 
     public void StreamStarted() { lock (_progress) _active++; }
 
+    /// <summary>Transfers running on this link right now.</summary>
+    public int ActiveStreams { get { lock (_progress) return _active; } }
+
     /// <summary>Records bytes [start, start+written) as written to the browser; ranges are merged and bounded.</summary>
     public void StreamEnded(long start, long written)
     {

@@ -76,6 +76,10 @@ public sealed class GatewayOptions
     public int UploadChunkTimeoutSeconds { get; set; } = 600;
     /// <summary>Uploads one browser may start per minute (a phone sending many small photos starts many).</summary>
     public int UploadStartsPerMinute { get; set; } = 300;
+    /// <summary>How many times one download link may start a transfer per minute (a resumed or seeking download uses a handful; a script hammering a link uses hundreds).</summary>
+    public int DownloadStartsPerCapabilityPerMinute { get; set; } = 120;
+    /// <summary>How many transfers one download link may have running at once.</summary>
+    public int MaxStreamsPerCapability { get; set; } = 4;
     /// <summary>
     /// Accounts (by verified user id) that may use the operator API. This is the only way to become an operator: it is set by whoever deploys
     /// the service, never by signing up first or by any request. Empty = nobody can administer.
@@ -111,6 +115,7 @@ public sealed class GatewayOptions
         }
         if (AgentHeartbeatSeconds is < 1 or > 300 || AgentLeaseSeconds < AgentHeartbeatSeconds * 2 || AgentLeaseSeconds > 900)
             throw new InvalidOperationException("AgentLeaseSeconds must be at least twice AgentHeartbeatSeconds (1-300 s) and at most 900 s.");
+        if (DownloadStartsPerCapabilityPerMinute < 1 || MaxStreamsPerCapability < 1) throw new InvalidOperationException("Download link limits must be at least 1.");
         if (PairingClaimsPerMinute < 1 || PairingPollsPerMinute < 1) throw new InvalidOperationException("Pairing rate limits must be at least 1 per minute.");
         if (TrustedProxies.Any(p => !System.Net.IPAddress.TryParse(p, out _))) throw new InvalidOperationException("TrustedProxies must be IP addresses.");
         if (DevIdentity.Enabled && firebase) throw new InvalidOperationException("Configure either development identities or Firebase, not both.");

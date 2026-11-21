@@ -622,6 +622,13 @@ app.MapMethods("/v1/downloads/{capability}", ["GET", "HEAD"], async (HttpContext
 
     if (HttpMethods.IsHead(context.Request.Method)) { WriteHeaders(); return; }
 
+    // Per link, on top of the per-browser and per-account limits: a leaked or scripted link cannot keep the PC busy.
+    Throttle(context, "download-start:" + session.Id, options.DownloadStartsPerCapabilityPerMinute, "This download link is being used too fast. Wait a moment.");
+    if (session.ActiveStreams >= options.MaxStreamsPerCapability)
+    {
+        context.Response.Headers.RetryAfter = "5";
+        throw new ProtocolException(ErrorCode.LimitExceeded, "This download link already has the most transfers it allows running. Wait for one to finish.");
+    }
     metrics.RequireRelayAllowance(session.OwnerUid);
     var (stream, uplinkToken) = streams.Create(session.OwnerUid, session.IsPreview);
     using var cancel = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, session.Revoked.Token);
