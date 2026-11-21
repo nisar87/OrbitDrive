@@ -627,3 +627,11 @@ Published (c0824ac, eight workflows green incl. release-candidate): `main` fast-
 - Design fix from screenshots: stock list selection (saturated blue) lowered secondary-text contrast; replaced by `Style.CardItem` (subtle fill + accent bar).
 - Screenshots (windows-2025, not Windows 11): `docs/evidence/screenshots/console-redesign/folders/`.
 - Unverified on real hardware: drag-and-drop from Explorer, the system folder picker, the confirmation dialogs (modal, not exercised by the UI test), DPI/high contrast.
+
+## Console redesign — step 4: Devices page (branch `feature/console-redesign`, SHA 3db356b)
+
+- Approval card shows browser, account and the confirmation code large before Approve/Deny; pairing panel with QR, short code, live expiry countdown (from the agent's `expiresAtUnixMs`) and Copy link; device cards show name and last seen only (all the agent reports; per-device history/type/location are future agent work, see design doc); Remove device asks for confirmation.
+- CI: `desktop-ui` green for this SHA (108 UI Automation checks), `desktop` green. New checks: countdown text, removal confirmation answered, list item includes last-seen. The revoke-ends-access check is unchanged.
+- Test adaptations (not weaker): the device list item name is now "Pixel 9, Last seen …" so the match is on the name prefix; the native confirmation box is answered with its Y accelerator because UI Automation exposes no Invoke on it. Two intermediate CI failures were test-helper issues (label vs button; native dialog), fixed in the script.
+- Screenshots (windows-2025, not Windows 11): `docs/evidence/screenshots/console-redesign/devices/`.
+- Unverified on real hardware: QR scan by a real phone from the redesigned panel, clipboard copy, confirmation dialog on Windows 11, DPI/high contrast.
