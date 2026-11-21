@@ -6,6 +6,7 @@ import { transfers } from '../transfers/transfers';
 import { formatBytes, formatTime } from '../../format';
 import type { Prefs, SortKey, ViewMode } from '../../prefs';
 import { opensOnActivate, previewKindOf } from '../preview/kinds';
+import { fileKindOf } from './fileKind';
 import { previewStore, thumbnails } from '../preview/preview';
 import { uploads } from '../upload/upload';
 import { archives } from '../archive/archive';
@@ -423,7 +424,7 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
       <li key={place.pcId + place.entryId} className="place" data-state={state.state}>
         <button type="button" className="tree-item place-open" disabled={!usable} onClick={() => openPlace(place)}>
           {/* No separate aria-label: the accessible name is exactly the visible text (name, PC, state), so speech control by what is shown works. */}
-          <span className={`icon ${place.kind === 'directory' ? 'folder' : 'file'}`} aria-hidden="true" /><span className="place-text"><bdi>{place.name}</bdi>{' '}<small><bdi>{pcName}</bdi>{note ? ` · ${note}` : ''}</small></span>
+          <span className={`icon ${place.kind === 'directory' ? 'folder' : 'file'}`} data-kind={place.kind === 'directory' ? undefined : fileKindOf(place.name)} aria-hidden="true" /><span className="place-text"><bdi>{place.name}</bdi>{' '}<small><bdi>{pcName}</bdi>{note ? ` · ${note}` : ''}</small></span>
         </button>
         <button type="button" className="ghost icon-button place-remove" aria-label={`Remove ${place.name} from ${list === 'favorite' ? 'favorites' : 'recent items'}`} onClick={() => setPlaces((p) => (list === 'favorite' ? removeFavorite(p, place) : removeRecent(p, place)))}>×</button>
       </li>
@@ -694,7 +695,7 @@ function Thumb({ session, pcId, entryId }: { session: Session; pcId: string; ent
     return () => { cancelled = true; };
   }, [visible, session, pcId, entryId]);
   return (
-    <span ref={holder} className={`icon file${url ? ' has-thumb' : ''}`} aria-hidden="true">
+    <span ref={holder} className={`icon file${url ? ' has-thumb' : ''}`} data-kind="image" aria-hidden="true">
       {url && <img src={url} alt="" loading="lazy" referrerPolicy="no-referrer" draggable={false} onError={() => setUrl(null)} />}
     </span>
   );
@@ -713,7 +714,7 @@ const Row = memo(function Row({ entry, selected, current, checkbox, actions, thu
         <button type="button" className="row-button" tabIndex={current ? 0 : -1} onFocus={() => actions.focus(entry.entryId)}
           onClick={() => { if (!actions.consumeSuppressedClick()) actions.activate(entry); }}
           title={entry.name} aria-label={`${entry.kind === 'directory' ? `Open folder ${entry.name}` : opensOnActivate(previewKindOf(entry.name)) ? `Preview ${entry.name}` : `Download ${entry.name}`}${entry.hidden ? ' (hidden item)' : ''}`}>
-          {thumbs && entry.kind === 'file' && previewKindOf(entry.name) === 'image' ? <Thumb session={thumbs.session} pcId={thumbs.pcId} entryId={entry.entryId} /> : <span className={`icon ${entry.kind === 'directory' ? 'folder' : 'file'}`} aria-hidden="true" />}<bdi>{entry.name}</bdi>
+          {thumbs && entry.kind === 'file' && previewKindOf(entry.name) === 'image' ? <Thumb session={thumbs.session} pcId={thumbs.pcId} entryId={entry.entryId} /> : <span className={`icon ${entry.kind === 'directory' ? 'folder' : 'file'}`} data-kind={entry.kind === 'directory' ? undefined : fileKindOf(entry.name)} aria-hidden="true" />}<bdi>{entry.name}</bdi>
         </button>
       </td>
       <td className="modified">{formatTime(entry.modifiedUnixMs)}</td>
