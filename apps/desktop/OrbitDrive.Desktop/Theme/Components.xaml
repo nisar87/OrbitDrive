@@ -27,10 +27,12 @@
     </Style>
     <Style x:Key="Style.Text.Muted" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Base}">
         <Setter Property="FontSize" Value="{StaticResource FontSize.Small}"/>
-        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Muted}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+        <Setter Property="Opacity" Value="{StaticResource Opacity.Muted}"/>
         <Style.Triggers>
             <DataTrigger Binding="{Binding Source={x:Static SystemParameters.HighContrast}}" Value="True">
                 <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+                <Setter Property="Opacity" Value="1"/>
             </DataTrigger>
         </Style.Triggers>
     </Style>

@@ -7,11 +7,11 @@
     <Border CornerRadius="{StaticResource Radius.Pill}" Padding="{StaticResource Inset.Pill}">
         <Border.Style>
             <Style TargetType="Border">
-                <Setter Property="Background" Value="{StaticResource Brush.Status.Neutral.Soft}"/>
+                <Setter Property="Background" Value="{DynamicResource SystemFillColorNeutralBackgroundBrush}"/>
                 <Style.Triggers>
-                    <DataTrigger Binding="{Binding Kind, ElementName=Root}" Value="Good"><Setter Property="Background" Value="{StaticResource Brush.Status.Good.Soft}"/></DataTrigger>
-                    <DataTrigger Binding="{Binding Kind, ElementName=Root}" Value="Warning"><Setter Property="Background" Value="{StaticResource Brush.Status.Warning.Soft}"/></DataTrigger>
-                    <DataTrigger Binding="{Binding Kind, ElementName=Root}" Value="Critical"><Setter Property="Background" Value="{StaticResource Brush.Status.Critical.Soft}"/></DataTrigger>
+                    <DataTrigger Binding="{Binding Kind, ElementName=Root}" Value="Good"><Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}"/></DataTrigger>
+                    <DataTrigger Binding="{Binding Kind, ElementName=Root}" Value="Warning"><Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBackgroundBrush}"/></DataTrigger>
+                    <DataTrigger Binding="{Binding Kind, ElementName=Root}" Value="Critical"><Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}"/></DataTrigger>
                 </Style.Triggers>
             </Style>
         </Border.Style>
@@ -20,11 +20,11 @@
                 <TextBlock.Style>
                     <Style TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Icon}">
                         <Setter Property="FontSize" Value="{StaticResource FontSize.Small}"/>
-                        <Setter Property="Foreground" Value="{StaticResource Brush.Status.Neutral}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource SystemFillColorNeutralBrush}"/>
                         <Style.Triggers>
-                            <DataTrigger Binding="{Binding Kind, ElementName=Root}" Value="Good"><Setter Property="Foreground" Value="{StaticResource Brush.Status.Good}"/></DataTrigger>
-                            <DataTrigger Binding="{Binding Kind, ElementName=Root}" Value="Warning"><Setter Property="Foreground" Value="{StaticResource Brush.Status.Warning}"/></DataTrigger>
-                            <DataTrigger Binding="{Binding Kind, ElementName=Root}" Value="Critical"><Setter Property="Foreground" Value="{StaticResource Brush.Status.Critical}"/></DataTrigger>
+                            <DataTrigger Binding="{Binding Kind, ElementName=Root}" Value="Good"><Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}"/></DataTrigger>
+                            <DataTrigger Binding="{Binding Kind, ElementName=Root}" Value="Warning"><Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}"/></DataTrigger>
+                            <DataTrigger Binding="{Binding Kind, ElementName=Root}" Value="Critical"><Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}"/></DataTrigger>
                         </Style.Triggers>
                     </Style>
                 </TextBlock.Style>

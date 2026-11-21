@@ -10,11 +10,11 @@
         <local:InvertedBoolToVisibility x:Key="InvertedBool"/>
         <Style x:Key="Style.Glyph.Status" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Icon}">
             <Setter Property="FontSize" Value="24"/>
-            <Setter Property="Foreground" Value="{StaticResource Brush.Status.Neutral}"/>
+            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorNeutralBrush}"/>
             <Style.Triggers>
-                <DataTrigger Binding="{Binding Kind}" Value="Good"><Setter Property="Foreground" Value="{StaticResource Brush.Status.Good}"/></DataTrigger>
-                <DataTrigger Binding="{Binding Kind}" Value="Warning"><Setter Property="Foreground" Value="{StaticResource Brush.Status.Warning}"/></DataTrigger>
-                <DataTrigger Binding="{Binding Kind}" Value="Critical"><Setter Property="Foreground" Value="{StaticResource Brush.Status.Critical}"/></DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="Good"><Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}"/></DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="Warning"><Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}"/></DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="Critical"><Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}"/></DataTrigger>
             </Style.Triggers>
         </Style>
     </UserControl.Resources>
@@ -73,7 +73,7 @@
                 <Grid Margin="0,0,0,12">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="1" Style="{StaticResource Style.Text.Strong}" VerticalAlignment="Center" Visibility="{Binding Step1Next, Converter={StaticResource BoolToVisibility}}"/>
-                    <TextBlock Grid.Column="0" Text="&#xE73E;" Style="{StaticResource Style.Text.Icon}" Foreground="{StaticResource Brush.Status.Good}"
+                    <TextBlock Grid.Column="0" Text="&#xE73E;" Style="{StaticResource Style.Text.Icon}" Foreground="{DynamicResource SystemFillColorSuccessBrush}"
                                Visibility="{Binding Step1Done, Converter={StaticResource BoolToVisibility}}"/>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                         <TextBlock Text="Choose a folder to share" Style="{StaticResource Style.Text.Strong}"/>
@@ -86,7 +86,7 @@
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="2" Style="{StaticResource Style.Text.Strong}" VerticalAlignment="Center" Visibility="{Binding Step2Done, Converter={StaticResource InvertedBool}}"/>
-                    <TextBlock Grid.Column="0" Text="&#xE73E;" Style="{StaticResource Style.Text.Icon}" Foreground="{StaticResource Brush.Status.Good}"
+                    <TextBlock Grid.Column="0" Text="&#xE73E;" Style="{StaticResource Style.Text.Icon}" Foreground="{DynamicResource SystemFillColorSuccessBrush}"
                                Visibility="{Binding Step2Done, Converter={StaticResource BoolToVisibility}}"/>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                         <TextBlock Text="Pair your phone or browser" Style="{StaticResource Style.Text.Strong}"/>
@@ -158,11 +158,12 @@
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Icon}">
                                             <Setter Property="Text" Value="&#xE81C;"/>
-                                            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Muted}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+        <Setter Property="Opacity" Value="{StaticResource Opacity.Muted}"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsProblem}" Value="True">
                                                     <Setter Property="Text" Value="&#xE7BA;"/>
-                                                    <Setter Property="Foreground" Value="{StaticResource Brush.Status.Critical}"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>

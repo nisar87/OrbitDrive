@@ -6,17 +6,17 @@
     <Border BorderThickness="1" CornerRadius="{StaticResource Radius.Card}" Padding="16,12,16,12" Margin="{StaticResource Gap.Section}">
         <Border.Style>
             <Style TargetType="Border">
-                <Setter Property="Background" Value="{StaticResource Brush.Status.Info.Soft}"/>
-                <Setter Property="BorderBrush" Value="{StaticResource Brush.Status.Info}"/>
+                <Setter Property="Background" Value="{DynamicResource SystemFillColorAttentionBackgroundBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}"/>
                 <Style.Triggers>
                     <DataTrigger Binding="{Binding Severity, ElementName=Root}" Value="Success">
-                        <Setter Property="Background" Value="{StaticResource Brush.Status.Good.Soft}"/><Setter Property="BorderBrush" Value="{StaticResource Brush.Status.Good}"/>
+                        <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource SystemFillColorSuccessBrush}"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding Severity, ElementName=Root}" Value="Warning">
-                        <Setter Property="Background" Value="{StaticResource Brush.Status.Warning.Soft}"/><Setter Property="BorderBrush" Value="{StaticResource Brush.Status.Warning}"/>
+                        <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBackgroundBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource SystemFillColorCautionBrush}"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding Severity, ElementName=Root}" Value="Error">
-                        <Setter Property="Background" Value="{StaticResource Brush.Status.Critical.Soft}"/><Setter Property="BorderBrush" Value="{StaticResource Brush.Status.Critical}"/>
+                        <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource SystemFillColorCriticalBrush}"/>
                     </DataTrigger>
                 </Style.Triggers>
             </Style>
@@ -30,11 +30,11 @@
             <TextBlock Grid.Column="0" Margin="0,2,12,0" VerticalAlignment="Top" Text="{Binding Glyph, ElementName=Root}">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Icon}">
-                        <Setter Property="Foreground" Value="{StaticResource Brush.Status.Info}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource AccentFillColorDefaultBrush}"/>
                         <Style.Triggers>
-                            <DataTrigger Binding="{Binding Severity, ElementName=Root}" Value="Success"><Setter Property="Foreground" Value="{StaticResource Brush.Status.Good}"/></DataTrigger>
-                            <DataTrigger Binding="{Binding Severity, ElementName=Root}" Value="Warning"><Setter Property="Foreground" Value="{StaticResource Brush.Status.Warning}"/></DataTrigger>
-                            <DataTrigger Binding="{Binding Severity, ElementName=Root}" Value="Error"><Setter Property="Foreground" Value="{StaticResource Brush.Status.Critical}"/></DataTrigger>
+                            <DataTrigger Binding="{Binding Severity, ElementName=Root}" Value="Success"><Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}"/></DataTrigger>
+                            <DataTrigger Binding="{Binding Severity, ElementName=Root}" Value="Warning"><Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}"/></DataTrigger>
+                            <DataTrigger Binding="{Binding Severity, ElementName=Root}" Value="Error"><Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}"/></DataTrigger>
                         </Style.Triggers>
                     </Style>
                 </TextBlock.Style>

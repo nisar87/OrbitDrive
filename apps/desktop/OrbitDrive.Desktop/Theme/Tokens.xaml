@@ -47,18 +47,12 @@
     <Duration x:Key="Motion.Normal">0:0:0.25</Duration>
 
     <!-- Secondary text. The theme's own secondary brush measured about 3.2:1 on cards in real light-theme screenshots (below the 4.5:1 AA needs for small text),
-         so secondary text is the primary colour at reduced opacity (about 5.5:1 light, 7:1 dark). Windows high contrast uses full strength (Style.Text.Muted). -->
-    <SolidColorBrush x:Key="Brush.Text.Muted" Color="{DynamicResource TextFillColorPrimary}" Opacity="0.74"/>
+         so secondary text is the primary brush at this element opacity (about 5.5:1 light, 7:1 dark). Windows high contrast uses full strength (Style.Text.Muted). -->
+    <sys:Double x:Key="Opacity.Muted">0.74</sys:Double>
 
-    <!-- Status colours: Fluent's system fills. Every status is ALSO carried by a glyph and a word; colour is never the only signal. -->
-    <SolidColorBrush x:Key="Brush.Status.Good" Color="{DynamicResource SystemFillColorSuccess}"/>
-    <SolidColorBrush x:Key="Brush.Status.Warning" Color="{DynamicResource SystemFillColorCaution}"/>
-    <SolidColorBrush x:Key="Brush.Status.Critical" Color="{DynamicResource SystemFillColorCritical}"/>
-    <SolidColorBrush x:Key="Brush.Status.Neutral" Color="{DynamicResource SystemFillColorNeutral}"/>
-    <SolidColorBrush x:Key="Brush.Status.Info" Color="{DynamicResource SystemAccentColor}"/>
-    <SolidColorBrush x:Key="Brush.Status.Good.Soft" Color="{DynamicResource SystemFillColorSuccess}" Opacity="0.14"/>
-    <SolidColorBrush x:Key="Brush.Status.Warning.Soft" Color="{DynamicResource SystemFillColorCaution}" Opacity="0.18"/>
-    <SolidColorBrush x:Key="Brush.Status.Critical.Soft" Color="{DynamicResource SystemFillColorCritical}" Opacity="0.14"/>
-    <SolidColorBrush x:Key="Brush.Status.Neutral.Soft" Color="{DynamicResource SystemFillColorNeutral}" Opacity="0.14"/>
-    <SolidColorBrush x:Key="Brush.Status.Info.Soft" Color="{DynamicResource SystemAccentColor}" Opacity="0.14"/>
+    <!-- Status colours are Fluent's own theme-aware brushes, used with DynamicResource so they follow light, dark and high contrast. A brush defined here with a
+         dynamic Color throws when first used (WPF cannot evaluate it inside a dictionary), so they are named, not redefined:
+         good = SystemFillColorSuccessBrush, warning = SystemFillColorCautionBrush, critical = SystemFillColorCriticalBrush, neutral = SystemFillColorNeutralBrush,
+         info = AccentFillColorDefaultBrush; soft tints = SystemFillColor{Success,Caution,Critical,Neutral}BackgroundBrush and SystemFillColorAttentionBackgroundBrush.
+         Every status is ALSO carried by a glyph and a word; colour is never the only signal. -->
 </ResourceDictionary>

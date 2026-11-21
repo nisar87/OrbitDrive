@@ -5,7 +5,7 @@
     <!-- What a list shows when it has nothing yet: say why, and offer the one next step. Never a blank panel. -->
     <StackPanel HorizontalAlignment="Center" Margin="0,24,0,24" MaxWidth="420">
         <TextBlock Text="{Binding Glyph, ElementName=Root}" Style="{StaticResource Style.Text.Icon}" FontSize="32" HorizontalAlignment="Center"
-                   Foreground="{StaticResource Brush.Text.Muted}" Margin="0,0,0,12"/>
+                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" Opacity="{StaticResource Opacity.Muted}" Margin="0,0,0,12"/>
         <TextBlock x:Name="TitleText" Text="{Binding Title, ElementName=Root}" Style="{StaticResource Style.Text.Strong}" HorizontalAlignment="Center" TextAlignment="Center"/>
         <TextBlock x:Name="MessageText" Text="{Binding Message, ElementName=Root}" Style="{StaticResource Style.Text.Muted}" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,4,0,0"/>
         <Button x:Name="ActionButton" Content="{Binding ActionText, ElementName=Root}" Command="{Binding ActionCommand, ElementName=Root}" HorizontalAlignment="Center"
