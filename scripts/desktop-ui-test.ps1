@@ -388,7 +388,7 @@ try {
     Shot 'home-online-final'
 
     # Keyboard reachability on every page.
-    foreach ($page in 'Home', 'Shared folders', 'Devices', 'Transfers', 'Activity', 'Settings', 'Diagnostics') {
+    foreach ($page in 'Home', 'Shared folders', 'Devices', 'Activity', 'Settings', 'Diagnostics') {
         Nav $page
         $bad = @(UnreachableControls)
         Check ($bad.Count -eq 0) "every control on '$page' is reachable by keyboard $($bad -join ', ')"
@@ -397,8 +397,8 @@ try {
     $script:win.SetFocus(); Start-Sleep -Milliseconds 300
     [System.Windows.Forms.SendKeys]::SendWait('^3'); Start-Sleep -Milliseconds 800
     Check (-not (Find 'PairButton').Current.IsOffscreen) 'Ctrl+3 jumps to Devices from the keyboard'
-    [System.Windows.Forms.SendKeys]::SendWait('^6'); Start-Sleep -Milliseconds 800
-    Check (-not (Find 'SaveGatewayButton').Current.IsOffscreen) 'Ctrl+6 jumps to Settings from the keyboard'
+    [System.Windows.Forms.SendKeys]::SendWait('^5'); Start-Sleep -Milliseconds 800
+    Check (-not (Find 'SaveGatewayButton').Current.IsOffscreen) 'Ctrl+5 jumps to Settings from the keyboard'
 
     # Optional start at sign-in: off by default, per-user, removable.
     Check (-not (IsOn 'StartAtSignIn') -and @(RunEntries).Count -eq 0) 'start at sign-in is off by default and nothing is registered'
