@@ -66,6 +66,7 @@ if (args[0] == "ctl" && args.Length >= 2)
         ("set_limits", 2) => new JsonObject { ["maxUploadKBps"] = int.Parse(positional[0]), ["maxConcurrentTransfers"] = int.Parse(positional[1]) },
         ("set_root_hidden", 2) => new JsonObject { ["rootId"] = positional[0], ["showHidden"] = positional[1] is "on" or "true" },
         ("set_root_uploads", >= 2) => new JsonObject { ["rootId"] = positional[0], ["enabled"] = positional[1] is "on" or "true", ["quotaMiB"] = positional.Length > 2 ? long.Parse(positional[2]) : 0, ["maxFileMiB"] = positional.Length > 3 ? long.Parse(positional[3]) : 0, ["resetUsed"] = positional.Length > 4 && positional[4] == "reset" },
+        ("set_pc_name", 1) => new JsonObject { ["name"] = positional[0] },
         ("set_sendto", 1) => new JsonObject { ["enabled"] = positional[0] is "on" or "true" },
         ("set_thumbnails", 1) => new JsonObject { ["enabled"] = positional[0] is "on" or "true" },
         ("cancel_invitation", 1) => new JsonObject { ["invitationId"] = positional[0] },

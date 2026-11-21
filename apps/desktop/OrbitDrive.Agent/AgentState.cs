@@ -67,7 +67,7 @@ internal static class LocalProtection
 /// <summary>Per-user agent state: device identity key, token-sealing key and the owner's approved roots.</summary>
 internal sealed class AgentState
 {
-    private sealed record Config(List<SharedRoot> Roots, string? Gateway = null, string? WebOrigin = null, int MaxUploadKBps = 0, int MaxConcurrentTransfers = 4, bool SendToShortcuts = false, bool ThumbnailsEnabled = true);
+    private sealed record Config(List<SharedRoot> Roots, string? Gateway = null, string? WebOrigin = null, int MaxUploadKBps = 0, int MaxConcurrentTransfers = 4, bool SendToShortcuts = false, bool ThumbnailsEnabled = true, string? PcName = null);
     private readonly string _configPath;
     private volatile IReadOnlyList<SharedRoot> _roots = [];
 
@@ -86,6 +86,8 @@ internal sealed class AgentState
     public bool SendToShortcuts { get; private set; }
     /// <summary>Owner switch for generating thumbnails (D7). Previews of the original file are separate and always allowed to the paired browser.</summary>
     public bool ThumbnailsEnabled { get; private set; } = true;
+    /// <summary>The name the owner gave this PC (shown on paired devices), or null to use the Windows computer name.</summary>
+    public string? PcName { get; private set; }
     public ThumbnailService Thumbnails { get; private set; } = null!;
     /// <summary>The one filesystem policy object every part of the agent uses, with staged archives (D8) attached.</summary>
     public FileAccessService Files { get; private set; } = null!;
@@ -139,6 +141,7 @@ internal sealed class AgentState
         MaxConcurrentTransfers = Math.Clamp(config?.MaxConcurrentTransfers ?? 4, 1, 16);
         SendToShortcuts = config?.SendToShortcuts ?? false;
         ThumbnailsEnabled = config?.ThumbnailsEnabled ?? true;
+        PcName = config?.PcName;
         if (Thumbnails is not null) Thumbnails.Enabled = ThumbnailsEnabled;
         // Folders approved before disk binding existed are bound to the disk they are on now (once, when reachable).
         if (_roots.Any(r => r.VolumeId is null && Directory.Exists(r.Path)))
@@ -147,7 +150,7 @@ internal sealed class AgentState
 
     private void Save(List<SharedRoot> roots)
     {
-        File.WriteAllText(_configPath + ".tmp", JsonSerializer.Serialize(new Config(roots, Gateway, WebOrigin, MaxUploadKBps, MaxConcurrentTransfers, SendToShortcuts, ThumbnailsEnabled), new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(_configPath + ".tmp", JsonSerializer.Serialize(new Config(roots, Gateway, WebOrigin, MaxUploadKBps, MaxConcurrentTransfers, SendToShortcuts, ThumbnailsEnabled, PcName), new JsonSerializerOptions { WriteIndented = true }));
         File.Move(_configPath + ".tmp", _configPath, overwrite: true);
         _roots = roots;
     }
@@ -218,6 +221,19 @@ internal sealed class AgentState
     }
 
     public void SetSendToShortcuts(bool enabled) { SendToShortcuts = enabled; Save([.. _roots]); }
+    public const int MaxPcNameLength = 60;
+
+    /// <summary>Sets the PC's display name. Empty goes back to the Windows computer name. Control characters are refused; the name is only ever text.</summary>
+    public string? SetPcName(string? name)
+    {
+        var trimmed = name?.Trim() ?? "";
+        if (trimmed.Length > MaxPcNameLength) throw new ArgumentException($"The name can be at most {MaxPcNameLength} characters.");
+        if (trimmed.Any(char.IsControl)) throw new ArgumentException("The name can't contain control characters.");
+        PcName = trimmed.Length == 0 ? null : trimmed;
+        Save([.. _roots]);
+        return PcName;
+    }
+
     public void SetThumbnailsEnabled(bool enabled) { ThumbnailsEnabled = enabled; Thumbnails.Enabled = enabled; if (!enabled) Thumbnails.Cache.Clear(); Save([.. _roots]); }
 
     /// <summary>Owner-only: whether hidden files and folders inside this shared folder are visible to paired devices.</summary>

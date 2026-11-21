@@ -15,7 +15,8 @@ internal sealed class SettingsPageViewModel : PageViewModel
 {
     private readonly ConsoleHost _host;
     private readonly Action<string> _copy;
-    private bool _start, _lock, _metered, _thumbsEnabled, _thumbsAvailable, _canClearThumbs, _applyingThumbs, _limitsDirty, _gatewayDirty;
+    private bool _start, _lock, _metered, _thumbsEnabled, _thumbsAvailable, _canClearThumbs, _applyingThumbs, _limitsDirty, _gatewayDirty, _pcNameDirty;
+    private string _pcName = "", _pcNameError = "";
     private string _maxSpeed = "0", _maxFiles = "4", _limitsShown = "", _gateway = "", _webOrigin = "";
     private string _settingsError = "", _limitsError = "", _thumbsStatus = "", _thumbsError = "", _sendToStatus = "", _sendToError = "", _diagnostics = "";
     private string _thumbsShown = "";
@@ -28,6 +29,7 @@ internal sealed class SettingsPageViewModel : PageViewModel
         _metered = host.Settings.PauseOnMetered;
         SaveLimitsCommand = new AsyncRelayCommand(SaveLimitsAsync);
         SaveGatewayCommand = new AsyncRelayCommand(SaveGatewayAsync);
+        SavePcNameCommand = new AsyncRelayCommand(SavePcNameAsync);
         ClearThumbnailsCommand = new AsyncRelayCommand(ClearThumbnailsAsync);
         SendToOnCommand = new AsyncRelayCommand(() => SetSendToAsync(true));
         SendToOffCommand = new AsyncRelayCommand(() => SetSendToAsync(false));
@@ -40,6 +42,7 @@ internal sealed class SettingsPageViewModel : PageViewModel
 
     public IRelayCommand SaveLimitsCommand { get; }
     public IRelayCommand SaveGatewayCommand { get; }
+    public IRelayCommand SavePcNameCommand { get; }
     public IRelayCommand ClearThumbnailsCommand { get; }
     public IRelayCommand SendToOnCommand { get; }
     public IRelayCommand SendToOffCommand { get; }
@@ -115,6 +118,9 @@ internal sealed class SettingsPageViewModel : PageViewModel
     public string SendToError { get => _sendToError; private set => SetProperty(ref _sendToError, value); }
 
     // ---- Advanced ----------------------------------------------------------------------------------------------------------------------------
+    /// <summary>The name paired devices see for this PC. Empty goes back to the Windows computer name.</summary>
+    public string PcName { get => _pcName; set { if (SetProperty(ref _pcName, value)) _pcNameDirty = true; } }
+    public string PcNameError { get => _pcNameError; private set => SetProperty(ref _pcNameError, value); }
     public string Gateway { get => _gateway; set { if (SetProperty(ref _gateway, value)) _gatewayDirty = true; } }
     public string WebOrigin { get => _webOrigin; set { if (SetProperty(ref _webOrigin, value)) _gatewayDirty = true; } }
     public string SettingsError { get => _settingsError; private set => SetProperty(ref _settingsError, value); }
@@ -141,6 +147,15 @@ internal sealed class SettingsPageViewModel : PageViewModel
         {
             await client.SendAsync("set_limits", new JsonObject { ["maxUploadKBps"] = speed, ["maxConcurrentTransfers"] = files });
             _limitsShown = ""; _limitsDirty = false;   // show what the agent actually stored
+        }) ?? "";
+    }
+
+    private async Task SavePcNameAsync()
+    {
+        PcNameError = await _host.RunAsync(async client =>
+        {
+            await client.SendAsync("set_pc_name", new JsonObject { ["name"] = PcName.Trim() });
+            _pcNameDirty = false;
         }) ?? "";
     }
 
@@ -214,6 +229,7 @@ internal sealed class SettingsPageViewModel : PageViewModel
             SetProperty(ref _maxSpeed, status.MaxUploadKBps.ToString(), nameof(MaxSpeed));
             SetProperty(ref _maxFiles, status.MaxConcurrentTransfers.ToString(), nameof(MaxFiles));
         }
+        if (!_pcNameDirty) SetProperty(ref _pcName, status.PcName, nameof(PcName));
         if (!_gatewayDirty && _gateway.Length == 0) SetProperty(ref _gateway, status.Gateway ?? "", nameof(Gateway));
         Diagnostics = $"PC id: {status.PcId}\nAgent version: {status.AgentVersion}\nRelay: {status.Gateway ?? "(not set)"}\nState folder: {_host.StateDirectory}\n" +
                       $"{RuntimeInformation.OSDescription} · {RuntimeInformation.ProcessArchitecture} · {RuntimeInformation.FrameworkDescription}\nRunning elevated: {Environment.IsPrivilegedProcess}\n" +

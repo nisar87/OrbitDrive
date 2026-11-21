@@ -13,7 +13,8 @@ namespace OrbitDrive.Agent;
 internal sealed class AgentHost : IDisposable
 {
     private readonly AgentState _state;
-    private readonly string _pcName;
+    private readonly string _defaultPcName;
+    private string _pcName;
     private readonly Action<string, object?> _log;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly LocalIpcServer _ipc;
@@ -42,7 +43,7 @@ internal sealed class AgentHost : IDisposable
 
     public AgentHost(AgentState state, string pcName, Action<string, object?> log)
     {
-        _state = state; _pcName = pcName; _log = log;
+        _state = state; _defaultPcName = pcName; _pcName = state.PcName ?? pcName; _log = log;
         _files = state.Files;
         _receiverCache = Path.Join(state.Directory_, "receivers.json");
         _bundle = new SupportBundle(state.Activity, SupportFacts, Path.Join(state.Directory_, "support"));
@@ -266,6 +267,10 @@ internal sealed class AgentHost : IDisposable
                 case "set_limits":
                     try { _state.SetLimits(args["maxUploadKBps"]?.GetValue<int>() ?? -1, args["maxConcurrentTransfers"]?.GetValue<int>() ?? -1); }
                     catch (Exception e) when (e is ArgumentException or FormatException or InvalidOperationException) { throw new IpcException(e is ArgumentException ? e.Message : "Limits must be whole numbers."); }
+                    return null;
+                case "set_pc_name":
+                    lock (_gate) _pcName = _state.SetPcName(args["name"]?.GetValue<string>()) ?? _defaultPcName;
+                    StartClient();               // say hello again so the relay and paired devices show the new name
                     return null;
                 case "set_gateway":
                     _state.SetGateway(Arg(args, "gateway", 512), args["webOrigin"]?.GetValue<string>());

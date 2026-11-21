@@ -74,6 +74,18 @@
             </StackPanel>
         </Border>
 
+        <TextBlock Text="This PC" Style="{StaticResource Style.Text.Group}"/>
+        <Border Style="{StaticResource Style.Card}">
+            <StackPanel>
+                <TextBlock Text="Name shown on your phone and browser" Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,4"/>
+                <TextBox Text="{Binding PcName, UpdateSourceTrigger=PropertyChanged}" MaxLength="60" Width="320" HorizontalAlignment="Left" AutomationProperties.AutomationId="PcNameBox"
+                         AutomationProperties.Name="PC name" Margin="0,0,0,12"/>
+                <Button Content="Save name" Command="{Binding SavePcNameCommand}" HorizontalAlignment="Left" Padding="{StaticResource Inset.Button}"
+                        MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="SavePcNameButton"/>
+                <TextBlock Text="{Binding PcNameError}" Style="{StaticResource Style.Text.Error}" TextWrapping="Wrap" AutomationProperties.AutomationId="PcNameError"/>
+            </StackPanel>
+        </Border>
+
         <TextBlock Text="Advanced" Style="{StaticResource Style.Text.Group}"/>
         <Border Style="{StaticResource Style.Card}">
             <StackPanel>
