@@ -26,12 +26,12 @@ internal sealed class UpdatePanel
     private readonly Func<CancellationToken, Task> _drain;
     private readonly Func<Task> _quitForUpdate;
     private readonly Version _running = UpdateTrust.RunningVersion();
-    private readonly TextBlock _version = MainWindow.MakeText("UpdateVersion", "", 14, FontWeights.SemiBold);
-    private readonly TextBlock _status = MainWindow.MakeText("UpdateStatus", "", 13, FontWeights.Normal);
-    private readonly TextBlock _notes = MainWindow.MakeText("UpdateNotes", "", 13, FontWeights.Normal, MainWindow.Muted);
-    private readonly Button _check = MainWindow.MakeButton("CheckUpdateButton", "Check for updates");
-    private readonly Button _install = MainWindow.MakeButton("InstallUpdateButton", "Update now", accent: true);
-    private readonly TextBlock _banner = MainWindow.MakeText("UpdateBanner", "", 13, FontWeights.SemiBold);
+    private readonly TextBlock _version = LegacyConsole.MakeText("UpdateVersion", "", 14, FontWeights.SemiBold);
+    private readonly TextBlock _status = LegacyConsole.MakeText("UpdateStatus", "", 13, FontWeights.Normal);
+    private readonly TextBlock _notes = LegacyConsole.MakeText("UpdateNotes", "", 13, FontWeights.Normal, LegacyConsole.Muted);
+    private readonly Button _check = LegacyConsole.MakeButton("CheckUpdateButton", "Check for updates");
+    private readonly Button _install = LegacyConsole.MakeButton("InstallUpdateButton", "Update now", accent: true);
+    private readonly TextBlock _banner = LegacyConsole.MakeText("UpdateBanner", "", 13, FontWeights.SemiBold);
     private VerifiedUpdate? _available;
     private bool _busy;
 
@@ -58,8 +58,8 @@ internal sealed class UpdatePanel
         _banner.Visibility = Visibility.Collapsed;
         _check.Click += (_, _) => _ = CheckAsync(silent: false);
         _install.Click += (_, _) => _ = InstallAsync();
-        Card = MainWindow.Card("Software updates", _version, _status, _notes, MainWindow.Row(_check, _install),
-            MainWindow.MakeText("UpdateHint", "Updating replaces the program files in place and restarts OrbitDrive. Your shared folders, paired devices and settings are kept. Nothing is installed until you press Update now.", 13, FontWeights.Normal, MainWindow.Muted));
+        Card = LegacyConsole.Card("Software updates", _version, _status, _notes, LegacyConsole.Row(_check, _install),
+            LegacyConsole.MakeText("UpdateHint", "Updating replaces the program files in place and restarts OrbitDrive. Your shared folders, paired devices and settings are kept. Nothing is installed until you press Update now.", 13, FontWeights.Normal, LegacyConsole.Muted));
 
         ReportLastUpdate();
         var timer = new DispatcherTimer { Interval = TimeSpan.FromHours(6) };

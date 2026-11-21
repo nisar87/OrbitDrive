@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
@@ -6,19 +5,18 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Threading;
 using OrbitDrive.Core.Ipc;
 
 namespace OrbitDrive.Desktop;
 
 /// <summary>
-/// Owner console. Everything shown is the agent's real state read over the local channel; the console holds
-/// no sharing state of its own. Closing the window leaves the agent (and remote access) running; Quit ends both.
+/// TRANSITIONAL. The seven pages as they were before the redesign, hosted inside the new shell so the console keeps working and the UI tests stay green while
+/// the pages are rebuilt one at a time as XAML + view models. Each page that is replaced is deleted from here; when the last one goes, so does this file.
+/// Everything shown is the agent's real state read over the local channel.
 /// </summary>
-public sealed class MainWindow : Window
+internal sealed class LegacyConsole
 {
-    private static readonly string[] Pages = ["Overview", "Shared folders", "Devices", "Transfers", "Activity", "Settings", "Diagnostics"];
-    private static readonly string[] PageIcons = ["\uE80F", "\uE8B7", "\uE8EA", "\uE896", "\uE81C", "\uE713", "\uE9D9"];
+
     // Theme brush keys (Windows Fluent theme): they follow light, dark and high-contrast automatically.
     // Secondary text: the theme's own secondary brush measured about 3.2:1 on cards in real light-theme screenshots,
     // below the 4.5:1 needed for small text, so secondary text is the primary colour at reduced opacity (about 5.5:1
@@ -27,31 +25,22 @@ public sealed class MainWindow : Window
     internal static void Mute(TextBlock block) => block.Opacity = SystemParameters.HighContrast ? 1.0 : 0.74;
     internal const string Danger = "SystemFillColorCriticalBrush";
 
-    private readonly string _stateDirectory;
-    private readonly ListBox _nav = new() { Width = 210, BorderThickness = new Thickness(0), Background = Brushes.Transparent, FontSize = 14 };
-    private readonly Grid _content = new();
+    private readonly ConsoleHost _host;
+    private readonly Window _owner;
     private readonly Dictionary<string, FrameworkElement> _pages = [];
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
-    private readonly System.Windows.Forms.NotifyIcon _tray = new();
-    private LocalIpcClient? _client;
-    private readonly OrbitDrive.Core.RestartBudget _restarts = new(3, TimeSpan.FromMinutes(10), TimeProvider.System);
-    private readonly OrbitDrive.Core.LockPolicy _lockPolicy = new();
-    private readonly ConsoleSettings _settings;
-    // _mayStart: the console may launch the agent on its next connection attempt (at launch, after a crash within the
-    // restart budget, or when the owner presses Start). _stoppedOnPurpose: the agent announced a deliberate quit.
-    private bool _quitting, _connecting, _paused, _mayStart = true, _stoppedOnPurpose, _gaveUp;
+    private bool _paused;
+    /// <summary>The shell tells this which page is on screen, so Activity and Settings are refreshed only while visible.</summary>
+    public Func<string?> CurrentPageName { get; set; } = () => null;
+    public IReadOnlyDictionary<string, FrameworkElement> Pages => _pages;
+
     private readonly System.Windows.Shapes.Ellipse _stateDot = new() { Width = 14, Height = 14, Margin = new Thickness(0, 4, 10, 0), VerticalAlignment = VerticalAlignment.Center };
     private readonly Button _start = MakeButton("StartAgentButton", "Start the OrbitDrive agent");
     private readonly TextBlock _statFolders = MakeStat("StatFolders"), _statTransfers = MakeStat("StatTransfers"), _statDevices = MakeStat("StatDevices");
     private readonly CheckBox _startAtSignIn = new() { Content = "Start OrbitDrive when I sign in to Windows", Margin = new Thickness(0, 4, 0, 4) };
     private readonly CheckBox _pauseOnMetered = new() { Content = "Pause remote access while this PC is on a metered connection", Margin = new Thickness(0, 4, 0, 4) };
-    private readonly OrbitDrive.Core.LockPolicy _meteredPolicy = new();   // same rule as locking: only undo a pause it caused itself
     private readonly TextBlock _meteredWarning = MakeText("MeteredWarning", "", 13, FontWeights.Normal, Danger);
     private readonly TextBox _maxSpeed = MakeBox("MaxSpeedBox"), _maxFiles = MakeBox("MaxFilesBox");
     private readonly TextBlock _limitsError = MakeText("LimitsError", "", 13, FontWeights.Normal, Danger);
-    private uint? _networkCost;
-    private bool _metered;
-    private int _ticks;
     private string _limitsShown = "";
     private readonly CheckBox _pauseWhenLocked = new() { Content = "Pause remote access while this PC is locked", Margin = new Thickness(0, 4, 0, 4) };
 
@@ -71,7 +60,6 @@ public sealed class MainWindow : Window
     private readonly TextBlock _deviceError = MakeText("DeviceError", "", 13, FontWeights.Normal, Danger);
     private readonly TextBlock _transfers = MakeText("TransfersText", "", 14, FontWeights.Normal);
     private readonly ListBox _activity = new() { MinHeight = 200 };
-    private int _unanswered;
     private HistoryPanel _history = null!;
     private ThumbnailPanel _thumbnails = null!;
     private readonly TextBlock _settingsError = MakeText("SettingsError", "", 13, FontWeights.Normal, Danger);
@@ -89,112 +77,31 @@ public sealed class MainWindow : Window
     private List<string> _deviceIds = [];
     private string _qrFor = "";
     private int _tick;
+    private UpdatePanel _updates = null!;
 
-    public MainWindow(string stateDirectory)
+
+    public LegacyConsole(ConsoleHost host, Window owner)
     {
-        _stateDirectory = stateDirectory;
-        _settings = new ConsoleSettings(stateDirectory);
-        _lockPolicy.Enabled = _settings.PauseWhenLocked;
-        Title = "OrbitDrive";
-        Width = 980; Height = 680; MinWidth = 680; MinHeight = 460;
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI");
-        Icon = AppIcon.Image;
+        _host = host;
+        _owner = owner;
         AutomationProperties.SetAutomationId(_startAtSignIn, "StartAtSignIn");
         AutomationProperties.SetAutomationId(_pauseWhenLocked, "PauseWhenLocked");
         AutomationProperties.SetAutomationId(_pauseOnMetered, "PauseOnMetered");
-        _meteredPolicy.Enabled = _settings.PauseOnMetered;
         _meteredWarning.Visibility = Visibility.Collapsed;
-        AutomationProperties.SetAutomationId(this, "OrbitDriveMainWindow");
-        AutomationProperties.SetAutomationId(_nav, "Navigation");
         AutomationProperties.SetAutomationId(_roots, "RootsList");
         ScrollViewer.SetHorizontalScrollBarVisibility(_roots, ScrollBarVisibility.Disabled);   // long paths wrap instead of scrolling sideways
         _roots.MinHeight = 0;
         AutomationProperties.SetAutomationId(_activity, "ActivityList");
         AutomationProperties.SetAutomationId(_pairLink, "PairLink");
-        AutomationProperties.SetName(_nav, "Sections");
         AutomationProperties.SetAutomationId(_pairQr, "PairQr");
         AutomationProperties.SetName(_pairQr, "Pairing QR code");
         AutomationProperties.SetAutomationId(_devices, "DevicesList");
         RenderOptions.SetBitmapScalingMode(_pairQr, BitmapScalingMode.NearestNeighbor);
-
         BuildPages();
-        for (var i = 0; i < Pages.Length; i++)
-        {
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
-            row.Children.Add(new TextBlock { Text = PageIcons[i], FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 16, Width = 30, VerticalAlignment = VerticalAlignment.Center });
-            row.Children.Add(new TextBlock { Text = Pages[i], VerticalAlignment = VerticalAlignment.Center });
-            var item = new ListBoxItem { Content = row, Tag = Pages[i], Padding = new Thickness(12, 9, 12, 9), Margin = new Thickness(0, 1, 0, 1), ToolTip = $"{Pages[i]} (Ctrl+{i + 1})" };
-            AutomationProperties.SetName(item, Pages[i]);
-            _nav.Items.Add(item);
-        }
-        _nav.SelectionChanged += (_, _) =>
-        {
-            var selected = (_nav.SelectedItem as ListBoxItem)?.Tag as string;
-            foreach (var (name, element) in _pages) element.Visibility = name == selected ? Visibility.Visible : Visibility.Collapsed;
-        };
-        _nav.SelectedIndex = 0;
-
-        var layout = new DockPanel();
-        var brand = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(12, 4, 0, 18) };
-        brand.Children.Add(new Image { Source = AppIcon.Image, Width = 24, Height = 24, Margin = new Thickness(0, 0, 10, 0) });
-        brand.Children.Add(new TextBlock { Text = "OrbitDrive", FontSize = 16, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
-        var sidePanel = new DockPanel();
-        DockPanel.SetDock(brand, Dock.Top);
-        sidePanel.Children.Add(brand);
-        sidePanel.Children.Add(_nav);
-        var side = new Border { Padding = new Thickness(8, 16, 8, 16), Child = sidePanel, BorderThickness = new Thickness(0, 0, 1, 0) };
-        side.SetResourceReference(Border.BackgroundProperty, "LayerFillColorDefaultBrush");
-        side.SetResourceReference(Border.BorderBrushProperty, "CardStrokeColorDefaultBrush");
-        DockPanel.SetDock(side, Dock.Left);
-        layout.Children.Add(side);
-        layout.Children.Add(new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(32, 24, 32, 24), Content = _content, Focusable = false });
-        Content = layout;
-
-        // Keyboard: Ctrl+1..7 jump straight to a section; Tab/arrow keys move through the rest in reading order.
-        PreviewKeyDown += (_, e) =>
-        {
-            if (System.Windows.Input.Keyboard.Modifiers != System.Windows.Input.ModifierKeys.Control) return;
-            var index = e.Key - System.Windows.Input.Key.D1;
-            if (index < 0 || index >= Pages.Length) index = e.Key - System.Windows.Input.Key.NumPad1;
-            if (index < 0 || index >= Pages.Length) return;
-            _nav.SelectedIndex = index;
-            (_nav.ItemContainerGenerator.ContainerFromIndex(index) as ListBoxItem)?.Focus();
-            e.Handled = true;
-        };
-
-        _tray.Icon = AppIcon.Tray;
-        _tray.Text = "OrbitDrive";
-        _tray.Visible = true;
-        _tray.DoubleClick += (_, _) => Reopen();
-        var menu = new System.Windows.Forms.ContextMenuStrip();
-        menu.Items.Add("Open OrbitDrive", null, (_, _) => Reopen());
-        menu.Items.Add("Pause / resume remote access", null, (_, _) => _ = TogglePauseAsync());
-        menu.Items.Add("Quit OrbitDrive (stops remote access)", null, (_, _) => _ = QuitAsync());
-        _tray.ContextMenuStrip = menu;
-
-        _timer.Tick += (_, _) => _ = RefreshAsync();
-        _timer.Start();                 // also when started hidden at sign-in (no window is shown, so no Loaded event)
-        _ = RefreshAsync();
-        Loaded += (_, _) => (_nav.ItemContainerGenerator.ContainerFromIndex(_nav.SelectedIndex) as ListBoxItem)?.Focus();
-        Microsoft.Win32.SystemEvents.SessionSwitch += OnSessionSwitch;
+        host.Note += LogActivity;
+        host.AgentEvent += (name, _) => { if (name is "pairing_result" or "device_revoked") _tick = 0; };
+        host.AddStatusConsumer(ApplyStatusAsync);
     }
-
-    /// <summary>Windows lock/unlock. Applies the owner's "pause while locked" choice; never touches sleep settings.</summary>
-    private void OnSessionSwitch(object sender, Microsoft.Win32.SessionSwitchEventArgs e) => Dispatcher.InvokeAsync(() =>
-    {
-        if (_quitting || _client is null) return;
-        if (e.Reason == Microsoft.Win32.SessionSwitchReason.SessionLock && _lockPolicy.OnLocked(_paused))
-        {
-            LogActivity("PC locked: remote access paused");
-            _ = RunAsync(_stateDetail, client => client.SendAsync("pause"));
-        }
-        else if (e.Reason == Microsoft.Win32.SessionSwitchReason.SessionUnlock && _lockPolicy.OnUnlocked(_paused))
-        {
-            LogActivity("PC unlocked: remote access resumed");
-            _ = RunAsync(_stateDetail, client => client.SendAsync("resume"));
-        }
-    });
 
     private void LogActivity(string line)
     {
@@ -271,47 +178,26 @@ public sealed class MainWindow : Window
 
     private StackPanel Page(string name, params UIElement[] children)
     {
-        var panel = new StackPanel { Visibility = Visibility.Collapsed };
+        var panel = new StackPanel();
         panel.Children.Add(new TextBlock { Text = name, FontSize = 28, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 18) });
         foreach (var child in children) panel.Children.Add(child);
         _pages[name] = panel;
-        _content.Children.Add(panel);
         return panel;
-    }
-
-    private UpdatePanel _updates = null!;
-
-    /// <summary>Before an update: stop remote access and wait until no file is being sent (bounded by the caller's token).</summary>
-    private async Task DrainForUpdateAsync(CancellationToken cancellation)
-    {
-        var client = await ConnectAsync();
-        if (client is null) return;                       // the agent is not running: nothing to stop
-        try
-        {
-            await client.SendAsync("pause");
-            while (true)
-            {
-                cancellation.ThrowIfCancellationRequested();
-                if (await client.SendAsync("status") is JsonObject status && (int)status["activeStreams"]! == 0) return;
-                await Task.Delay(500, cancellation);
-            }
-        }
-        catch (IpcException e) { throw new InvalidOperationException(e.Message); }
     }
 
     private void BuildPages()
     {
-        _updates = new UpdatePanel(_stateDirectory, DrainForUpdateAsync, QuitAsync);
+        _updates = new UpdatePanel(_host.StateDirectory, _host.DrainForUpdateAsync, _host.QuitAsync);
         _history = new HistoryPanel(RunAsync);
         _thumbnails = new ThumbnailPanel(RunAsync);
         var quit = MakeButton("QuitButton", "Quit OrbitDrive");
-        quit.Click += (_, _) => _ = QuitAsync();
-        _pause.Click += (_, _) => _ = TogglePauseAsync();
+        quit.Click += (_, _) => _ = _host.QuitAsync();
+        _pause.Click += (_, _) => _ = _host.TogglePauseAsync();
         _pause.SetResourceReference(StyleProperty, "AccentButtonStyle");
         // Start is offered only while the agent is not running; pressing it is an explicit owner decision, so it
         // also clears the crash-restart budget.
         _start.Visibility = Visibility.Collapsed;
-        _start.Click += (_, _) => { _restarts.Reset(); _gaveUp = false; _stoppedOnPurpose = false; _mayStart = true; _unanswered = 0; if (_client is { } silent) { _client = null; _ = silent.DisposeAsync().AsTask(); } _ = RefreshAsync(); };
+        _start.Click += (_, _) => { _host.Connection.StartExplicitly(); _ = _host.RefreshAsync(); };
         _stateText.Margin = new Thickness(0);
         var stats = new System.Windows.Controls.Primitives.UniformGrid { Columns = 3, Margin = new Thickness(0, 0, -14, 0) };
         stats.Children.Add(Stat(_statFolders, "Shared folders"));
@@ -328,7 +214,7 @@ public sealed class MainWindow : Window
         browse.Click += (_, _) =>
         {
             var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choose a folder to share (read-only)" };
-            if (dialog.ShowDialog(this) == true) { _rootPath.Text = dialog.FolderName; if (_rootName.Text.Length == 0) _rootName.Text = Path.GetFileName(dialog.FolderName.TrimEnd('\\')); }
+            if (dialog.ShowDialog(_owner) == true) { _rootPath.Text = dialog.FolderName; if (_rootName.Text.Length == 0) _rootName.Text = Path.GetFileName(dialog.FolderName.TrimEnd('\\')); }
         };
         var add = MakeButton("AddRootButton", "Share this folder (read-only)", accent: true);
         add.Click += (_, _) => _ = AddRootAsync();
@@ -352,7 +238,7 @@ public sealed class MainWindow : Window
             var index = _roots.SelectedIndex;
             if (index < 0 || index >= _rootIds.Count) throw new IpcException("Select a folder first.");
             var turnOn = !_rootUploads[index];
-            if (turnOn && MessageBox.Show(this, "Paired phones and browsers will be able to ADD files to this folder (up to 10 GiB in total, 4 GiB per file). They can never replace, delete or run anything. Turn uploads on?", "Allow uploads", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            if (turnOn && MessageBox.Show(_owner, "Paired phones and browsers will be able to ADD files to this folder (up to 10 GiB in total, 4 GiB per file). They can never replace, delete or run anything. Turn uploads on?", "Allow uploads", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
             await client.SendAsync("set_root_uploads", new JsonObject { ["rootId"] = _rootIds[index], ["enabled"] = turnOn, ["quotaMiB"] = 10240, ["maxFileMiB"] = 4096 });
         });
         Page("Shared folders",
@@ -390,7 +276,7 @@ public sealed class MainWindow : Window
         var save = MakeButton("SaveGatewayButton", "Save and connect", accent: true);
         save.Click += (_, _) => _ = RunAsync(_settingsError, client =>
             client.SendAsync("set_gateway", new JsonObject { ["gateway"] = _gateway.Text.Trim(), ["webOrigin"] = _webOrigin.Text.Trim().Length == 0 ? null : _webOrigin.Text.Trim() }));
-        _startAtSignIn.IsChecked = StartupRegistration.IsEnabled(_stateDirectory);
+        _startAtSignIn.IsChecked = StartupRegistration.IsEnabled(_host.StateDirectory);
         // Checked/Unchecked (not Click) so that keyboard, mouse and assistive technology all take the same path.
         var applying = false;
         void ApplyStartAtSignIn(object sender, RoutedEventArgs e)
@@ -398,37 +284,37 @@ public sealed class MainWindow : Window
             if (applying) return;
             applying = true;
             _settingsError.Text = "";
-            try { StartupRegistration.Set(_stateDirectory, _startAtSignIn.IsChecked == true); }
+            try { StartupRegistration.Set(_host.StateDirectory, _startAtSignIn.IsChecked == true); }
             catch (Exception error) when (error is UnauthorizedAccessException or System.Security.SecurityException or IOException) { _settingsError.Text = "Windows did not allow changing the start-up setting."; }
-            _startAtSignIn.IsChecked = StartupRegistration.IsEnabled(_stateDirectory);   // show what is really registered
+            _startAtSignIn.IsChecked = StartupRegistration.IsEnabled(_host.StateDirectory);   // show what is really registered
             applying = false;
         }
         _startAtSignIn.Checked += ApplyStartAtSignIn;
         _startAtSignIn.Unchecked += ApplyStartAtSignIn;
-        _pauseWhenLocked.IsChecked = _settings.PauseWhenLocked;
+        _pauseWhenLocked.IsChecked = _host.Settings.PauseWhenLocked;
         void ApplyPauseWhenLocked(object sender, RoutedEventArgs e)
         {
             if (applying) return;
             applying = true;
             _settingsError.Text = "";
-            try { _settings.SetPauseWhenLocked(_pauseWhenLocked.IsChecked == true); }
+            try { _host.Settings.SetPauseWhenLocked(_pauseWhenLocked.IsChecked == true); }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException) { _settingsError.Text = "The setting could not be saved."; }
-            _lockPolicy.Enabled = _settings.PauseWhenLocked;
-            _pauseWhenLocked.IsChecked = _settings.PauseWhenLocked;
+            _host.Policies.LockEnabled = _host.Settings.PauseWhenLocked;
+            _pauseWhenLocked.IsChecked = _host.Settings.PauseWhenLocked;
             applying = false;
         }
         _pauseWhenLocked.Checked += ApplyPauseWhenLocked;
         _pauseWhenLocked.Unchecked += ApplyPauseWhenLocked;
-        _pauseOnMetered.IsChecked = _settings.PauseOnMetered;
+        _pauseOnMetered.IsChecked = _host.Settings.PauseOnMetered;
         void ApplyPauseOnMetered(object sender, RoutedEventArgs e)
         {
             if (applying) return;
             applying = true;
             _settingsError.Text = "";
-            try { _settings.SetPauseOnMetered(_pauseOnMetered.IsChecked == true); }
+            try { _host.Settings.SetPauseOnMetered(_pauseOnMetered.IsChecked == true); }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException) { _settingsError.Text = "The setting could not be saved."; }
-            _meteredPolicy.Enabled = _settings.PauseOnMetered;
-            _pauseOnMetered.IsChecked = _settings.PauseOnMetered;
+            _host.Policies.MeteredEnabled = _host.Settings.PauseOnMetered;
+            _pauseOnMetered.IsChecked = _host.Settings.PauseOnMetered;
             applying = false;
         }
         _pauseOnMetered.Checked += ApplyPauseOnMetered;
@@ -458,117 +344,23 @@ public sealed class MainWindow : Window
         Page("Diagnostics", Card(null, _diagnostics));
     }
 
-    private async Task<LocalIpcClient?> ConnectAsync()
-    {
-        if (_client is not null) return _client;
-        if (_connecting) return null;
-        _connecting = true;
-        try
-        {
-            var name = LocalIpc.PipeName(_stateDirectory);
-            for (var attempt = 0; attempt < 2; attempt++)
-            {
-                try
-                {
-                    var client = await LocalIpcClient.ConnectAsync(name, TimeSpan.FromSeconds(attempt == 0 ? 1 : 10));
-                    client.EventReceived += (eventName, data) => Dispatcher.InvokeAsync(() => OnEvent(eventName, data));
-                    client.Disconnected += () => Dispatcher.InvokeAsync(() => OnAgentGone(client));
-                    _mayStart = false; _stoppedOnPurpose = false; _gaveUp = false;
-                    return _client = client;
-                }
-                catch (Exception e) when (e is TimeoutException or IOException or UnauthorizedAccessException)
-                {
-                    // The agent is launched only when explicitly permitted (see _mayStart), never in an open loop.
-                    if (attempt != 0 || !_mayStart) break;
-                    LogActivity("Starting the agent.");
-                    var launched = await Program.StartAgentAsync(_stateDirectory);
-                    if (Program.StartNote.Length > 0) LogActivity(Program.StartNote);
-                    if (!launched) LogActivity("The agent could not be started.");
-                    _mayStart = false;                    // one attempt per permission, also when it failed: never an open loop
-                    if (!launched) break;
-                }
-            }
-            return null;
-        }
-        finally { _connecting = false; }
-    }
-
-    /// <summary>
-    /// The agent's channel closed. A deliberate stop (Quit here, or the agent announcing "quitting") is respected; an
-    /// unexpected exit is recovered automatically, but only a bounded number of times so a crash loop cannot spin.
-    /// </summary>
-    private void OnAgentGone(LocalIpcClient client)
-    {
-        if (!ReferenceEquals(_client, client)) return;
-        _client = null;
-        if (_quitting || _stoppedOnPurpose) return;
-        if (_restarts.TryConsume())
-        {
-            _mayStart = true;
-            LogActivity($"The agent stopped unexpectedly; restarting it ({_restarts.Used} of {_restarts.MaxRestarts})");
-        }
-        else
-        {
-            _gaveUp = true;
-            LogActivity("The agent keeps stopping; it was not restarted again");
-        }
-        _ = RefreshAsync();
-    }
-
-    private void OnEvent(string name, JsonNode? data)
-    {
-        if (name == "quitting") _stoppedOnPurpose = true;
-        var line = name switch
-        {
-            "connected" => "Connected to the relay",
-            "disconnected" => "Connection to the relay lost; retrying",
-            "paused" => "Remote access paused",
-            "resumed" => "Remote access resumed",
-            "pairing" => "Pairing code created",
-            "pairing_claimed" => $"{data?["browserName"]} asked to pair",
-            "pairing_result" => $"Pairing {data?["state"]}",
-            "roots_changed" => "Shared folders changed",
-            "device_revoked" => "A device's access was removed",
-            "stream_finished" => $"Transfer {data?["outcome"]} ({data?["bytes"]} bytes sent to the relay)",
-            "update_required" => "This version is too old for the service",
-            "quitting" => "The agent was stopped",
-            _ => name,
-        };
-        LogActivity(line);
-        if (name is "pairing_result" or "device_revoked") _tick = 0;
-        if (name == "pairing_claimed" && !IsVisible) Reopen(); // an approval needs the owner's attention
-        _ = RefreshAsync();
-    }
-
     private async Task RunAsync(TextBlock errorTarget, Func<LocalIpcClient, Task> action)
     {
         errorTarget.Text = "";
-        try
-        {
-            var client = await ConnectAsync() ?? throw new IpcException("The OrbitDrive agent is not running.");
-            await action(client);
-        }
-        catch (IpcException e) { errorTarget.Text = e.Message; }
-        catch (TimeoutException) { errorTarget.Text = "The agent did not answer in time."; }
-        await RefreshAsync();
+        var error = await _host.RunAsync(action);
+        if (error is not null) errorTarget.Text = error;
     }
+
 
     private Task AddRootAsync() => RunAsync(_rootError, async client =>
     {
         var path = _rootPath.Text.Trim();
         if (path.Length > 0 && Path.GetPathRoot(path) == path &&
-            MessageBox.Show(this, $"Share the whole drive {path}?\n\nEvery folder on it that your Windows account can read becomes visible to your paired devices.", "Share an entire drive", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+            MessageBox.Show(_owner, $"Share the whole drive {path}?\n\nEvery folder on it that your Windows account can read becomes visible to your paired devices.", "Share an entire drive", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
             return;
         await client.SendAsync("add_root", new JsonObject { ["name"] = _rootName.Text.Trim(), ["path"] = path, ["showHidden"] = _newRootHidden.IsChecked == true });
         _rootName.Text = ""; _rootPath.Text = ""; _newRootHidden.IsChecked = false;
     });
-
-    private Task TogglePauseAsync()
-    {
-        _lockPolicy.OnOwnerChangedPause();
-        _meteredPolicy.OnOwnerChangedPause();
-        return RunAsync(_stateDetail, client => client.SendAsync(_paused ? "resume" : "pause"));
-    }
 
     private static string FormatBytes(long bytes)
     {
@@ -580,34 +372,25 @@ public sealed class MainWindow : Window
 
     private void SetDot(byte r, byte g, byte b) => _stateDot.Fill = new SolidColorBrush(Color.FromRgb(r, g, b));
 
-    private async Task RefreshAsync()
+    private async Task ApplyStatusAsync(JsonObject? status)
     {
-        if (_quitting) return;
-        JsonObject? status = null;
-        try { if (await ConnectAsync() is { } client) { status = await client.SendAsync("status") as JsonObject; _unanswered = 0; } }
-        catch (Exception e) when (e is IpcException or TimeoutException) { if (e is TimeoutException) _unanswered++; }
-        // An agent that accepts the connection but never answers (frozen, or stuck while shutting down) would otherwise stay "connected" for ever, and a
-        // replacement would never be started. Two unanswered checks in a row end that connection; the normal bounded restart path takes over from there.
-        if (_unanswered >= 2 && _client is { } silent)
-        {
-            _unanswered = 0;
-            LogActivity("The agent stopped answering; replacing it.");
-            _ = silent.DisposeAsync().AsTask();
-        }
         if (status is null)
         {
-            (_stateText.Text, _stateDetail.Text) =
-                _gaveUp ? ("Agent keeps stopping", $"OrbitDrive's background agent stopped unexpectedly {_restarts.MaxRestarts + 1} times in a short while, so it was not started again. Nothing is being shared.")
-                : _stoppedOnPurpose ? ("Stopped", "The OrbitDrive agent was stopped. Nothing is being shared until you start it again.")
-                : _mayStart ? ("Starting…", "Starting OrbitDrive's background agent.")
-                : ("Agent not running", "OrbitDrive's background agent is not running. Nothing is being shared.");
+            var connection = _host.Connection;
+            (_stateText.Text, _stateDetail.Text) = connection.Phase switch
+            {
+                AgentPhase.KeepsStopping => ("Agent keeps stopping", $"OrbitDrive's background agent stopped unexpectedly {connection.MaxRestarts + 1} times in a short while, so it was not started again. Nothing is being shared."),
+                AgentPhase.Stopped => ("Stopped", "The OrbitDrive agent was stopped. Nothing is being shared until you start it again."),
+                AgentPhase.Starting => ("Starting…", "Starting OrbitDrive's background agent."),
+                _ => ("Agent not running", "OrbitDrive's background agent is not running. Nothing is being shared."),
+            };
             SetDot(0xC4, 0x2B, 0x1C);
             // Nothing is known while the agent is down: do not leave the last known numbers on screen.
             _summary.Text = "";
             _statFolders.Text = _statTransfers.Text = _statDevices.Text = "–";
             _pause.IsEnabled = false;
             _pause.Visibility = Visibility.Collapsed;
-            _start.Visibility = _mayStart ? Visibility.Collapsed : Visibility.Visible;
+            _start.Visibility = _host.Connection.MayStart ? Visibility.Collapsed : Visibility.Visible;
             return;
         }
         _pause.Visibility = Visibility.Visible;
@@ -683,7 +466,7 @@ public sealed class MainWindow : Window
         {
             try
             {
-                var list = _client is null ? new JsonArray() : (await _client.SendAsync("devices") as JsonArray) ?? new JsonArray();
+                var list = _host.Connection.Client is not { } deviceClient ? new JsonArray() : (await deviceClient.SendAsync("devices") as JsonArray) ?? new JsonArray();
                 var deviceIds = list.Select(d => d!["deviceId"]!.GetValue<string>()).ToList();
                 if (!deviceIds.SequenceEqual(_deviceIds))
                 {
@@ -696,8 +479,8 @@ public sealed class MainWindow : Window
             }
             catch (Exception e) when (e is IpcException or TimeoutException) { }
         }
-        if (_client is not null && _pages.TryGetValue("Activity", out var activityPage) && activityPage.Visibility == Visibility.Visible) await _history.RefreshAsync(_client);
-        if (_client is not null && _pages.TryGetValue("Settings", out var settingsPage) && settingsPage.Visibility == Visibility.Visible) await _thumbnails.RefreshAsync(_client);
+        if (_host.Connection.Client is { } historyClient && CurrentPageName() == "Activity") await _history.RefreshAsync(historyClient);
+        if (_host.Connection.Client is { } thumbnailClient && CurrentPageName() == "Settings") await _thumbnails.RefreshAsync(thumbnailClient);
         var approval = status["pendingApproval"];
         _approvalPanel.Visibility = approval is null ? Visibility.Collapsed : Visibility.Visible;
         _approvalText.Text = approval is null ? "" : $"Account: {approval["accountLabel"]}\nBrowser: {approval["browserName"]}\nCode: {approval["confirmationCode"]}\n\nApprove only if this is you and the same code is shown in your browser.";
@@ -710,20 +493,10 @@ public sealed class MainWindow : Window
             _maxFiles.Text = status["maxConcurrentTransfers"]?.ToString() ?? "4";
         }
 
-        // Network cost: ask Windows now and then (it is a local query, no traffic).
-        if (_ticks++ % 15 == 0)
-        {
-            _networkCost = NetworkCost.Read();
-            var metered = _networkCost is { } cost && OrbitDrive.Core.ConnectionCost.IsMetered(cost);
-            if (metered != _metered)
-            {
-                _metered = metered;
-                if (metered && _meteredPolicy.OnLocked(_paused)) { LogActivity("Metered connection: remote access paused"); _ = RunAsync(_stateDetail, c => c.SendAsync("pause")); }
-                else if (!metered && _meteredPolicy.OnUnlocked(_paused)) { LogActivity("Connection no longer metered: remote access resumed"); _ = RunAsync(_stateDetail, c => c.SendAsync("resume")); }
-            }
-            _meteredWarning.Text = metered ? $"This PC is on a metered connection ({OrbitDrive.Core.ConnectionCost.Describe(_networkCost)}). Files sent to your devices count against its data allowance." : "";
-            _meteredWarning.Visibility = metered ? Visibility.Visible : Visibility.Collapsed;
-        }
+        // Network cost: the host asks Windows now and then (a local query, no traffic); this only shows the result.
+        var metered = _host.Policies.IsMetered;
+        _meteredWarning.Text = metered ? $"This PC is on a metered connection ({OrbitDrive.Core.ConnectionCost.Describe(_host.Policies.CostFlags)}). Files sent to your devices count against its data allowance." : "";
+        _meteredWarning.Visibility = metered ? Visibility.Visible : Visibility.Collapsed;
 
         var recent = status["transfers"] as JsonArray ?? [];
         var recentCount = recent.Count;
@@ -751,10 +524,10 @@ public sealed class MainWindow : Window
             }
         }
         if (!_gateway.IsKeyboardFocused && _gateway.Text.Length == 0) _gateway.Text = status["gateway"]?.GetValue<string>() ?? "";
-        _diagnostics.Text = $"PC id: {status["pcId"]}\nAgent version: {status["agentVersion"]}\nRelay: {status["gateway"] ?? "(not set)"}\nState folder: {_stateDirectory}\n" +
+        _diagnostics.Text = $"PC id: {status["pcId"]}\nAgent version: {status["agentVersion"]}\nRelay: {status["gateway"] ?? "(not set)"}\nState folder: {_host.StateDirectory}\n" +
                             $"{RuntimeInformation.OSDescription} · {RuntimeInformation.ProcessArchitecture} · {RuntimeInformation.FrameworkDescription}\nRunning elevated: {Environment.IsPrivilegedProcess}\n" +
-                            $"Network cost: {OrbitDrive.Core.ConnectionCost.Describe(_networkCost)}{(_networkCost is { } raw ? $" (0x{raw:X})" : "")}\n" +
-                            $"Theme: {Program.ThemeChoice}{(SystemParameters.HighContrast ? " (Windows high contrast is on)" : "")}\nAutomatic agent restarts used: {_restarts.Used} of {_restarts.MaxRestarts} (per 10 minutes)";
+                            $"Network cost: {OrbitDrive.Core.ConnectionCost.Describe(_host.Policies.CostFlags)}{(_host.Policies.CostFlags is { } raw ? $" (0x{raw:X})" : "")}\n" +
+                            $"Theme: {Program.ThemeChoice}{(SystemParameters.HighContrast ? " (Windows high contrast is on)" : "")}\nAutomatic agent restarts used: {_host.Connection.RestartsUsed} of {_host.Connection.MaxRestarts} (per 10 minutes)";
     }
 
     /// <summary>Draws the pairing link as a QR code with the 4-module quiet zone scanners need.</summary>
@@ -769,25 +542,5 @@ public sealed class MainWindow : Window
             for (var x = 0; x < qr.Size; x++)
                 if (qr[x, y]) pixels[(y + quiet) * side + x + quiet] = 0;
         return System.Windows.Media.Imaging.BitmapSource.Create(side, side, 96, 96, PixelFormats.Gray8, null, pixels, side);
-    }
-
-    internal void Reopen() { Show(); WindowState = WindowState.Normal; Activate(); }
-
-    protected override void OnClosing(CancelEventArgs e)
-    {
-        if (!_quitting) { e.Cancel = true; Hide(); } // keep serving from the notification area
-        base.OnClosing(e);
-    }
-
-    private async Task QuitAsync()
-    {
-        if (_quitting) return;
-        _quitting = true;
-        _timer.Stop();
-        Microsoft.Win32.SystemEvents.SessionSwitch -= OnSessionSwitch;
-        try { if (_client is not null) await _client.SendAsync("quit"); } catch (Exception e) when (e is IpcException or TimeoutException) { }
-        _tray.Visible = false;
-        _tray.Dispose();
-        Application.Current.Shutdown();
     }
 }

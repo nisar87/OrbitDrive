@@ -13,9 +13,9 @@ namespace OrbitDrive.Desktop;
 internal sealed class ThumbnailPanel
 {
     private readonly CheckBox _enabled = new() { Content = "Show small previews of pictures to my paired devices", Margin = new Thickness(0, 4, 0, 4) };
-    private readonly TextBlock _status = MainWindow.MakeText("ThumbnailStatus", "", 13, FontWeights.Normal, MainWindow.Muted);
-    private readonly TextBlock _error = MainWindow.MakeText("ThumbnailError", "", 13, FontWeights.Normal, MainWindow.Danger);
-    private readonly Button _clear = MainWindow.MakeButton("ClearThumbnailsButton", "Delete stored previews");
+    private readonly TextBlock _status = LegacyConsole.MakeText("ThumbnailStatus", "", 13, FontWeights.Normal, LegacyConsole.Muted);
+    private readonly TextBlock _error = LegacyConsole.MakeText("ThumbnailError", "", 13, FontWeights.Normal, LegacyConsole.Danger);
+    private readonly Button _clear = LegacyConsole.MakeButton("ClearThumbnailsButton", "Delete stored previews");
     private readonly Func<TextBlock, Func<LocalIpcClient, Task>, Task> _run;
     private bool _applying;
     private string _shown = "";
@@ -36,7 +36,7 @@ internal sealed class ThumbnailPanel
         }
         _enabled.Checked += Changed; _enabled.Unchecked += Changed;
         _clear.Click += (_, _) => _ = _run(_error, async c => Apply(await c.SendAsync("clear_thumbnails") as JsonObject));
-        Card = MainWindow.Card("Picture previews", _enabled, _status, _clear, _error);
+        Card = LegacyConsole.Card("Picture previews", _enabled, _status, _clear, _error);
     }
 
     /// <summary>Called with a live connection while Settings is on screen.</summary>

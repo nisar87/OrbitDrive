@@ -1,0 +1,64 @@
+<!-- Design tokens: the ONLY place sizes, radii, type and status colours are chosen. Pages and components refer to these by key; no page hardcodes a colour or a size.
+     Colours come from the Windows 11 Fluent theme (system accent, light/dark/high contrast follow Windows); only the status tints are composed here, from Fluent's own colours. -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <!-- Type: Segoe UI Variable, Segoe Fluent Icons. -->
+    <FontFamily x:Key="Font.Text">Segoe UI Variable Text, Segoe UI</FontFamily>
+    <FontFamily x:Key="Font.Display">Segoe UI Variable Display, Segoe UI</FontFamily>
+    <FontFamily x:Key="Font.Icons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+    <sys:Double x:Key="FontSize.Caption">12</sys:Double>
+    <sys:Double x:Key="FontSize.Small">13</sys:Double>
+    <sys:Double x:Key="FontSize.Body">14</sys:Double>
+    <sys:Double x:Key="FontSize.Lead">16</sys:Double>
+    <sys:Double x:Key="FontSize.Subtitle">20</sys:Double>
+    <sys:Double x:Key="FontSize.Title">28</sys:Double>
+    <sys:Double x:Key="FontSize.Stat">32</sys:Double>
+    <sys:Double x:Key="FontSize.Icon">16</sys:Double>
+
+    <!-- Spacing (4 px grid). -->
+    <sys:Double x:Key="Space.XS">4</sys:Double>
+    <sys:Double x:Key="Space.S">8</sys:Double>
+    <sys:Double x:Key="Space.M">12</sys:Double>
+    <sys:Double x:Key="Space.L">16</sys:Double>
+    <sys:Double x:Key="Space.XL">24</sys:Double>
+    <sys:Double x:Key="Space.XXL">32</sys:Double>
+    <Thickness x:Key="Inset.Page">32,24,32,24</Thickness>
+    <Thickness x:Key="Inset.PageCompact">16,16,16,16</Thickness>
+    <Thickness x:Key="Inset.Card">20,16,20,16</Thickness>
+    <Thickness x:Key="Inset.Pill">10,4,10,4</Thickness>
+    <Thickness x:Key="Inset.Button">16,7,16,7</Thickness>
+    <Thickness x:Key="Gap.Section">0,0,0,16</Thickness>
+    <Thickness x:Key="Gap.Row">0,0,0,8</Thickness>
+    <Thickness x:Key="Gap.Inline">0,0,8,0</Thickness>
+
+    <!-- Shape and layout. -->
+    <CornerRadius x:Key="Radius.Control">4</CornerRadius>
+    <CornerRadius x:Key="Radius.Card">8</CornerRadius>
+    <CornerRadius x:Key="Radius.Pill">12</CornerRadius>
+    <sys:Double x:Key="Nav.Width">216</sys:Double>
+    <sys:Double x:Key="Nav.WidthCompact">56</sys:Double>
+    <sys:Double x:Key="Size.TouchTarget">34</sys:Double>
+    <sys:Double x:Key="Page.MaxWidth">860</sys:Double>
+
+    <!-- Motion. Components check SystemParameters.ClientAreaAnimation, so nothing animates when Windows "Animation effects" is off. -->
+    <Duration x:Key="Motion.Fast">0:0:0.15</Duration>
+    <Duration x:Key="Motion.Normal">0:0:0.25</Duration>
+
+    <!-- Secondary text. The theme's own secondary brush measured about 3.2:1 on cards in real light-theme screenshots (below the 4.5:1 AA needs for small text),
+         so secondary text is the primary colour at reduced opacity (about 5.5:1 light, 7:1 dark). Windows high contrast uses full strength (Style.Text.Muted). -->
+    <SolidColorBrush x:Key="Brush.Text.Muted" Color="{DynamicResource TextFillColorPrimary}" Opacity="0.74"/>
+
+    <!-- Status colours: Fluent's system fills. Every status is ALSO carried by a glyph and a word; colour is never the only signal. -->
+    <SolidColorBrush x:Key="Brush.Status.Good" Color="{DynamicResource SystemFillColorSuccess}"/>
+    <SolidColorBrush x:Key="Brush.Status.Warning" Color="{DynamicResource SystemFillColorCaution}"/>
+    <SolidColorBrush x:Key="Brush.Status.Critical" Color="{DynamicResource SystemFillColorCritical}"/>
+    <SolidColorBrush x:Key="Brush.Status.Neutral" Color="{DynamicResource SystemFillColorNeutral}"/>
+    <SolidColorBrush x:Key="Brush.Status.Info" Color="{DynamicResource SystemAccentColor}"/>
+    <SolidColorBrush x:Key="Brush.Status.Good.Soft" Color="{DynamicResource SystemFillColorSuccess}" Opacity="0.14"/>
+    <SolidColorBrush x:Key="Brush.Status.Warning.Soft" Color="{DynamicResource SystemFillColorCaution}" Opacity="0.18"/>
+    <SolidColorBrush x:Key="Brush.Status.Critical.Soft" Color="{DynamicResource SystemFillColorCritical}" Opacity="0.14"/>
+    <SolidColorBrush x:Key="Brush.Status.Neutral.Soft" Color="{DynamicResource SystemFillColorNeutral}" Opacity="0.14"/>
+    <SolidColorBrush x:Key="Brush.Status.Info.Soft" Color="{DynamicResource SystemAccentColor}" Opacity="0.14"/>
+</ResourceDictionary>

@@ -37,6 +37,8 @@ public static class Program
 #pragma warning disable WPF0001 // Fluent theme switching is marked experimental in this SDK; it follows Windows light/dark/high-contrast.
         app.ThemeMode = theme switch { "light" => ThemeMode.Light, "dark" => ThemeMode.Dark, _ => ThemeMode.System };
 #pragma warning restore WPF0001
+        // Design tokens and shared component styles (Components.xaml merges Tokens.xaml). Added after the Fluent theme so both are in place before any window.
+        app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("pack://application:,,,/OrbitDrive;component/Theme/Components.xaml", UriKind.Absolute) });
         ThemeChoice = theme switch { "light" => "Light", "dark" => "Dark", _ => "System" };
 
         var window = new MainWindow(stateDirectory);
