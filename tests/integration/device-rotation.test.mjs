@@ -20,7 +20,7 @@ after(async () => { await agent?.stop(); await gateway?.stop(); });
 const call = (browser, secret) => fetch(`${gateway.url}/v1/pcs`, { headers: { authorization: `Bearer ${browser.token}`, 'x-orbitdrive-device': `${browser.device.id}.${secret}` } });
 
 test('a secret past its age is replaced once, the new one works, the old one only for the grace window', { timeout: 60_000 }, async () => {
-  const phone = await new Browser(gateway, 'rotate@example.test').signIn();
+  const phone = await new Browser(gateway, 'owner@example.test').signIn();
   await pair(agent, phone, 'Phone');
   const first = phone.device.secret;
   assert.equal((await call(phone, first)).headers.get('x-orbitdrive-device-rotated'), null, 'not due yet');
@@ -41,8 +41,8 @@ test('a secret past its age is replaced once, the new one works, the old one onl
 });
 
 test('an approval that is not used lapses and the browser must pair again; use keeps it alive', { timeout: 60_000 }, async () => {
-  const idle = await new Browser(gateway, 'idle@example.test').signIn();
-  const busy = await new Browser(gateway, 'busy@example.test').signIn();
+  const idle = await new Browser(gateway, 'owner@example.test').signIn();
+  const busy = await new Browser(gateway, 'owner@example.test').signIn();
   await pair(agent, idle, 'Idle phone');
   await pair(agent, busy, 'Busy phone');
   let busySecret = busy.device.secret;
@@ -58,5 +58,7 @@ test('an approval that is not used lapses and the browser must pair again; use k
   assert.match((await lapsed.json()).error.message, /not been used for a long time|not approved/);
   const account = await fetch(`${gateway.url}/v1/account`, { headers: { authorization: `Bearer ${busy.token}`, 'x-orbitdrive-device': `${busy.device.id}.${busySecret}` } });
   assert.equal(account.status, 200);
-  // (the two phones belong to different accounts, so the idle one is not listed for the busy one either way; the lapse itself is the 403 above)
+  const names = (await account.json()).devices.map((d) => d.name);
+  assert.ok(names.includes('Busy phone'), 'the used approval is listed');
+  assert.ok(!names.includes('Idle phone'), 'the lapsed approval is no longer listed');
 });
