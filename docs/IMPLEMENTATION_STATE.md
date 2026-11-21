@@ -87,12 +87,12 @@ Latest (2026-11-21): Firebase account-status check built and published in relay 
 ## Known gaps in what exists
 
 - Gateway registrations/grants persist only when `OrbitDrive:DataDirectory` is set. The live relay has it enabled since 2026-11-17 (owner re-ran the bootstrap; directory present, still empty). Pending pairings and download capabilities never survive a restart (by design).
-- Device credential and dev token live in `localStorage`; no CSP yet.
+- Device credential and dev token live in `localStorage` (the CSP and security headers are set from one builder, W11).
 - Same-size rewrite that restores the timestamp between prepare and read is not detected.
 - Agent-side busy limits: burst test added (`busy.test.mjs`, 2026-11-20); the 4-stream cap is in `transfers.test.mjs`.
 - Hard-link refusal is Windows-only; root volume-identity binding not implemented.
 - Relay Dockerfile and firebase.json are unvalidated drafts.
-- Console screenshots (9 per run) exist as CI artifacts but have not been visually reviewed by anyone.
+- Console screenshots are CI-run (Windows Server) captures; the owner reviewed the redesigned set on 2026-11-21. Windows 11 behaviour (Mica, DPI, high contrast, lock/unlock, real toasts) is still the owner's to test.
 - The local channel relies on the OS same-user pipe restriction. A second-Windows-user denial test now runs in CI (2026-11-20, `scripts/second-user-pipe-test.ps1`, real throwaway local account on windows-2025: refused with access denied). It does not cover a user in a remote or elevated session on a real PC.
 
 Latest (2026-11-21): browser-device secrets now rotate (30 days, old valid 24 h) and unused approvals lapse (90 days); durable in file and Firestore stores; tests in `DeviceCredentialTests`, `device-rotation.test.mjs`, web vitests. Relay release follows the merge to `main`. See `docs/evidence/phase-evidence.md`.
@@ -105,7 +105,7 @@ Blocked on the owner (cannot be done from the build environment):
   `ORBIT_TEST_EMAIL`, `ORBIT_TEST_PASSWORD`, `ORBIT_FIREBASE_WEB_API_KEY`. Unblocks claim → browse → transfer through the
   live relay in `live-relay.test.mjs` (today it stops at pairing-code issuance) and the first real sign-in.
 - Windows 11 standard-user machine (Explorer modern menu, install, lifecycle, DPI), physical Android/iPhone, a
-  code-signing identity, a service-account key (Firestore, FCM, token revocation), review of the console screenshots.
+  code-signing identity, a service-account key (Firestore, FCM, token revocation).
 
 Not blocked, in order:
 1. W3/D3 remainder: Firestore when credentials exist. (Durable store, leases, fault suite and ADR-1 done; **idempotency keys for retried "start work" requests done** — see phase evidence, 2026-11-19.)
@@ -135,7 +135,7 @@ gh api "repos/nisar87/OrbitDrive/actions/runs?per_page=10" --jq '.workflow_runs[
 Toolchain: .NET SDK 10.0.x (CI 10.0.404), Node 22, Playwright 1.65, TypeScript 7, Vite 8, React 19.
 
 
-## Console redesign (branch `feature/console-redesign`, not merged)
+## Console redesign (merged to `main` 2026-11-21; released as desktop 0.1.13)
 - Done and green in CI (7db0537): shell + tokens + shared components; Home, Shared folders, Devices, Activity, Settings (all XAML + view models). Design doc: `docs/design/console-redesign.md`; screenshots: `docs/evidence/screenshots/console-redesign/`.
-- Next: toasts (Deny + Review only, tray-balloon fallback), tray flyout, rebuild the update panel as XAML, accessibility checks on Windows 11 (owner).
-- No merge until desktop-ui is green and the owner has seen the screenshots.
+- Toasts done and green (0808bef): Deny + Review only (never Approve), plain finished-transfer notice, tray-balloon fallback; notice rules unit-tested in Core. File-type icons in the web explorer (cae9a4a).
+- Next: tray flyout, rebuild the update panel as XAML, accessibility checks on Windows 11 (owner).
