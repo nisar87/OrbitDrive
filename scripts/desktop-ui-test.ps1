@@ -41,6 +41,8 @@ function Nav([string]$page) {
     Start-Sleep -Milliseconds 400
 }
 function ListItems([string]$id) {
+    # The shared-folders list is replaced by an empty-state message while nothing is shared, so it is simply absent then: zero items.
+    if ($id -eq 'RootsList' -and -not (Exists 'RootsList')) { return @() }
     $condition = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::ListItem)
     @((Find $id).FindAll($Scope::Descendants, $condition) | ForEach-Object { $_.Current.Name })
 }
