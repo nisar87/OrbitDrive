@@ -133,3 +133,9 @@ gh api "repos/nisar87/OrbitDrive/actions/runs?per_page=10" --jq '.workflow_runs[
 ```
 
 Toolchain: .NET SDK 10.0.x (CI 10.0.404), Node 22, Playwright 1.65, TypeScript 7, Vite 8, React 19.
+
+
+## Console redesign (branch `feature/console-redesign`, not merged)
+- Done and green in CI: shell + tokens + shared components; Home page (SHA 8f87b51).
+- Next: Folders, Devices, Activity, Settings (one at a time), then toasts, tray flyout, accessibility review, design doc. LegacyConsole.cs holds the pages not yet rebuilt.
+- No merge until desktop-ui is green and the owner has seen the screenshots.

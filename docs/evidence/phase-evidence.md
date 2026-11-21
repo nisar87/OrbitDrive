@@ -609,3 +609,12 @@ Published (c0824ac, eight workflows green incl. release-candidate): `main` fast-
 - Web client adopts a replacement only for its own device id and at least 16 characters, saves it, and reads the newest stored secret per request.
 - Evidence: SHA af95443: gateway, contracts, security, desktop, desktop-ui, integration green. Integration includes both new real-process tests. (first push 88524b7 failed integration on my own test bug: two accounts for one PC; fixed, not weakened.)
 - Not evidence: no real phone/Windows browser run; hardware-bound browser keys are not built.
+
+## Console redesign — step 2: Home page (branch `feature/console-redesign`, SHA 8f87b51)
+
+- Home (XAML + `HomePageViewModel`) replaces Overview: status headline with the single fixing button, attention bars (pairing request with Review, update, metered), get-started card (only open steps), folder/device tiles, live transfers, newest activity (kinds, counts, sizes only; no device, no paths).
+- CI: `desktop` and `desktop-ui` (windows-2025) green for this SHA; 105 UI Automation checks passed, including new Home checks (get-started card, Review button on a pending approval, recent activity wording, no file paths).
+- Found and fixed in CI: `SolidColorBrush` entries with a `DynamicResource` Color in `Tokens.xaml` crash WPF when first used (the shell never used them). Status colours now use Fluent's brush keys; muted text keeps its measured contrast via token opacity. The console also writes `console-crash.log` next to the agent state, and the UI test prints it if the window never appears.
+- Test wording changed with the product copy (e.g. "Online" → "Sharing is on"); assertions are unchanged in meaning. Two of my own new checks were wrong first (Border has no UIA peer; first-run state) and were corrected, not weakened.
+- Screenshots (windows-2025 runner, NOT Windows 11, so no Mica evidence): `docs/evidence/screenshots/console-redesign/home/`.
+- Unverified: Mica backdrop, DPI 100-200 %, high contrast, lock/unlock (owner checklist).
