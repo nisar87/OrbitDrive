@@ -146,7 +146,7 @@ try {
     [void](WaitText 'StateText' '^Sharing is on$')
     Check $true 'console shows "Sharing is on" once the agent reaches the relay'
     Shot 'home-online'
-    Check ((Exists 'GetStartedCard') -and (Exists 'GetStartedShareButton') -and (Exists 'GetStartedPairLaterButton') -and -not (Exists 'GetStartedPairButton')) 'a fresh Home offers sharing a folder first, and pairing as the secondary step'
+    Check ((Exists 'GetStartedTitle') -and -not (Exists 'GetStartedShareButton') -and (Exists 'GetStartedPairButton') -and -not (Exists 'GetStartedPairLaterButton')) 'Home shows the get-started card with only the open step (the folder is shared, no device is paired yet)'
 
     Nav 'Devices'
     Click 'PairButton'
@@ -218,8 +218,8 @@ try {
     for ($i = 0; $i -lt 40 -and $recent -notmatch 'A file was sent to a browser'; $i++) { Start-Sleep -Milliseconds 500; $recent = (@(TextsUnder 'HomeRecentList') -join "`n") }
     Check ($recent -match 'A file was sent to a browser' -and $recent -match 'Shared folders changed') 'Home lists the newest activity in plain words'
     Check ($recent -notmatch '[A-Za-z]:\\') 'Home shows no file system paths'
-    for ($i = 0; $i -lt 40 -and (Exists 'GetStartedCard'); $i++) { Start-Sleep -Milliseconds 500 }
-    Check (-not (Exists 'GetStartedCard')) 'the get-started card is gone once a folder is shared and a device is paired'
+    for ($i = 0; $i -lt 40 -and (Exists 'GetStartedTitle'); $i++) { Start-Sleep -Milliseconds 500 }
+    Check (-not (Exists 'GetStartedTitle')) 'the get-started card is gone once a folder is shared and a device is paired'
     Shot 'home-recent'
     Nav 'Activity'
     Check (@(ListItems 'ActivityList').Count -ge 4) 'activity history recorded the session'

@@ -65,10 +65,9 @@
                    Visibility="{Binding ShowMetered, Converter={StaticResource BoolToVisibility}}"/>
 
         <!-- 2. First run: a folder shared and a device paired, in that order. Shown only while a step is open. -->
-        <Border Style="{StaticResource Style.Card}" Visibility="{Binding ShowGetStarted, Converter={StaticResource BoolToVisibility}}"
-                AutomationProperties.AutomationId="GetStartedCard" AutomationProperties.Name="Get started">
+        <Border Style="{StaticResource Style.Card}" Visibility="{Binding ShowGetStarted, Converter={StaticResource BoolToVisibility}}">
             <StackPanel>
-                <TextBlock Text="Get started" Style="{StaticResource Style.Text.Section}" Margin="0,0,0,2"/>
+                <TextBlock Text="Get started" Style="{StaticResource Style.Text.Section}" Margin="0,0,0,2" AutomationProperties.AutomationId="GetStartedTitle"/>
                 <TextBlock Text="Two steps, about a minute, and your phone can open your files." Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,14"/>
                 <Grid Margin="0,0,0,12">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -121,7 +120,7 @@
         </UniformGrid>
 
         <!-- 4. Live transfers, only while something is being sent. -->
-        <Border Style="{StaticResource Style.Card}" Visibility="{Binding HasActiveTransfers, Converter={StaticResource BoolToVisibility}}" AutomationProperties.AutomationId="SendingNowCard">
+        <Border Style="{StaticResource Style.Card}" Visibility="{Binding HasActiveTransfers, Converter={StaticResource BoolToVisibility}}">
             <StackPanel>
                 <TextBlock Text="Sending now" Style="{StaticResource Style.Text.Section}"/>
                 <ItemsControl ItemsSource="{Binding ActiveTransfers}" Focusable="False" AutomationProperties.AutomationId="SendingNowList">
