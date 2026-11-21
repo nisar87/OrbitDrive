@@ -35,7 +35,9 @@ function Click([string]$id) { (Find $id).GetCurrentPattern([System.Windows.Autom
 function SetText([string]$id, [string]$value) { (Find $id).GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($value) }
 # Answers the Yes/No confirmation a destructive action shows (a modal message box owned by the console).
 function ConfirmYes {
-    $yes = New-Object System.Windows.Automation.PropertyCondition($AE::NameProperty, 'Yes')
+    $yes = New-Object System.Windows.Automation.AndCondition(
+        (New-Object System.Windows.Automation.PropertyCondition($AE::NameProperty, 'Yes')),
+        (New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)))
     for ($i = 0; $i -lt 50; $i++) {
         foreach ($w in $AE::RootElement.FindAll($Scope::Children, (New-Object System.Windows.Automation.PropertyCondition($AE::ProcessIdProperty, $script:win.Current.ProcessId)))) {
             $b = $w.FindFirst($Scope::Descendants, $yes)
