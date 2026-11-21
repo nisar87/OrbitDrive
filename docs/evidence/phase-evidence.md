@@ -601,3 +601,11 @@ Published (c0824ac, eight workflows green incl. release-candidate): `main` fast-
 - Fix (309e0f0): `defaults.json` carries `supersedes` (addresses earlier releases shipped); the agent moves a stored relay/web address to the new default only when it equals one of those. Owner-chosen addresses are never changed; the scanner's origin check is unchanged.
 - Evidence: `tests/integration/defaults-migration.test.mjs` (real agent processes: migrates, idempotent, owner address untouched, partial case, missing/invalid defaults change nothing), Core unit test for bounded parsing, validator test. All seven workflows green on 309e0f0; `desktop-release` published 0.1.10 (verify-feed ok).
 - Not yet verified: on the owner's real PC and phone (needs Update now, then a fresh QR).
+
+## Browser-device credential lifetime (plan line 424; R06)
+- Before: a browser's device secret was random, stored hashed, and never expired or changed.
+- Now: `DeviceRotateDays` (30), `DeviceRotationGraceMinutes` (1440), `DeviceIdleDays` (90), all validated options. A request authorised with a secret older than the rotation age gets a replacement once in `X-OrbitDrive-Device-Rotated` (exposed through CORS); the previous secret works for the grace window only. A browser still on the previous secret is deliberately given nothing new (that would invalidate the sibling tab's secret); if the single answer carrying a replacement is lost, the browser pairs again after the grace window. An approval unused for the idle limit lapses (checked after the secret, so a guesser learns nothing).
+- Clocks are durable in the file store and in Firestore; older snapshots lack them and start their clocks at load (no one is locked out by the upgrade). `LastUsedAt` is written at most hourly (or a quarter of the idle limit if shorter) so use does not mean a write per request.
+- Web client adopts a replacement only for its own device id and at least 16 characters, saves it, and reads the newest stored secret per request.
+- Evidence: SHA af95443: gateway, contracts, security, desktop, desktop-ui, integration green. Integration includes both new real-process tests. (first push 88524b7 failed integration on my own test bug: two accounts for one PC; fixed, not weakened.)
+- Not evidence: no real phone/Windows browser run; hardware-bound browser keys are not built.

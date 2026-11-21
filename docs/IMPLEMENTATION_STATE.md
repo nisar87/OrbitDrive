@@ -95,6 +95,8 @@ Latest (2026-11-21): Firebase account-status check built and published in relay 
 - Console screenshots (9 per run) exist as CI artifacts but have not been visually reviewed by anyone.
 - The local channel relies on the OS same-user pipe restriction. A second-Windows-user denial test now runs in CI (2026-11-20, `scripts/second-user-pipe-test.ps1`, real throwaway local account on windows-2025: refused with access denied). It does not cover a user in a remote or elevated session on a real PC.
 
+Latest (2026-11-21): browser-device secrets now rotate (30 days, old valid 24 h) and unused approvals lapse (90 days); durable in file and Firestore stores; tests in `DeviceCredentialTests`, `device-rotation.test.mjs`, web vitests. Relay release follows the merge to `main`. See `docs/evidence/phase-evidence.md`.
+
 ## Next steps (dependency order) — what is still unfinished
 
 Blocked on the owner (cannot be done from the build environment):
