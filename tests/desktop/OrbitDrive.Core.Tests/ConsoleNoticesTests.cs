@@ -68,7 +68,7 @@ public sealed class ConsoleNoticesTests
     {
         var tracker = Tracker();
         Assert.Empty(tracker.Observe("123456", "Pixel 9", [("a;1", "sending")]));
-        Assert.Empty(tracker.Observe("123456", "Pixel 9", [("a;1", "sent_to_relay")]).Where(n => n.Kind == NoticeKind.PairingRequest));   // same request, already known
+        Assert.DoesNotContain(tracker.Observe("123456", "Pixel 9", [("a;1", "sent_to_relay")]), n => n.Kind == NoticeKind.PairingRequest);   // same request, already known
     }
 
     [Fact]
