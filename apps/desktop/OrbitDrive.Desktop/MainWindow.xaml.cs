@@ -16,6 +16,7 @@ public sealed partial class MainWindow : Window
     private readonly ConsoleHost _host;
     private readonly ShellViewModel _shell;
     private readonly TrayService _tray;
+    private readonly NotificationService _notices;
     private bool _quitting;
 
     public MainWindow(string stateDirectory)
@@ -50,10 +51,12 @@ public sealed partial class MainWindow : Window
         Loaded += (_, _) => (Nav.ItemContainerGenerator.ContainerFromIndex(Nav.SelectedIndex) as ListBoxItem)?.Focus();
 
         _tray = new TrayService(Reopen, () => _ = _host.TogglePauseAsync(), () => _ = _host.QuitAsync());
-        _host.AttentionNeeded += () => { if (!IsVisible) Reopen(); };   // an approval needs the owner's attention
+        // A request to connect reaches the owner as a notification (toast, or a tray balloon) rather than a window that pops up by itself.
+        _notices = new NotificationService(_host, Dispatcher, _tray, () => IsVisible && IsActive && WindowState != WindowState.Minimized, Review);
         _host.Quit += () =>
         {
             _quitting = true;
+            _notices.Dispose();
             _tray.Dispose();
             Application.Current.Shutdown();
         };
@@ -74,6 +77,8 @@ public sealed partial class MainWindow : Window
 
     private bool Confirm(string title, string message) =>
         MessageBox.Show(this, message, title, MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
+
+    private void Review(string page) { Reopen(); _shell.GoTo(page); }
 
     internal void Reopen() { Show(); WindowState = WindowState.Normal; Activate(); }
 

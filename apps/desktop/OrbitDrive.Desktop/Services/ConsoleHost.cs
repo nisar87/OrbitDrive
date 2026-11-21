@@ -44,8 +44,6 @@ internal sealed class ConsoleHost
     public event Action<string>? Note;
     /// <summary>An agent event (after the console has already logged it).</summary>
     public event Action<string, JsonNode?>? AgentEvent;
-    /// <summary>The owner's attention is needed (a browser is asking to pair): bring the window forward if it is hidden.</summary>
-    public event Action? AttentionNeeded;
     /// <summary>Quit finished stopping the agent; the shell closes the tray icon and ends the process.</summary>
     public event Action? Quit;
 
@@ -110,7 +108,6 @@ internal sealed class ConsoleHost
         Log(line);
         if (name is "pairing_result" or "device_revoked") _deviceTick = 0;
         AgentEvent?.Invoke(name, data);
-        if (name == "pairing_claimed") AttentionNeeded?.Invoke();
         _ = RefreshAsync();
     }
 
