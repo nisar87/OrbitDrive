@@ -12,6 +12,9 @@
         <DataTemplate DataType="{x:Type vm:HomePageViewModel}">
             <views:HomePage/>
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:FoldersPageViewModel}">
+            <views:FoldersPage/>
+        </DataTemplate>
         <!-- TRANSITIONAL: a page not yet rebuilt is shown as it was. -->
         <DataTemplate DataType="{x:Type vm:LegacyPageViewModel}">
             <ContentPresenter Content="{Binding View}"/>

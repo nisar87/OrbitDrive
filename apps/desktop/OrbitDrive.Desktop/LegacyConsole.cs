@@ -26,7 +26,6 @@ internal sealed class LegacyConsole
     internal const string Danger = "SystemFillColorCriticalBrush";
 
     private readonly ConsoleHost _host;
-    private readonly Window _owner;
     private readonly Dictionary<string, FrameworkElement> _pages = [];
     /// <summary>The shell tells this which page is on screen, so Activity and Settings are refreshed only while visible.</summary>
     public Func<string?> CurrentPageName { get; set; } = () => null;
@@ -39,10 +38,7 @@ internal sealed class LegacyConsole
     private string _limitsShown = "";
     private readonly CheckBox _pauseWhenLocked = new() { Content = "Pause remote access while this PC is locked", Margin = new Thickness(0, 4, 0, 4) };
 
-    private readonly ListBox _roots = new() { MinHeight = 120, Margin = new Thickness(0, 8, 0, 8) };
-    private readonly TextBlock _rootsEmpty = MakeText("RootsEmpty", "Nothing is shared. Your files stay private until you add a folder here.", 13, FontWeights.Normal, Muted);
-    private readonly TextBox _rootName = MakeBox("RootName"), _rootPath = MakeBox("RootPath"), _gateway = MakeBox("GatewayBox"), _webOrigin = MakeBox("WebOriginBox");
-    private readonly TextBlock _rootError = MakeText("RootError", "", 13, FontWeights.Normal, Danger);
+    private readonly TextBox _gateway = MakeBox("GatewayBox"), _webOrigin = MakeBox("WebOriginBox");
     private readonly TextBlock _pairCode = MakeText("PairCode", "", 26, FontWeights.SemiBold);
     private readonly TextBox _pairLink = new() { IsReadOnly = true, BorderThickness = new Thickness(0), Background = Brushes.Transparent, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _pairHelp = MakeText("PairHelp", "", 13, FontWeights.Normal, Muted);
@@ -58,13 +54,8 @@ internal sealed class LegacyConsole
     private readonly Image _pairQr = new() { Width = 220, Height = 220, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 8), Visibility = Visibility.Collapsed };
     private readonly ListBox _devices = new() { MinHeight = 80, Margin = new Thickness(0, 8, 0, 8) };
     private readonly TextBlock _devicesEmpty = MakeText("DevicesEmpty", "No phone or browser is paired with this PC.", 13, FontWeights.Normal, Muted);
-    private List<string> _rootIds = [];
-    private List<bool> _rootHidden = [];
-    private List<bool> _rootUploads = [];
     private readonly ListBox _transferList = new() { MinHeight = 0, Margin = new Thickness(0, 4, 0, 8) };
     private string _transfersShown = "";
-    private string _rootsShown = "";
-    private readonly CheckBox _newRootHidden = new() { Content = "Also show hidden files and folders from this folder", Margin = new Thickness(0, 0, 0, 6) };
     private List<string> _deviceIds = [];
     private string _qrFor = "";
     private int _tick;
@@ -76,13 +67,9 @@ internal sealed class LegacyConsole
     public LegacyConsole(ConsoleHost host, Window owner)
     {
         _host = host;
-        _owner = owner;
         AutomationProperties.SetAutomationId(_startAtSignIn, "StartAtSignIn");
         AutomationProperties.SetAutomationId(_pauseWhenLocked, "PauseWhenLocked");
         AutomationProperties.SetAutomationId(_pauseOnMetered, "PauseOnMetered");
-        AutomationProperties.SetAutomationId(_roots, "RootsList");
-        ScrollViewer.SetHorizontalScrollBarVisibility(_roots, ScrollBarVisibility.Disabled);   // long paths wrap instead of scrolling sideways
-        _roots.MinHeight = 0;
         AutomationProperties.SetAutomationId(_activity, "ActivityList");
         AutomationProperties.SetAutomationId(_pairLink, "PairLink");
         AutomationProperties.SetAutomationId(_pairQr, "PairQr");
@@ -168,42 +155,6 @@ internal sealed class LegacyConsole
         _thumbnails = new ThumbnailPanel(RunAsync);
         var quit = MakeButton("QuitButton", "Quit OrbitDrive");
         quit.Click += (_, _) => _ = _host.QuitAsync();
-        var browse = MakeButton("BrowseButton", "Browse…");
-        browse.Click += (_, _) =>
-        {
-            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choose a folder to share (read-only)" };
-            if (dialog.ShowDialog(_owner) == true) { _rootPath.Text = dialog.FolderName; if (_rootName.Text.Length == 0) _rootName.Text = Path.GetFileName(dialog.FolderName.TrimEnd('\\')); }
-        };
-        var add = MakeButton("AddRootButton", "Share this folder (read-only)", accent: true);
-        add.Click += (_, _) => _ = AddRootAsync();
-        var remove = MakeButton("RemoveRootButton", "Stop sharing selected folder");
-        remove.Click += (_, _) => _ = RunAsync(_rootError, async client =>
-        {
-            if (_roots.SelectedIndex < 0 || _roots.SelectedIndex >= _rootIds.Count) throw new IpcException("Select a folder first.");
-            await client.SendAsync("remove_root", new JsonObject { ["rootId"] = _rootIds[_roots.SelectedIndex] });
-        });
-        AutomationProperties.SetAutomationId(_newRootHidden, "NewRootHidden");
-        var toggleHidden = MakeButton("ToggleHiddenButton", "Show or hide hidden items in selected folder");
-        toggleHidden.Click += (_, _) => _ = RunAsync(_rootError, async client =>
-        {
-            var index = _roots.SelectedIndex;
-            if (index < 0 || index >= _rootIds.Count) throw new IpcException("Select a folder first.");
-            await client.SendAsync("set_root_hidden", new JsonObject { ["rootId"] = _rootIds[index], ["showHidden"] = !_rootHidden[index] });
-        });
-        var toggleUploads = MakeButton("ToggleUploadsButton", "Allow or stop uploads into selected folder");
-        toggleUploads.Click += (_, _) => _ = RunAsync(_rootError, async client =>
-        {
-            var index = _roots.SelectedIndex;
-            if (index < 0 || index >= _rootIds.Count) throw new IpcException("Select a folder first.");
-            var turnOn = !_rootUploads[index];
-            if (turnOn && MessageBox.Show(_owner, "Paired phones and browsers will be able to ADD files to this folder (up to 10 GiB in total, 4 GiB per file). They can never replace, delete or run anything. Turn uploads on?", "Allow uploads", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-            await client.SendAsync("set_root_uploads", new JsonObject { ["rootId"] = _rootIds[index], ["enabled"] = turnOn, ["quotaMiB"] = 10240, ["maxFileMiB"] = 4096 });
-        });
-        Page("Shared folders",
-            MakeText("RootsIntro", "Only folders listed here can be seen from your paired devices. Sharing is read-only unless you allow uploads for a folder below, and Windows permissions still apply.", 13, FontWeights.Normal, Muted),
-            Card("Shared now", _rootsEmpty, _roots, Row(remove, toggleHidden), Row(toggleUploads)),
-            Card("Share another folder", MakeLabel("Name shown on your phone", _rootName), _rootName, MakeLabel("Folder", _rootPath), _rootPath, _newRootHidden, Row(browse, add), _rootError,
-                MakeText("HiddenHint", "Hidden items stay private unless you tick the box. Windows system files are never shared. A folder is tied to the disk it is on: another disk at the same drive letter is not shared.", 13, FontWeights.Normal, Muted)));
 
         var pair = MakeButton("PairButton", "Pair a phone or browser", accent: true);
         pair.Click += (_, _) => _ = RunAsync(_deviceError, client => client.SendAsync("pair"));
@@ -311,16 +262,6 @@ internal sealed class LegacyConsole
     }
 
 
-    private Task AddRootAsync() => RunAsync(_rootError, async client =>
-    {
-        var path = _rootPath.Text.Trim();
-        if (path.Length > 0 && Path.GetPathRoot(path) == path &&
-            MessageBox.Show(_owner, $"Share the whole drive {path}?\n\nEvery folder on it that your Windows account can read becomes visible to your paired devices.", "Share an entire drive", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
-            return;
-        await client.SendAsync("add_root", new JsonObject { ["name"] = _rootName.Text.Trim(), ["path"] = path, ["showHidden"] = _newRootHidden.IsChecked == true });
-        _rootName.Text = ""; _rootPath.Text = ""; _newRootHidden.IsChecked = false;
-    });
-
     private static string FormatBytes(long bytes)
     {
         string[] units = ["bytes", "KB", "MB", "GB", "TB"];
@@ -334,36 +275,6 @@ internal sealed class LegacyConsole
     {
         if (status is null) return;   // the Home page says what is wrong; nothing here changes while the agent is down
         var state = status["state"]!.GetValue<string>();
-        var roots = status["roots"]!.AsArray();
-        var ids = roots.Select(r => r!["rootId"]!.GetValue<string>()).ToList();
-        var shown = roots.ToJsonString();          // redraw when anything about a folder changes (availability, options), not only the set
-        if (shown != _rootsShown)
-        {
-            var keep = _roots.SelectedIndex >= 0 && _roots.SelectedIndex < _rootIds.Count ? _rootIds[_roots.SelectedIndex] : null;
-            _rootsShown = shown;
-            _rootIds = ids;
-            _rootHidden = [.. roots.Select(r => r!["showHidden"]?.GetValue<bool>() ?? false)];
-            _rootUploads = [.. roots.Select(r => r!["uploadsEnabled"]?.GetValue<bool>() ?? false)];
-            _roots.Items.Clear();
-            foreach (var root in roots)
-            {
-                var available = (bool)root!["available"]!;
-                var includesHidden = root["showHidden"]?.GetValue<bool>() ?? false;
-                var title = new TextBlock { Text = root["name"]!.GetValue<string>(), FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
-                var path = new TextBlock { Text = root["path"]!.GetValue<string>(), FontSize = 12.5, TextWrapping = TextWrapping.Wrap };
-                var uploadsOn = root["uploadsEnabled"]?.GetValue<bool>() ?? false;
-                var badge = new TextBlock { Text = (available ? (uploadsOn ? "Accepts uploads from paired devices" : "Read-only") : "Read-only · currently unavailable (folder missing, or a different disk is at this location)") + (includesHidden ? " · hidden items included" : ""), FontSize = 12.5, TextWrapping = TextWrapping.Wrap };
-                Mute(path);
-                if (available) Mute(badge); else badge.SetResourceReference(TextBlock.ForegroundProperty, Danger);
-                var lines = new StackPanel { Margin = new Thickness(0, 4, 0, 4) };
-                lines.Children.Add(title); lines.Children.Add(path); lines.Children.Add(badge);
-                var item = new ListBoxItem { Content = lines };
-                AutomationProperties.SetName(item, $"{root["name"]}  —  {root["path"]}  ({(uploadsOn ? "accepts uploads" : "read-only")}{(available ? "" : ", currently unavailable")}{(includesHidden ? ", hidden items included" : "")})");
-                _roots.Items.Add(item);
-            }
-            if (keep is not null) _roots.SelectedIndex = _rootIds.IndexOf(keep);
-        }
-        _rootsEmpty.Visibility = roots.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
         var pairing = status["activePairing"];
         _pairCode.Text = pairing?["code"]?.GetValue<string>() ?? "";

@@ -122,6 +122,8 @@ try {
     for ($i = 0; $i -lt 50 -and @(ListItems 'RootsList').Count -eq 0; $i++) { Start-Sleep -Milliseconds 200 }
     $items = @(ListItems 'RootsList')
     Check ($items.Count -eq 1 -and $items[0] -match 'Holiday Photos' -and $items[0] -match 'read-only') 'the chosen folder is listed as read-only'
+    Check (Exists 'ShareFolderButton') 'Shared folders has its one main action, Share a folder'
+    Check (-not (Exists 'ToggleHiddenButton')) 'actions for a folder appear only once a folder is selected'
     Shot 'shared-folders'
 
     Nav 'Settings'

@@ -14,6 +14,10 @@ public partial class EmptyState : UserControl
     public static readonly DependencyProperty ActionCommandProperty = DependencyProperty.Register(nameof(ActionCommand), typeof(ICommand), typeof(EmptyState));
     public static readonly DependencyProperty ActionAutomationIdProperty = DependencyProperty.Register(nameof(ActionAutomationId), typeof(string), typeof(EmptyState), new PropertyMetadata(""));
 
+    public static readonly DependencyProperty TitleAutomationIdProperty = DependencyProperty.Register(nameof(TitleAutomationId), typeof(string), typeof(EmptyState), new PropertyMetadata(""));
+    /// <summary>Lets a test or screen reader find the title text.</summary>
+    public string TitleAutomationId { get => (string)GetValue(TitleAutomationIdProperty); set => SetValue(TitleAutomationIdProperty, value); }
+
     public string Glyph { get => (string)GetValue(GlyphProperty); set => SetValue(GlyphProperty, value); }
     public string Title { get => (string)GetValue(TitleProperty); set => SetValue(TitleProperty, value); }
     public string Message { get => (string)GetValue(MessageProperty); set => SetValue(MessageProperty, value); }
