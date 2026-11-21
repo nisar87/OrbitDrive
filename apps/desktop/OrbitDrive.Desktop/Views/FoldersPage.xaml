@@ -6,11 +6,8 @@
              IsTabStop="False" Focusable="False" AllowDrop="True">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
-        <Style x:Key="Style.FolderItem" TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+        <Style x:Key="Style.FolderItem" TargetType="ListBoxItem" BasedOn="{StaticResource Style.CardItem}">
             <Setter Property="AutomationProperties.Name" Value="{Binding AutomationName}"/>
-            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-            <Setter Property="Padding" Value="12,10,12,10"/>
-            <Setter Property="Margin" Value="0,0,0,4"/>
         </Style>
     </UserControl.Resources>
 

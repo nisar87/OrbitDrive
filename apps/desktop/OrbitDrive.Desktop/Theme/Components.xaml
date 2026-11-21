@@ -104,4 +104,33 @@
             </Setter.Value>
         </Setter>
     </Style>
+    <!-- A selectable card row (for example a shared folder): a subtle fill and an accent bar mark the selection, so text keeps its contrast. -->
+    <Style x:Key="Style.CardItem" TargetType="ListBoxItem">
+        <Setter Property="Padding" Value="14,10,12,10"/>
+        <Setter Property="Margin" Value="0,0,0,4"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Style.FocusVisual}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Grid SnapsToDevicePixels="True">
+                        <Border x:Name="Fill" CornerRadius="{StaticResource Radius.Control}" Background="Transparent" BorderThickness="1"
+                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"/>
+                        <Border x:Name="Bar" Width="3" Height="32" HorizontalAlignment="Left" CornerRadius="1.5" Visibility="Collapsed"
+                                Background="{DynamicResource AccentFillColorDefaultBrush}"/>
+                        <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Fill" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Fill" Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}"/>
+                            <Setter TargetName="Bar" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>
