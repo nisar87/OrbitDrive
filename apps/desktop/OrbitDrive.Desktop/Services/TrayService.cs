@@ -8,13 +8,13 @@ internal sealed class TrayService : IDisposable
     private readonly Action _open;
     private Action? _balloonClicked;
 
-    public TrayService(Action open, Action togglePause, Action quit)
+    public TrayService(Action open, Action togglePause, Action quit, Action showFlyout)
     {
         _open = open;
         _icon.Icon = AppIcon.Tray;
         _icon.Text = "OrbitDrive";
         _icon.Visible = true;
-        _icon.DoubleClick += (_, _) => open();
+        _icon.MouseClick += (_, e) => { if (e.Button == System.Windows.Forms.MouseButtons.Left) showFlyout(); };   // right-click keeps the menu
         _menu.Items.Add("Open OrbitDrive", null, (_, _) => open());
         _menu.Items.Add("Pause / resume remote access", null, (_, _) => togglePause());
         _menu.Items.Add("Quit OrbitDrive (stops remote access)", null, (_, _) => quit());

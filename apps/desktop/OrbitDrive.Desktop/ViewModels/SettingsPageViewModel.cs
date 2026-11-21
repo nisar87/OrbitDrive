@@ -22,7 +22,7 @@ internal sealed class SettingsPageViewModel : PageViewModel
 
     public SettingsPageViewModel(ConsoleHost host, UpdatePanel updates, Action<string> copy)
     {
-        _host = host; _copy = copy; UpdatesView = updates.Card;
+        _host = host; _copy = copy; Updates = updates;
         _start = StartupRegistration.IsEnabled(host.StateDirectory);
         _lock = host.Settings.PauseWhenLocked;
         _metered = host.Settings.PauseOnMetered;
@@ -47,7 +47,7 @@ internal sealed class SettingsPageViewModel : PageViewModel
     public IRelayCommand QuitCommand { get; }
 
     /// <summary>The software-update panel is still code-built (see the design doc); it is hosted as is.</summary>
-    public FrameworkElement UpdatesView { get; }
+    public UpdatePanel Updates { get; }
 
     // ---- General -----------------------------------------------------------------------------------------------------------------------------
     public bool StartAtSignIn

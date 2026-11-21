@@ -75,7 +75,7 @@ copy, real phone QR scan from the redesigned panel.
 ## 9. Not finished
 
 - Toast notifications (owner decision: Deny and Review only, never Approve; transfer-finished toasts without buttons; tray-balloon fallback) and the tray flyout.
-- The software-update panel is still code-built (`UpdatePanel`, hosted unchanged in Settings). `LegacyConsole.cs` holds only its helpers and is deleted with it.
+- The software-update panel is a XAML card (`Views/UpdateCard`) bound to `UpdatePanel`, which now holds only the update logic; `LegacyConsole.cs` is gone.
 - Before/after screenshots exist for every page in both themes (`docs/evidence/screenshots/console-redesign/before` and `after`).
 
 ## 10. Data the agent does not expose (future agent work, with the privacy trade-off)

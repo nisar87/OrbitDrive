@@ -1,6 +1,7 @@
 <UserControl x:Class="OrbitDrive.Desktop.Views.SettingsPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:OrbitDrive.Desktop.Views"
              IsTabStop="False" Focusable="False">
     <StackPanel MaxWidth="{StaticResource Page.MaxWidth}">
         <TextBlock Text="Settings" Style="{StaticResource Style.Text.PageTitle}" AutomationProperties.HeadingLevel="Level1"/>
@@ -87,7 +88,7 @@
             </StackPanel>
         </Border>
 
-        <ContentPresenter Content="{Binding UpdatesView}"/>
+        <local:UpdateCard DataContext="{Binding Updates}"/>
 
         <Border Style="{StaticResource Style.Card}">
             <StackPanel>

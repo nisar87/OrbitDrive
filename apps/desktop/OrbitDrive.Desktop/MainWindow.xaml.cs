@@ -50,7 +50,7 @@ public sealed partial class MainWindow : Window
         SizeChanged += (_, _) => _shell.IsCompact = ActualWidth < CompactBelow;
         Loaded += (_, _) => (Nav.ItemContainerGenerator.ContainerFromIndex(Nav.SelectedIndex) as ListBoxItem)?.Focus();
 
-        _tray = new TrayService(Reopen, () => _ = _host.TogglePauseAsync(), () => _ = _host.QuitAsync());
+        _tray = new TrayService(Reopen, () => _ = _host.TogglePauseAsync(), () => _ = _host.QuitAsync(), ShowFlyout);
         // A request to connect reaches the owner as a notification (toast, or a tray balloon) rather than a window that pops up by itself.
         _notices = new NotificationService(_host, Dispatcher, _tray, () => IsVisible && IsActive && WindowState != WindowState.Minimized, Review);
         _host.Quit += () =>
@@ -77,6 +77,12 @@ public sealed partial class MainWindow : Window
 
     private bool Confirm(string title, string message) =>
         MessageBox.Show(this, message, title, MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
+
+    private void ShowFlyout()
+    {
+        var model = new TrayFlyoutViewModel(_host.Status, Reopen, () => _ = _host.TogglePauseAsync(), () => _ = _host.QuitAsync());
+        new Views.TrayFlyout(model).Show();
+    }
 
     private void Review(string page) { Reopen(); _shell.GoTo(page); }
 
