@@ -1,5 +1,5 @@
 using System.Windows.Threading;
-using Microsoft.Toolkit.Uwp.Notifications;
+using CommunityToolkit.WinUI.Notifications;
 using OrbitDrive.Core;
 using OrbitDrive.Desktop.ViewModels;
 
