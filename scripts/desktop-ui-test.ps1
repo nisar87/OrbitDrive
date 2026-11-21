@@ -149,6 +149,13 @@ try {
     Check $true 'a non-HTTPS relay address is refused'
     SetText 'GatewayBox' $relay; SetText 'WebOriginBox' 'http://localhost:5173'; Click 'SaveGatewayButton'
     Shot 'settings'
+    # Explorer "Send to phone": the agent cannot report the current setting, so the console offers explicit on/off and shows only the agent's reply.
+    Click 'SendToOnButton'
+    [void](WaitText 'SendToStatus' '^Turned on')
+    Check $true 'Send to phone in Explorer can be turned on from the console, and the console shows the agent''s answer'
+    Click 'SendToOffButton'
+    [void](WaitText 'SendToStatus' '^Turned off')
+    Check $true 'and turned off again'
     # Picture previews: on by default; the switch (also when it is off) and the status line follow what the agent really stored.
     $thumbs = WaitText 'ThumbnailStatus' 'previews|Previews'
     if ($thumbs -match 'not available' -and -not $env:ORBITDRIVE_THUMBNAIL_HELPER) { Check $true 'picture previews report honestly that they are not available on this machine' }
@@ -253,7 +260,7 @@ try {
     Check (@(ListItems 'HistoryList').Count -ge 3) 'stored history has several entries'
     Check ($historyText -notmatch '[A-Za-z]:\\') 'stored history shows no file system paths'
     Shot 'activity'
-    Nav 'Diagnostics'
+    Nav 'Settings'
     $diagnostics = WaitText 'DiagnosticsText' 'PC id'
     Shot 'diagnostics'
 
@@ -388,7 +395,7 @@ try {
     Shot 'home-online-final'
 
     # Keyboard reachability on every page.
-    foreach ($page in 'Home', 'Shared folders', 'Devices', 'Activity', 'Settings', 'Diagnostics') {
+    foreach ($page in 'Home', 'Shared folders', 'Devices', 'Activity', 'Settings') {
         Nav $page
         $bad = @(UnreachableControls)
         Check ($bad.Count -eq 0) "every control on '$page' is reachable by keyboard $($bad -join ', ')"
@@ -460,7 +467,7 @@ try {
     Nav 'Shared folders'; Shot 'dark-shared-folders'
     Nav 'Devices'; Click 'PairButton'; [void](WaitText 'PairCode' '^[A-Z0-9]{6}-[A-Z0-9]{10}$'); Start-Sleep -Milliseconds 600; Shot 'dark-devices'
     Nav 'Settings'; Shot 'dark-settings'
-    Nav 'Diagnostics'
+    Nav 'Settings'
     Check ((WaitText 'DiagnosticsText' 'Theme: Dark') -ne '') 'the console runs with the dark theme when asked'
     $diagnostics = (Find 'DiagnosticsText').Current.Name
     Check ($diagnostics -match 'Network cost: (unrestricted|metered|unknown)') "Windows answered the network-cost query: $([regex]::Match($diagnostics, 'Network cost: [^\r\n]*').Value)"

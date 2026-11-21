@@ -21,9 +21,8 @@
         <DataTemplate DataType="{x:Type vm:ActivityPageViewModel}">
             <views:ActivityPage/>
         </DataTemplate>
-        <!-- TRANSITIONAL: a page not yet rebuilt is shown as it was. -->
-        <DataTemplate DataType="{x:Type vm:LegacyPageViewModel}">
-            <ContentPresenter Content="{Binding View}"/>
+        <DataTemplate DataType="{x:Type vm:SettingsPageViewModel}">
+            <views:SettingsPage/>
         </DataTemplate>
     </Window.Resources>
     <Grid>

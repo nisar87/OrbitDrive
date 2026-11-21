@@ -23,22 +23,19 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         Icon = AppIcon.Image;
         _host = new ConsoleHost(stateDirectory, Dispatcher);
-        var legacy = new LegacyConsole(_host, this);
-
-        string[] legacyNames = ["Settings", "Diagnostics"];
-        string[] legacyGlyphs = ["\uE713", "\uE9D9"];
-        var home = new HomePageViewModel(_host, title => _shell!.GoTo(title), legacy.Updates);
+        var updates = new UpdatePanel(_host.StateDirectory, _host.DrainForUpdateAsync, _host.QuitAsync);
+        var home = new HomePageViewModel(_host, title => _shell!.GoTo(title), updates);
         var folders = new FoldersPageViewModel(_host, PickFolder, Confirm);
         var devices = new DevicesPageViewModel(_host, Confirm, CopyText);
         var activity = new ActivityPageViewModel(_host, Confirm, CopyText);
-        var items = new List<NavItem> { new("\uE80F", home, "Ctrl+1"), new("\uE8B7", folders, "Ctrl+2"), new("\uE8EA", devices, "Ctrl+3"), new("\uE81C", activity, "Ctrl+4") };
-        items.AddRange(legacyNames.Select((name, i) => new NavItem(legacyGlyphs[i], new LegacyPageViewModel(name, legacy.Pages[name]), $"Ctrl+{i + 5}")));
-        _shell = new ShellViewModel(items);
-        legacy.CurrentPageName = () => _shell.SelectedTitle;
+        var settings = new SettingsPageViewModel(_host, updates, CopyText);
+        _shell = new ShellViewModel([
+            new NavItem("\uE80F", home, "Ctrl+1"), new NavItem("\uE8B7", folders, "Ctrl+2"), new NavItem("\uE8EA", devices, "Ctrl+3"),
+            new NavItem("\uE81C", activity, "Ctrl+4"), new NavItem("\uE713", settings, "Ctrl+5")]);
         DataContext = _shell;
         _shell.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ShellViewModel.CurrentPage)) PageScroll.ScrollToTop(); };
 
-        // Keyboard: Ctrl+1..7 jump straight to a section; Tab/arrow keys move through the rest in reading order.
+        // Keyboard: Ctrl+1..5 jump straight to a section; Tab/arrow keys move through the rest in reading order.
         PreviewKeyDown += (_, e) =>
         {
             if (Keyboard.Modifiers != ModifierKeys.Control) return;

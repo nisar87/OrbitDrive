@@ -1,4 +1,3 @@
-using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace OrbitDrive.Desktop.ViewModels;
@@ -18,13 +17,6 @@ internal abstract class PageViewModel : ObservableObject
     }
 
     protected virtual void OnActiveChanged(bool active) { }
-}
-
-/// <summary>TRANSITIONAL: hosts a page that has not been rebuilt yet (see <see cref="LegacyConsole"/>). Deleted with it.</summary>
-internal sealed class LegacyPageViewModel(string title, FrameworkElement view) : PageViewModel
-{
-    public override string Title { get; } = title;
-    public FrameworkElement View { get; } = view;
 }
 
 /// <summary>One entry in the left navigation.</summary>

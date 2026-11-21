@@ -153,4 +153,14 @@
             </Setter.Value>
         </Setter>
     </Style>
+    <!-- A heading that groups several cards on a long page (for example Settings: General, Sending, Privacy, Advanced). -->
+    <Style x:Key="Style.Text.Group" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Strong}">
+        <Setter Property="FontSize" Value="{StaticResource FontSize.Body}"/>
+        <Setter Property="Margin" Value="2,12,0,8"/>
+        <Setter Property="AutomationProperties.HeadingLevel" Value="Level2"/>
+    </Style>
+    <Style x:Key="Style.Text.Error" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Base}">
+        <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}"/>
+        <Setter Property="Margin" Value="0,6,0,0"/>
+    </Style>
 </ResourceDictionary>
