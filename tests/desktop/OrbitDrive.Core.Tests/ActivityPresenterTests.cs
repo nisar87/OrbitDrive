@@ -69,4 +69,26 @@ public sealed class ActivityPresenterTests
         Assert.Equal("12:00:00  A file was sent to a browser (ok · 2 KB)\n12:00:00  Connected to the relay", text);
         Assert.Equal("", ActivityPresenter.ToText([], TimeZoneInfo.Utc, Now));
     }
+
+    [Theory]
+    [InlineData("download", "sent_to_relay", "Handed to the relay")]
+    [InlineData("download", "cancelled", "Stopped before it finished")]
+    [InlineData("pairing_finished", "result approved", "Approved")]
+    [InlineData("pairing_finished", "result denied", "Denied")]
+    [InlineData("agent_started", "state connecting", "Connecting")]
+    [InlineData("shares_changed", "1 shared folders", "1 shared folder")]
+    [InlineData("shares_changed", "3 shared folders", "3 shared folders")]
+    public void Known_codes_are_shown_in_plain_words(string kind, string recorded, string shown)
+        => Assert.Equal(shown, ActivityPresenter.Present(E(kind, recorded), TimeZoneInfo.Utc, Now).Detail);
+
+    [Theory]
+    [InlineData("download", "something_new")]
+    [InlineData("shares_changed", "many shared folders")]
+    [InlineData("pairing_finished", "result unheard_of")]
+    public void Unknown_codes_are_shown_exactly_as_recorded(string kind, string recorded)
+        => Assert.Equal(recorded, ActivityPresenter.Present(E(kind, recorded), TimeZoneInfo.Utc, Now).Detail);
+
+    [Fact]
+    public void Plain_words_still_carry_the_size() =>
+        Assert.Equal("Handed to the relay · 4 KB", ActivityPresenter.Present(E("download", "sent_to_relay", 4096), TimeZoneInfo.Utc, Now).Detail);
 }
