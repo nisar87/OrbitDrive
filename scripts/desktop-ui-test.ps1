@@ -35,13 +35,14 @@ function Click([string]$id) { (Find $id).GetCurrentPattern([System.Windows.Autom
 function SetText([string]$id, [string]$value) { (Find $id).GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($value) }
 # Answers the Yes/No confirmation a destructive action shows (a modal message box owned by the console).
 function ConfirmYes {
-    $yes = New-Object System.Windows.Automation.AndCondition(
-        (New-Object System.Windows.Automation.PropertyCondition($AE::NameProperty, 'Yes')),
-        (New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)))
+    # The dialog is a native message box: UI Automation finds its "Yes" element but it offers no Invoke, so it is answered with the box's own accelerator (Y).
+    Add-Type -AssemblyName System.Windows.Forms
+    $yes = New-Object System.Windows.Automation.PropertyCondition($AE::NameProperty, 'Yes')
+    $mine = New-Object System.Windows.Automation.PropertyCondition($AE::ProcessIdProperty, $script:win.Current.ProcessId)
     for ($i = 0; $i -lt 50; $i++) {
-        foreach ($w in $AE::RootElement.FindAll($Scope::Children, (New-Object System.Windows.Automation.PropertyCondition($AE::ProcessIdProperty, $script:win.Current.ProcessId)))) {
+        foreach ($w in $AE::RootElement.FindAll($Scope::Children, $mine)) {
             $b = $w.FindFirst($Scope::Descendants, $yes)
-            if ($b) { $b.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke(); return }
+            if ($b) { try { $b.SetFocus() } catch { }; Start-Sleep -Milliseconds 300; [System.Windows.Forms.SendKeys]::SendWait('y'); return }
         }
         Start-Sleep -Milliseconds 200
     }
