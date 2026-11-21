@@ -56,8 +56,8 @@ function Nav([string]$page) {
     Start-Sleep -Milliseconds 400
 }
 function ListItems([string]$id) {
-    # The shared-folders list is replaced by an empty-state message while nothing is shared, so it is simply absent then: zero items.
-    if ($id -eq 'RootsList' -and -not (Exists 'RootsList')) { return @() }
+    # A list that has nothing to show is replaced by an empty-state message (or hidden), so it is simply absent then: zero items.
+    if ($id -in 'RootsList', 'ActivityList', 'HistoryList', 'TransfersList' -and -not (Exists $id)) { return @() }
     $condition = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::ListItem)
     @((Find $id).FindAll($Scope::Descendants, $condition) | ForEach-Object { $_.Current.Name })
 }
@@ -203,7 +203,7 @@ try {
     Check ($prepared.status -eq 200 -and $prepared.body.urlPath) 'the browser prepared a download'
     $bytes = (Invoke-WebRequest -UseBasicParsing ($relay + $prepared.body.urlPath)).Content
     Check ($bytes.Length -eq [int]$prepared.body.size) 'the file arrived through the relay'
-    Nav 'Transfers'
+    Nav 'Activity'
     $sent = $null
     for ($i = 0; $i -lt 40; $i++) { $sent = @(ListItems 'TransfersList') | Where-Object { $_ -match 'itinerary\.txt' -and $_ -match 'sent to the relay' }; if ($sent) { break }; Start-Sleep -Milliseconds 250 }
     Check ($null -ne $sent) 'the PC console lists the transfer with the bytes it sent to the relay'

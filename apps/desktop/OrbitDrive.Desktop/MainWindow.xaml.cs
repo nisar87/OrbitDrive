@@ -25,13 +25,14 @@ public sealed partial class MainWindow : Window
         _host = new ConsoleHost(stateDirectory, Dispatcher);
         var legacy = new LegacyConsole(_host, this);
 
-        string[] legacyNames = ["Transfers", "Activity", "Settings", "Diagnostics"];
-        string[] legacyGlyphs = ["\uE896", "\uE81C", "\uE713", "\uE9D9"];
+        string[] legacyNames = ["Settings", "Diagnostics"];
+        string[] legacyGlyphs = ["\uE713", "\uE9D9"];
         var home = new HomePageViewModel(_host, title => _shell!.GoTo(title), legacy.Updates);
         var folders = new FoldersPageViewModel(_host, PickFolder, Confirm);
         var devices = new DevicesPageViewModel(_host, Confirm, CopyText);
-        var items = new List<NavItem> { new("\uE80F", home, "Ctrl+1"), new("\uE8B7", folders, "Ctrl+2"), new("\uE8EA", devices, "Ctrl+3") };
-        items.AddRange(legacyNames.Select((name, i) => new NavItem(legacyGlyphs[i], new LegacyPageViewModel(name, legacy.Pages[name]), $"Ctrl+{i + 4}")));
+        var activity = new ActivityPageViewModel(_host, Confirm, CopyText);
+        var items = new List<NavItem> { new("\uE80F", home, "Ctrl+1"), new("\uE8B7", folders, "Ctrl+2"), new("\uE8EA", devices, "Ctrl+3"), new("\uE81C", activity, "Ctrl+4") };
+        items.AddRange(legacyNames.Select((name, i) => new NavItem(legacyGlyphs[i], new LegacyPageViewModel(name, legacy.Pages[name]), $"Ctrl+{i + 5}")));
         _shell = new ShellViewModel(items);
         legacy.CurrentPageName = () => _shell.SelectedTitle;
         DataContext = _shell;

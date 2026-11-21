@@ -133,4 +133,24 @@
             </Setter.Value>
         </Setter>
     </Style>
+    <!-- A plain list row (history, notes): no outline, a subtle fill on hover and selection. -->
+    <Style x:Key="Style.RowItem" TargetType="ListBoxItem">
+        <Setter Property="Padding" Value="8,6,8,6"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Style.FocusVisual}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Grid SnapsToDevicePixels="True">
+                        <Border x:Name="Fill" CornerRadius="{StaticResource Radius.Control}" Background="Transparent"/>
+                        <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Fill" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}"/></Trigger>
+                        <Trigger Property="IsSelected" Value="True"><Setter TargetName="Fill" Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}"/></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

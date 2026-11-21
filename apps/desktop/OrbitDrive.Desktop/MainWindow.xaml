@@ -18,6 +18,9 @@
         <DataTemplate DataType="{x:Type vm:DevicesPageViewModel}">
             <views:DevicesPage/>
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ActivityPageViewModel}">
+            <views:ActivityPage/>
+        </DataTemplate>
         <!-- TRANSITIONAL: a page not yet rebuilt is shown as it was. -->
         <DataTemplate DataType="{x:Type vm:LegacyPageViewModel}">
             <ContentPresenter Content="{Binding View}"/>

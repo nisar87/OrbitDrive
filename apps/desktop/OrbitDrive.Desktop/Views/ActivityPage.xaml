@@ -1,0 +1,109 @@
+<UserControl x:Class="OrbitDrive.Desktop.Views.ActivityPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:OrbitDrive.Desktop.Controls"
+             xmlns:vm="clr-namespace:OrbitDrive.Desktop.ViewModels"
+             IsTabStop="False" Focusable="False">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+        <Style x:Key="Style.TransferRow" TargetType="ListBoxItem" BasedOn="{StaticResource Style.RowItem}">
+            <Setter Property="AutomationProperties.Name" Value="{Binding AutomationName}"/>
+        </Style>
+        <Style x:Key="Style.HistoryRow" TargetType="ListBoxItem" BasedOn="{StaticResource Style.RowItem}">
+            <Setter Property="AutomationProperties.Name" Value="{Binding Summary}"/>
+        </Style>
+    </UserControl.Resources>
+
+    <StackPanel MaxWidth="{StaticResource Page.MaxWidth}">
+        <TextBlock Text="Activity" Style="{StaticResource Style.Text.PageTitle}" AutomationProperties.HeadingLevel="Level1"/>
+
+        <Border Style="{StaticResource Style.Card}">
+            <StackPanel>
+                <TextBlock Text="Sending" Style="{StaticResource Style.Text.Section}"/>
+                <TextBlock Text="{Binding Summary}" Style="{StaticResource Style.Text.Base}" AutomationProperties.AutomationId="TransfersText" Margin="0,0,0,6"/>
+                <ListBox ItemsSource="{Binding Transfers}" ItemContainerStyle="{StaticResource Style.TransferRow}" Background="Transparent" BorderThickness="0"
+                         Visibility="{Binding HasTransfers, Converter={StaticResource BoolToVisibility}}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Disabled" AutomationProperties.AutomationId="TransfersList" AutomationProperties.Name="Recent transfers">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:TransferRow}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding Name}" Style="{StaticResource Style.Text.Strong}" TextTrimming="CharacterEllipsis"/>
+                                <ProgressBar Minimum="0" Maximum="100" Value="{Binding Percent, Mode=OneWay}" IsIndeterminate="{Binding Indeterminate}" Height="4" Margin="0,6,0,4"
+                                             Visibility="{Binding IsSending, Converter={StaticResource BoolToVisibility}}"/>
+                                <TextBlock Text="{Binding Detail}" Style="{StaticResource Style.Text.Muted}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <TextBlock Text="OrbitDrive can see what it has sent to the relay. It cannot see whether a browser finished saving a file." Style="{StaticResource Style.Text.Muted}" Margin="0,6,0,0"
+                           AutomationProperties.AutomationId="TransfersHint"/>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource Style.Card}">
+            <StackPanel>
+                <TextBlock Text="History on this PC" Style="{StaticResource Style.Text.Section}"/>
+                <c:EmptyState Glyph="&#xE81C;" Title="Nothing has been recorded yet" TitleAutomationId="HistoryEmpty"
+                              Message="When a device connects or a file is sent, it shows up here."
+                              Visibility="{Binding NoHistory, Converter={StaticResource BoolToVisibility}}"/>
+                <ListBox ItemsSource="{Binding History}" ItemContainerStyle="{StaticResource Style.HistoryRow}" Background="Transparent" BorderThickness="0"
+                         Visibility="{Binding HasHistory, Converter={StaticResource BoolToVisibility}}" MaxHeight="420"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.AutomationId="HistoryList" AutomationProperties.Name="Activity history">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:ActivityItem}">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="28"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Top" Margin="0,2,0,0">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Icon}">
+                                            <Setter Property="Text" Value="&#xE81C;"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                            <Setter Property="Opacity" Value="{StaticResource Opacity.Muted}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsProblem}" Value="True">
+                                                    <Setter Property="Text" Value="&#xE7BA;"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}"/>
+                                                    <Setter Property="Opacity" Value="1"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="{Binding Title}" Style="{StaticResource Style.Text.Strong}"/>
+                                    <TextBlock Text="{Binding Detail}" Style="{StaticResource Style.Text.Muted}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <Button Content="Copy as text" Command="{Binding CopyCommand}" Padding="{StaticResource Inset.Button}" Margin="0,0,8,0" MinHeight="{StaticResource Size.TouchTarget}"
+                            AutomationProperties.AutomationId="CopyHistoryButton"/>
+                    <Button Content="Clear history" Command="{Binding ClearCommand}" Padding="{StaticResource Inset.Button}" MinHeight="{StaticResource Size.TouchTarget}"
+                            AutomationProperties.AutomationId="ClearHistoryButton"/>
+                </StackPanel>
+                <TextBlock Text="Only what happened is kept: times, kinds of events, counts and sizes. File names, folder names and people are never saved. The newest 200 are shown."
+                           Style="{StaticResource Style.Text.Muted}" Margin="0,10,0,0"/>
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Text="&#xE783;" Style="{StaticResource Style.Text.Icon}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" Margin="0,2,8,0" VerticalAlignment="Top"/>
+                    <TextBlock Text="{Binding Error}" Style="{StaticResource Style.Text.Base}" TextWrapping="Wrap" AutomationProperties.AutomationId="HistoryError"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource Style.Card}" Visibility="{Binding HasNotes, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel>
+                <TextBlock Text="Notes from this session" Style="{StaticResource Style.Text.Section}"/>
+                <ListBox ItemsSource="{Binding Notes}" ItemContainerStyle="{StaticResource Style.RowItem}" Background="Transparent" BorderThickness="0" MaxHeight="260"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.AutomationId="ActivityList" AutomationProperties.Name="Notes from this session">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Style="{StaticResource Style.Text.Muted}" TextWrapping="Wrap"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

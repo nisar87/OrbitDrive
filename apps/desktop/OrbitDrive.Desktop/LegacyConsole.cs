@@ -39,14 +39,9 @@ internal sealed class LegacyConsole
     private readonly CheckBox _pauseWhenLocked = new() { Content = "Pause remote access while this PC is locked", Margin = new Thickness(0, 4, 0, 4) };
 
     private readonly TextBox _gateway = MakeBox("GatewayBox"), _webOrigin = MakeBox("WebOriginBox");
-    private readonly TextBlock _transfers = MakeText("TransfersText", "", 14, FontWeights.Normal);
-    private readonly ListBox _activity = new() { MinHeight = 200 };
-    private HistoryPanel _history = null!;
     private ThumbnailPanel _thumbnails = null!;
     private readonly TextBlock _settingsError = MakeText("SettingsError", "", 13, FontWeights.Normal, Danger);
     private readonly TextBlock _diagnostics = MakeText("DiagnosticsText", "", 13, FontWeights.Normal);
-    private readonly ListBox _transferList = new() { MinHeight = 0, Margin = new Thickness(0, 4, 0, 8) };
-    private string _transfersShown = "";
     private UpdatePanel _updates = null!;
     /// <summary>The software-update panel (still part of Settings); Home reads its state.</summary>
     public UpdatePanel Updates => _updates;
@@ -58,17 +53,10 @@ internal sealed class LegacyConsole
         AutomationProperties.SetAutomationId(_startAtSignIn, "StartAtSignIn");
         AutomationProperties.SetAutomationId(_pauseWhenLocked, "PauseWhenLocked");
         AutomationProperties.SetAutomationId(_pauseOnMetered, "PauseOnMetered");
-        AutomationProperties.SetAutomationId(_activity, "ActivityList");
         BuildPages();
-        host.Note += LogActivity;
         host.AddStatusConsumer(ApplyStatusAsync);
     }
 
-    private void LogActivity(string line)
-    {
-        _activity.Items.Insert(0, $"{DateTime.Now:HH:mm:ss}  {line}");
-        while (_activity.Items.Count > 200) _activity.Items.RemoveAt(_activity.Items.Count - 1); // bounded history
-    }
 
     internal static TextBlock MakeText(string id, string text, double size, FontWeight weight, string? brushKey = null)
     {
@@ -133,18 +121,11 @@ internal sealed class LegacyConsole
     private void BuildPages()
     {
         _updates = new UpdatePanel(_host.StateDirectory, _host.DrainForUpdateAsync, _host.QuitAsync);
-        _history = new HistoryPanel(RunAsync);
         _thumbnails = new ThumbnailPanel(RunAsync);
         var quit = MakeButton("QuitButton", "Quit OrbitDrive");
         quit.Click += (_, _) => _ = _host.QuitAsync();
 
 
-        AutomationProperties.SetAutomationId(_transferList, "TransfersList");
-        AutomationProperties.SetName(_transferList, "Recent transfers");
-        ScrollViewer.SetHorizontalScrollBarVisibility(_transferList, ScrollBarVisibility.Disabled);
-        Page("Transfers", Card(null, _transfers, _transferList,
-            MakeText("TransfersHint", "OrbitDrive can see what it has sent to the relay. It cannot see whether a browser finished saving a file.", 13, FontWeights.Normal, Muted)));
-        Page("Activity", _history.Card, Card("This session", _activity));
 
         var save = MakeButton("SaveGatewayButton", "Save and connect", accent: true);
         save.Click += (_, _) => _ = RunAsync(_settingsError, client =>
@@ -226,13 +207,6 @@ internal sealed class LegacyConsole
     }
 
 
-    private static string FormatBytes(long bytes)
-    {
-        string[] units = ["bytes", "KB", "MB", "GB", "TB"];
-        double value = bytes; var unit = 0;
-        while (value >= 1024 && unit < units.Length - 1) { value /= 1024; unit++; }
-        return unit == 0 ? $"{bytes} bytes" : $"{value:0.#} {units[unit]}";
-    }
 
 
     private async Task ApplyStatusAsync(JsonObject? status)
@@ -240,7 +214,6 @@ internal sealed class LegacyConsole
         if (status is null) return;   // the Home page says what is wrong; nothing here changes while the agent is down
         var state = status["state"]!.GetValue<string>();
 
-        if (_host.Connection.Client is { } historyClient && CurrentPageName() == "Activity") await _history.RefreshAsync(historyClient);
         if (_host.Connection.Client is { } thumbnailClient && CurrentPageName() == "Settings") await _thumbnails.RefreshAsync(thumbnailClient);
 
         var limits = $"{status["maxUploadKBps"]}/{status["maxConcurrentTransfers"]}";
@@ -251,31 +224,6 @@ internal sealed class LegacyConsole
             _maxFiles.Text = status["maxConcurrentTransfers"]?.ToString() ?? "4";
         }
 
-        var recent = status["transfers"] as JsonArray ?? [];
-        var recentCount = recent.Count;
-        _transfers.Text = (int)status["activeStreams"]! == 0 ? (recentCount == 0 ? "No transfers yet." : "No transfers are running. Recent ones are listed below.") : $"{status["activeStreams"]} file(s) are being sent to the relay right now.";
-        var recentText = recent.ToJsonString();
-        if (recentText != _transfersShown)
-        {
-            _transfersShown = recentText;
-            _transferList.Items.Clear();
-            foreach (var transfer in recent)
-            {
-                long sent = long.Parse(transfer!["sent"]!.GetValue<string>()), length = long.Parse(transfer["length"]!.GetValue<string>()), offset = long.Parse(transfer["offset"]!.GetValue<string>());
-                var what = transfer["outcome"]!.GetValue<string>() switch
-                {
-                    "sending" => "being sent to the relay",
-                    "sent_to_relay" => "sent to the relay",
-                    "cancelled" => "stopped (cancelled, paused or access removed)",
-                    _ => "interrupted",
-                };
-                var part = offset == 0 ? "" : $" (continued from {FormatBytes(offset)})";
-                var line = $"{transfer["name"]}  —  {FormatBytes(sent)} of {FormatBytes(length)} {what}{part}  ·  {DateTimeOffset.FromUnixTimeMilliseconds(transfer["startedUnixMs"]!.GetValue<long>()).ToLocalTime():HH:mm:ss}";
-                var item = new ListBoxItem { Content = new TextBlock { Text = line, TextWrapping = TextWrapping.Wrap } };
-                AutomationProperties.SetName(item, line);
-                _transferList.Items.Add(item);
-            }
-        }
         if (!_gateway.IsKeyboardFocused && _gateway.Text.Length == 0) _gateway.Text = status["gateway"]?.GetValue<string>() ?? "";
         _diagnostics.Text = $"PC id: {status["pcId"]}\nAgent version: {status["agentVersion"]}\nRelay: {status["gateway"] ?? "(not set)"}\nState folder: {_host.StateDirectory}\n" +
                             $"{RuntimeInformation.OSDescription} · {RuntimeInformation.ProcessArchitecture} · {RuntimeInformation.FrameworkDescription}\nRunning elevated: {Environment.IsPrivilegedProcess}\n" +
