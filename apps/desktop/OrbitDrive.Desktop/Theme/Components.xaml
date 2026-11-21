@@ -43,7 +43,6 @@
         <Setter Property="FontFamily" Value="{StaticResource Font.Icons}"/>
         <Setter Property="FontSize" Value="{StaticResource FontSize.Icon}"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
-        <Setter Property="AutomationProperties.AccessibilityView" Value="Raw"/>
     </Style>
 
     <!-- A rounded surface that groups related controls. -->
