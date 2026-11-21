@@ -128,7 +128,7 @@ internal sealed class LegacyConsole
     internal static Button MakeButton(string id, string text, bool accent = false)
     {
         var button = new Button { Content = text, Padding = new Thickness(16, 7, 16, 7), Margin = new Thickness(0, 4, 8, 4), HorizontalAlignment = HorizontalAlignment.Left, MinHeight = 34 };
-        if (accent) button.SetResourceReference(StyleProperty, "AccentButtonStyle");
+        if (accent) button.SetResourceReference(FrameworkElement.StyleProperty, "AccentButtonStyle");
         AutomationProperties.SetAutomationId(button, id);
         return button;
     }
@@ -193,7 +193,7 @@ internal sealed class LegacyConsole
         var quit = MakeButton("QuitButton", "Quit OrbitDrive");
         quit.Click += (_, _) => _ = _host.QuitAsync();
         _pause.Click += (_, _) => _ = _host.TogglePauseAsync();
-        _pause.SetResourceReference(StyleProperty, "AccentButtonStyle");
+        _pause.SetResourceReference(FrameworkElement.StyleProperty, "AccentButtonStyle");
         // Start is offered only while the agent is not running; pressing it is an explicit owner decision, so it
         // also clears the crash-restart budget.
         _start.Visibility = Visibility.Collapsed;
