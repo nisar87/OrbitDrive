@@ -65,19 +65,15 @@ public sealed class DeviceCredentialTests
     }
 
     [Fact]
-    public void A_browser_that_missed_the_new_secret_is_given_one_again_when_it_comes_back_with_the_old_one()
+    public void A_second_tab_still_holding_the_old_secret_does_not_invalidate_the_new_one()
     {
         var (store, clock, _, device, secret) = Paired();
         clock.Advance(TimeSpan.FromDays(31));
-        var lost = store.RotateIfDue(device, secret);                          // the answer carrying this never reached the browser
+        var fresh = store.RotateIfDue(device, secret)!;
         clock.Advance(TimeSpan.FromMinutes(5));
-        store.Authorize(Alice, Header(device, secret));
-        var again = store.RotateIfDue(device, secret);                         // the old one is presented again: a new secret is issued
-        Assert.NotNull(again);
-        store.Authorize(Alice, Header(device, again!));
-        clock.Advance(TimeSpan.FromMinutes(56));                               // the grace window is measured from the FIRST rotation, not extended
-        Assert.Equal(ErrorCode.Forbidden, Denied(store, Header(device, secret)));
-        Assert.NotNull(lost);
+        store.Authorize(Alice, Header(device, secret));                        // the other tab, still on the old secret
+        Assert.Null(store.RotateIfDue(device, secret));                        // gets nothing new, so the first tab's secret survives
+        store.Authorize(Alice, Header(device, fresh));
     }
 
     [Fact]

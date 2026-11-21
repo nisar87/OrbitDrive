@@ -57,3 +57,38 @@ describe('retrying a request that starts work', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('a browser secret replaced by the service', () => {
+  const device = { id: 'dev1', secret: 'old-secret-0123456789' };
+  const listBody = { pcs: [] };
+
+  it('adopts the new secret for its own approval and sends it on the next request', async () => {
+    const seen: string[] = [];
+    const rotated = 'dev1.new-secret-0123456789';
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: RequestInit) => {
+      seen.push((init.headers as Record<string, string>)['X-OrbitDrive-Device']);
+      const r = ok(listBody);
+      if (seen.length === 1) r.headers.set('X-OrbitDrive-Device-Rotated', rotated);
+      return r;
+    }));
+    const session: Session = { idToken: 't', email: 'a@b.c', device: { ...device } };
+    await api.pcs(session).catch(() => undefined);
+    await api.pcs(session).catch(() => undefined);
+    expect(seen[0]).toBe('dev1.old-secret-0123456789');
+    expect(seen[1]).toBe('dev1.new-secret-0123456789');
+  });
+
+  it('ignores a replacement that names a different approval or is too short', async () => {
+    const seen: string[] = [];
+    let n = 0;
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: RequestInit) => {
+      seen.push((init.headers as Record<string, string>)['X-OrbitDrive-Device']);
+      const r = ok(listBody);
+      r.headers.set('X-OrbitDrive-Device-Rotated', n++ === 0 ? 'someone-else.new-secret-0123456789' : 'dev1.short');
+      return r;
+    }));
+    const session: Session = { idToken: 't', email: 'a@b.c', device: { ...device } };
+    for (let i = 0; i < 3; i++) await api.pcs(session).catch(() => undefined);
+    expect(new Set(seen)).toEqual(new Set(['dev1.old-secret-0123456789']));
+  });
+});

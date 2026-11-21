@@ -354,14 +354,15 @@ public sealed class Store
             if (pcId is not null && (!_pcs.TryGetValue(pcId, out var pc) || pc.OwnerUid != identity.Uid || !device.PcIds.Contains(pcId)))
                 throw new ProtocolException(ErrorCode.NotFound, "PC not found.");
             device.LastSeenUnixMs = now.ToUnixTimeMilliseconds();
-            if (now - device.LastUsedAt > TimeSpan.FromHours(1)) { device.LastUsedAt = now; Save(); }   // coarse on purpose: this is a durable write
+            if (now - device.LastUsedAt > TimeSpan.FromTicks(Math.Min(TimeSpan.FromHours(1).Ticks, TimeSpan.FromDays(options.DeviceIdleDays).Ticks / 4))) { device.LastUsedAt = now; Save(); }   // coarse on purpose: this is a durable write
             return device;
         }
     }
 
     /// <summary>
-    /// Returns a NEW secret (shown once, to that browser, in a response header) when one is due: the current secret is older than DeviceRotateDays, or the browser still
-    /// presents the previous secret inside its grace window (so it never received the new one: the answer carrying it was lost). Returns null otherwise.
+    /// Returns a NEW secret (shown once, to that browser, in a response header) when the CURRENT secret is older than DeviceRotateDays; otherwise null.
+    /// A browser still presenting the previous secret (a second tab, a request in flight) is NOT given another one: that would invalidate the secret its sibling already holds.
+    /// If the one answer carrying a new secret is lost, the previous secret keeps working for the grace window and the browser then pairs again.
     /// Only called for a request that has just been authorised.
     /// </summary>
     public string? RotateIfDue(BrowserDeviceRecord device, string presentedSecret)
@@ -369,12 +370,10 @@ public sealed class Store
         lock (_gate)
         {
             var now = time.GetUtcNow();
-            var current = Secrets.Matches(device.SecretHash, presentedSecret);
-            var unconfirmed = !current && device.PreviousSecretHash is not null && now < device.PreviousValidUntil && Secrets.Matches(device.PreviousSecretHash, presentedSecret);
-            if (!unconfirmed && !(current && now - device.SecretIssuedAt >= TimeSpan.FromDays(options.DeviceRotateDays))) return null;
+            if (now - device.SecretIssuedAt < TimeSpan.FromDays(options.DeviceRotateDays) || !Secrets.Matches(device.SecretHash, presentedSecret)) return null;
             var secret = Secrets.Token();
-            if (current) { device.PreviousSecretHash = device.SecretHash; device.PreviousValidUntil = now.AddMinutes(options.DeviceRotationGraceMinutes); }
-            device.SecretHash = Secrets.Hash(secret); device.SecretIssuedAt = now;   // (unconfirmed: the previous secret and its deadline stay as they were)
+            device.PreviousSecretHash = device.SecretHash; device.PreviousValidUntil = now.AddMinutes(options.DeviceRotationGraceMinutes);
+            device.SecretHash = Secrets.Hash(secret); device.SecretIssuedAt = now;
             Save();
             return secret;
         }
