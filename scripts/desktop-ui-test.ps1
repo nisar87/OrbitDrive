@@ -265,6 +265,8 @@ try {
     Nav 'Settings'
     $diagnostics = WaitText 'DiagnosticsText' 'PC id'
     Shot 'diagnostics'
+    $version = WaitText 'UpdateVersion' 'OrbitDrive \d'
+    Check ((Exists 'CheckUpdateButton') -and (Exists 'UpdateHint')) 'the software-update card shows its version, a check button and its explanation'
 
     Nav 'Settings'
     Click 'QuitButton'
