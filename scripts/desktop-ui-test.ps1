@@ -76,7 +76,10 @@ function AttachWindow([System.Diagnostics.Process]$process) {
         if ($script:win) { return }
         Start-Sleep -Milliseconds 300
     }
-    throw "UI Automation could not find the OrbitDrive window"
+    # Say why: whether the console exited, and what it recorded if it crashed.
+    $why = if ($process.HasExited) { "the console exited with code $($process.ExitCode)" } else { 'the console is still running but showed no window' }
+    foreach ($log in Get-ChildItem -Path $script:state -Filter 'console-crash.log' -ErrorAction SilentlyContinue) { $why += "`n--- $($log.Name) ---`n" + (Get-Content -Raw $log.FullName) }
+    throw "UI Automation could not find the OrbitDrive window: $why"
 }
 function Api([string]$method, [string]$path, $body = $null, $headers = @{}) {
     try {

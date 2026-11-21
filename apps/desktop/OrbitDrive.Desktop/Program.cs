@@ -33,7 +33,10 @@ public static class Program
             return 3;
         }
 
+        var crashLog = Path.Join(stateDirectory, "console-crash.log");
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => RecordCrash(crashLog, e.ExceptionObject as Exception);
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        app.DispatcherUnhandledException += (_, e) => RecordCrash(crashLog, e.Exception);   // recorded, then the usual crash handling continues
 #pragma warning disable WPF0001 // Fluent theme switching is marked experimental in this SDK; it follows Windows light/dark/high-contrast.
         app.ThemeMode = theme switch { "light" => ThemeMode.Light, "dark" => ThemeMode.Dark, _ => ThemeMode.System };
 #pragma warning restore WPF0001
@@ -48,6 +51,17 @@ public static class Program
         var exit = app.Run();
         registration.Unregister(null);
         return exit;
+    }
+
+    /// <summary>Writes the type, message and stack of an unexpected console failure next to the agent's state, so a crash can be diagnosed afterwards. Never throws.</summary>
+    private static void RecordCrash(string path, Exception? error)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.AppendAllText(path, $"{DateTimeOffset.Now:O}{Environment.NewLine}{error}{Environment.NewLine}{Environment.NewLine}");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* nothing more can be done */ }
     }
 
     /// <summary>What the last <see cref="StartAgentAsync"/> had to do, in plain words, for the console's activity list (empty when nothing unusual).</summary>
