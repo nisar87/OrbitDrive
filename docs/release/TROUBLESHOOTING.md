@@ -13,6 +13,9 @@
 | Agent says "already running" | One agent per user | Use the tray icon; Quit first |
 | Web app shows a blank page after an update | Old cached files | Reload; the page is never cached, assets are versioned |
 
+## Files that don't show up (OneDrive, links, junctions)
+OrbitDrive never follows links or junctions, and OneDrive "Files On-Demand" items are the same kind of object to Windows, so they are **left out** of folder listings and the browser shows a count of items that were skipped. This is deliberate: reading an online-only file would make Windows download it from the cloud without you asking. If you want a OneDrive file to be reachable, copy it into a folder you share (a normal local copy). Other known limits: encrypted (EFS) files and network drives are not tested and are not supported.
+
 ## Support bundle
 Console, **Diagnostics**: preview what will be included, then save. It contains versions, settings that matter, recent activity events and counters. It **never** contains file names, folder paths, tokens, or file contents (names are replaced by fixed words). Nothing is sent anywhere automatically.
 
