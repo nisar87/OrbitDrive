@@ -146,7 +146,7 @@ try {
     [void](WaitText 'StateText' '^Sharing is on$')
     Check $true 'console shows "Sharing is on" once the agent reaches the relay'
     Shot 'home-online'
-    Check ((Exists 'GetStartedCard') -and (Exists 'GetStartedPairButton') -and -not (Exists 'GetStartedShareButton')) 'Home shows the get-started card with only the open step (a folder is already shared, no device is paired)'
+    Check ((Exists 'GetStartedCard') -and (Exists 'GetStartedShareButton') -and (Exists 'GetStartedPairLaterButton') -and -not (Exists 'GetStartedPairButton')) 'a fresh Home offers sharing a folder first, and pairing as the secondary step'
 
     Nav 'Devices'
     Click 'PairButton'
