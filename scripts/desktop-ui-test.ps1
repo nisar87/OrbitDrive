@@ -149,13 +149,6 @@ try {
     Check $true 'a non-HTTPS relay address is refused'
     SetText 'GatewayBox' $relay; SetText 'WebOriginBox' 'http://localhost:5173'; Click 'SaveGatewayButton'
     Shot 'settings'
-    # Explorer "Send to phone": the agent cannot report the current setting, so the console offers explicit on/off and shows only the agent's reply.
-    Click 'SendToOnButton'
-    [void](WaitText 'SendToStatus' '^Turned on')
-    Check $true 'Send to phone in Explorer can be turned on from the console, and the console shows the agent''s answer'
-    Click 'SendToOffButton'
-    [void](WaitText 'SendToStatus' '^Turned off')
-    Check $true 'and turned off again'
     # Picture previews: on by default; the switch (also when it is off) and the status line follow what the agent really stored.
     $thumbs = WaitText 'ThumbnailStatus' 'previews|Previews'
     if ($thumbs -match 'not available' -and -not $env:ORBITDRIVE_THUMBNAIL_HELPER) { Check $true 'picture previews report honestly that they are not available on this machine' }
@@ -172,6 +165,15 @@ try {
     [void](WaitText 'StateText' '^Sharing is on$')
     Check $true 'console shows "Sharing is on" once the agent reaches the relay'
     Shot 'home-online'
+    # Explorer "Send to phone": the agent cannot report the current setting, so the console offers explicit On/Off and shows only the agent's reply.
+    Nav 'Settings'
+    Click 'SendToOnButton'
+    for ($i = 0; $i -lt 40 -and (Find 'SendToStatus').Current.Name -eq '' -and (Find 'SendToError').Current.Name -eq ''; $i++) { Start-Sleep -Milliseconds 250 }
+    Check ((Find 'SendToStatus').Current.Name -match '^Turned on') "Send to phone in Explorer turns on from the console and shows the agent's answer (agent said: '$((Find 'SendToError').Current.Name)')"
+    Click 'SendToOffButton'
+    [void](WaitText 'SendToStatus' '^Turned off')
+    Check $true 'and turns off again'
+    Nav 'Home'
     Check ((Exists 'GetStartedTitle') -and -not (Exists 'GetStartedShareButton') -and (Exists 'GetStartedPairButton') -and -not (Exists 'GetStartedPairLaterButton')) 'Home shows the get-started card with only the open step (the folder is shared, no device is paired yet)'
 
     Nav 'Devices'
