@@ -45,6 +45,11 @@ builder.Services.AddHttpClient();
 if (options.DevIdentity.Enabled) builder.Services.AddSingleton<IIdentityVerifier>(s => s.GetRequiredService<DevIdentityVerifier>());
 else
 {
+    if (options.Firebase.CheckRevocation)
+    {
+        builder.Services.AddSingleton<IAccountStatusSource, IdentityToolkitAccountStatusSource>();
+        builder.Services.AddSingleton(sp => new RevocationGate(sp.GetRequiredService<IAccountStatusSource>(), sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<RevocationGate>>(), TimeSpan.FromSeconds(options.Firebase.RevocationCacheSeconds)));
+    }
     builder.Services.AddSingleton<FirebaseIdentityVerifier>();
     builder.Services.AddSingleton<IIdentityVerifier>(s => s.GetRequiredService<FirebaseIdentityVerifier>());
     builder.Services.AddHostedService(s => s.GetRequiredService<FirebaseIdentityVerifier>());

@@ -23,6 +23,18 @@ public sealed class FirebaseOptions
     public bool RequireVerifiedEmail { get; set; } = true;
     /// <summary>Development only: accept the unsigned tokens issued by the local Firebase Auth emulator.</summary>
     public bool AcceptEmulatorTokens { get; set; }
+    /// <summary>
+    /// Also ask Firebase whether the account is disabled/deleted or its sessions were revoked (Identity Toolkit accounts:lookup with the service account
+    /// from GOOGLE_APPLICATION_CREDENTIALS), so those take effect within about a minute instead of when the one-hour token expires. Off by default.
+    /// </summary>
+    public bool CheckRevocation { get; set; }
+    /// <summary>How long one answer from Firebase is reused (1 to 300 s). This is also the longest a revoked account keeps working.</summary>
+    public int RevocationCacheSeconds { get; set; } = 60;
+    public const string GoogleLookupBase = "https://identitytoolkit.googleapis.com";
+    /// <summary>Only tests may point this away from Google (Production refuses it).</summary>
+    public string AccountLookupBase { get; set; } = GoogleLookupBase;
+    /// <summary>Tests only: a fixed bearer token instead of the service-account credential (Production refuses it).</summary>
+    public string AccountLookupTestToken { get; set; } = "";
 }
 
 public sealed class GatewayOptions
@@ -86,6 +98,7 @@ public sealed class GatewayOptions
             if (!firebase) throw new InvalidOperationException("No production identity verifier is configured. Set OrbitDrive:Firebase:ProjectId.");
             if (Firebase.KeysUrl != FirebaseOptions.GoogleKeysUrl) throw new InvalidOperationException("Production must verify tokens against Google's signing keys.");
             if (Firebase.AcceptEmulatorTokens) throw new InvalidOperationException("Auth-emulator tokens cannot be accepted in Production.");
+            if (Firebase.AccountLookupBase != FirebaseOptions.GoogleLookupBase || Firebase.AccountLookupTestToken.Length > 0) throw new InvalidOperationException("Production must check accounts against Google with the service account.");
             if (!Firebase.RequireVerifiedEmail) throw new InvalidOperationException("Production requires verified email addresses.");
             if (AllowedWebOrigins.Length == 0 || AllowedWebOrigins.Any(o => !o.StartsWith("https://", StringComparison.Ordinal)))
                 throw new InvalidOperationException("Production requires explicit https web origins.");
@@ -98,6 +111,8 @@ public sealed class GatewayOptions
         if (DevIdentity.Enabled && DevIdentity.Secret.Length < 32)
             throw new InvalidOperationException("OrbitDrive:DevIdentity:Secret must be at least 32 characters.");
         if (!DevIdentity.Enabled && !firebase) throw new InvalidOperationException("No identity verifier is configured.");
+        if (Firebase.RevocationCacheSeconds is < 1 or > 300) throw new InvalidOperationException("OrbitDrive:Firebase:RevocationCacheSeconds must be between 1 and 300.");
+        if (Firebase.CheckRevocation && !firebase) throw new InvalidOperationException("OrbitDrive:Firebase:CheckRevocation needs OrbitDrive:Firebase:ProjectId.");
         if (firebase && !System.Text.RegularExpressions.Regex.IsMatch(Firebase.ProjectId, "^[a-z0-9-]{4,40}$")) throw new InvalidOperationException("OrbitDrive:Firebase:ProjectId is not a valid project id.");
         if (Firestore.ProjectId.Length > 0)
         {

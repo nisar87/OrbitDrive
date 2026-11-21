@@ -9,10 +9,10 @@ namespace OrbitDrive.Gateway;
 /// <summary>
 /// Verifies Firebase Authentication ID tokens the way Firebase documents for servers without the Admin SDK:
 /// RS256 signature against Google's published keys, audience = project id, issuer = securetoken/project id,
-/// expiry/issued-at checks and a non-empty subject. Token revocation (which needs service credentials) is not
-/// checked here yet; OrbitDrive's own device grants are revoked independently on every request.
+/// expiry/issued-at checks and a non-empty subject. Token revocation (disabled/deleted accounts, "sign out everywhere") is checked
+/// through <see cref="RevocationGate"/> when OrbitDrive:Firebase:CheckRevocation is on; OrbitDrive's own device grants are revoked independently on every request.
 /// </summary>
-public sealed class FirebaseIdentityVerifier(GatewayOptions options, TimeProvider time, IHttpClientFactory http, ILogger<FirebaseIdentityVerifier> logger) : BackgroundService, IIdentityVerifier
+public sealed class FirebaseIdentityVerifier(GatewayOptions options, TimeProvider time, IHttpClientFactory http, ILogger<FirebaseIdentityVerifier> logger, RevocationGate? revocation = null) : BackgroundService, IIdentityVerifier
 {
     private static readonly TimeSpan Skew = TimeSpan.FromSeconds(60);
     private volatile Dictionary<string, RSA>? _keys;
@@ -89,7 +89,9 @@ public sealed class FirebaseIdentityVerifier(GatewayOptions options, TimeProvide
             var verified = claims.TryGetProperty("email_verified", out var verifiedClaim) && verifiedClaim.ValueKind == JsonValueKind.True;
             if (options.Firebase.RequireVerifiedEmail && (!verified || email.Length == 0))
                 throw new ProtocolException(ErrorCode.Forbidden, "Verify your email address to continue. Check your inbox for the verification link.");
-            return new Identity(subject, email, Time("auth_time"));
+            var authTime = Time("auth_time");
+            if (algorithm != "none") revocation?.EnsureNotRevoked(subject, authTime);   // the local Auth emulator has no accounts:lookup (Development only)
+            return new Identity(subject, email, authTime);
         }
         catch (Exception e) when (e is FormatException or JsonException or KeyNotFoundException or InvalidOperationException or ArgumentOutOfRangeException or CryptographicException) { throw fail; }
     }
