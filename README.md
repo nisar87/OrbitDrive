@@ -49,3 +49,5 @@ dotnet run -c Release --project apps/desktop/OrbitDrive.Agent -- run --gateway h
 ```
 
 On Windows PowerShell use `$env:NAME = "value"` instead of `export`.
+
+Or, for the gateway and the web app together (development identity, `127.0.0.1` only): `node scripts/dev-start.mjs`, then start the agent as it prints.

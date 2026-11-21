@@ -73,6 +73,9 @@ jobs:
       - name: Web security headers (strict CSP builder, fail-closed placeholder in firebase.json)
         if: ${{ !cancelled() }}
         run: node --test tests/web/security-headers.test.mjs && node scripts/web-security-headers.mjs --check
+      - name: Dependency licence review (npm lock files, reviewed allowlist)
+        if: ${{ !cancelled() }}
+        run: node --test tests/relay/licence-check.test.mjs && node scripts/licence-check.mjs
       - name: Audit gate self-test
         if: ${{ !cancelled() }}
         run: node --test tests/relay/audit-check.test.mjs
