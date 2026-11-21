@@ -81,3 +81,9 @@ settings), behaviour within 1 GB under load, and the two GitHub workflows agains
 2. From your own computer: `scp firebase-key.json <relay-user>@relay.myorbitdrive.app:/tmp/firebase-key.json`, then on the relay: `sudo install -m 0640 -o root -g orbitdrive /tmp/firebase-key.json /etc/orbitdrive/firebase-key.json && rm /tmp/firebase-key.json`. Delete the copy on your computer.
 3. Re-run the pinned bootstrap with the same arguments as before plus `--use-firestore`. Existing pairings are imported once from the old file store (which is left untouched as a backup).
 4. Check `journalctl -u orbitdrive-gateway` for "importing" and no Firestore errors, then confirm a PC stays paired after `sudo systemctl restart orbitdrive-gateway`.
+
+## Firebase account checks (disabled accounts and "sign out everywhere")
+
+Without this, the relay accepts a valid sign-in token until it expires (up to an hour), even if you disable or delete the account or revoke its sessions in Firebase. With it, the relay also asks Firebase about the account (read-only `accounts:lookup`, one account at a time, answers reused for 60 s) and refuses a disabled/deleted account or a sign-in older than the last "revoke sessions". If Firebase cannot be asked, an answer from the last 15 minutes is used; with none, the request is refused as temporarily unavailable.
+
+Needs the service-account key at `/etc/orbitdrive/firebase-key.json` (see the Firestore section). Re-run the pinned bootstrap with the same arguments plus `--check-revocation`. To turn it off, re-run without the flag.
