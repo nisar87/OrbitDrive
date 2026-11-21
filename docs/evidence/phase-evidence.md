@@ -635,3 +635,12 @@ Published (c0824ac, eight workflows green incl. release-candidate): `main` fast-
 - Test adaptations (not weaker): the device list item name is now "Pixel 9, Last seen …" so the match is on the name prefix; the native confirmation box is answered with its Y accelerator because UI Automation exposes no Invoke on it. Two intermediate CI failures were test-helper issues (label vs button; native dialog), fixed in the script.
 - Screenshots (windows-2025, not Windows 11): `docs/evidence/screenshots/console-redesign/devices/`.
 - Unverified on real hardware: QR scan by a real phone from the redesigned panel, clipboard copy, confirmation dialog on Windows 11, DPI/high contrast.
+
+## Console redesign — steps 5 and 6: Activity and Settings (branch `feature/console-redesign`, SHA 7db0537)
+
+- **Activity** merges Transfers and stored history: what is being sent ("sent to the relay", never "saved"), the history on this PC (kinds, counts, sizes only; the agent's fixed codes now read in plain words, covered by new Core tests), notes from this session, Copy as text, confirmed Clear history.
+- **Settings**: General, Sending (limits, metered pause, picture previews + delete, Explorer "Send to phone" On/Off), Privacy (relay can see contents and names in transit, HTTPS, not end-to-end, no copy kept), Advanced (relay address, software updates, diagnostics + copy, Quit). Diagnostics is no longer a separate page. The agent does not report the Send-to state, so the console shows only the agent's reply to On/Off.
+- All five pages are XAML + view models. The old page host, ThumbnailPanel, HistoryPanel and the code-built pages are deleted; `LegacyConsole.cs` keeps only helpers used by the code-built update panel.
+- CI: `desktop` and `desktop-ui` green for SHA 7db0537 (108 UI Automation checks), including the real agent turning Explorer Send-to on and off. Intermediate failures were test-script issues only (stale page name in a loop, Ctrl+6 → Ctrl+5, the Send-to check running before the agent was online); none weakened an assertion.
+- Design doc: `docs/design/console-redesign.md`. Before/after screenshots: `docs/evidence/screenshots/console-redesign/{before,after}/`.
+- Still unverified on real hardware: see the owner checklist in the design doc.

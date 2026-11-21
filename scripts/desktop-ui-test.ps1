@@ -468,6 +468,7 @@ try {
     Shot 'dark-home'
     Nav 'Shared folders'; Shot 'dark-shared-folders'
     Nav 'Devices'; Click 'PairButton'; [void](WaitText 'PairCode' '^[A-Z0-9]{6}-[A-Z0-9]{10}$'); Start-Sleep -Milliseconds 600; Shot 'dark-devices'
+    Nav 'Activity'; Shot 'dark-activity'
     Nav 'Settings'; Shot 'dark-settings'
     Nav 'Settings'
     Check ((WaitText 'DiagnosticsText' 'Theme: Dark') -ne '') 'the console runs with the dark theme when asked'
