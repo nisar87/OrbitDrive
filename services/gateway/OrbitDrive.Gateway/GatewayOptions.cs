@@ -45,6 +45,12 @@ public sealed class GatewayOptions
     /// <summary>Where durable registrations and grants are kept. Empty = memory only (everything is forgotten on restart).</summary>
     public string DataDirectory { get; set; } = "";
     public FirestoreOptions Firestore { get; set; } = new();
+    /// <summary>A browser's approval ends when it has not been used for this many days (about 1 second to 3650 days; fractions allow tests): it must be paired again.</summary>
+    public double DeviceIdleDays { get; set; } = 90;
+    /// <summary>A browser's secret is replaced, transparently, once it is this many days old (about 1 second to 365 days).</summary>
+    public double DeviceRotateDays { get; set; } = 30;
+    /// <summary>How long the previous secret keeps working after a rotation (1 to 10080 minutes).</summary>
+    public double DeviceRotationGraceMinutes { get; set; } = 1440;
     public int PairingTtlSeconds { get; set; } = 120;
     /// <summary>Pairing-code attempts allowed per minute, counted separately per client address and per account.</summary>
     public int PairingClaimsPerMinute { get; set; } = 10;
@@ -111,6 +117,7 @@ public sealed class GatewayOptions
         if (DevIdentity.Enabled && DevIdentity.Secret.Length < 32)
             throw new InvalidOperationException("OrbitDrive:DevIdentity:Secret must be at least 32 characters.");
         if (!DevIdentity.Enabled && !firebase) throw new InvalidOperationException("No identity verifier is configured.");
+        if (!(DeviceIdleDays is >= 0.00001 and <= 3650) || !(DeviceRotateDays is >= 0.00001 and <= 365) || !(DeviceRotationGraceMinutes is >= 0.01 and <= 10080)) throw new InvalidOperationException("Browser approval limits are out of range (DeviceIdleDays up to 3650, DeviceRotateDays up to 365, DeviceRotationGraceMinutes up to 10080).");
         if (Firebase.RevocationCacheSeconds is < 1 or > 300) throw new InvalidOperationException("OrbitDrive:Firebase:RevocationCacheSeconds must be between 1 and 300.");
         if (Firebase.CheckRevocation && !firebase) throw new InvalidOperationException("OrbitDrive:Firebase:CheckRevocation needs OrbitDrive:Firebase:ProjectId.");
         if (firebase && !System.Text.RegularExpressions.Regex.IsMatch(Firebase.ProjectId, "^[a-z0-9-]{4,40}$")) throw new InvalidOperationException("OrbitDrive:Firebase:ProjectId is not a valid project id.");

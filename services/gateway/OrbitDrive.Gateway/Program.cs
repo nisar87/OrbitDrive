@@ -58,7 +58,7 @@ builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy => policy
     .WithOrigins(options.AllowedWebOrigins)
     .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")
     .WithHeaders("Authorization", "Content-Type", "X-OrbitDrive-Device", "X-Chunk-Sha256", "Range", "If-Range", IdempotencyStore.Header)
-    .WithExposedHeaders("Content-Range", "Accept-Ranges", "ETag", "Content-Length", "Content-Disposition", "Retry-After", IdempotencyStore.ReplayHeader)));
+    .WithExposedHeaders("X-OrbitDrive-Device-Rotated", "Content-Range", "Accept-Ranges", "ETag", "Content-Length", "Content-Disposition", "Retry-After", IdempotencyStore.ReplayHeader)));
 
 var app = builder.Build();
 var store = app.Services.GetRequiredService<Store>();
@@ -123,8 +123,15 @@ void Throttle(HttpContext context, string key, int perMinute, string message)
     throw new ProtocolException(ErrorCode.LimitExceeded, message);
 }
 
-BrowserDeviceRecord AuthorizeBrowser(HttpContext context, string? pcId = null) =>
-    store.Authorize(Authenticate(context), context.Request.Headers["X-OrbitDrive-Device"].ToString(), pcId);
+BrowserDeviceRecord AuthorizeBrowser(HttpContext context, string? pcId = null)
+{
+    var header = context.Request.Headers["X-OrbitDrive-Device"].ToString();
+    var device = store.Authorize(Authenticate(context), header, pcId);
+    // A browser's secret is replaced on a schedule: the new one travels once, back to the browser that just proved it holds the current one.
+    if (header.IndexOf('.') is > 0 and var dot && store.RotateIfDue(device, header[(dot + 1)..]) is { } fresh)
+        context.Response.Headers["X-OrbitDrive-Device-Rotated"] = $"{device.Id}.{fresh}";
+    return device;
+}
 
 // A retried "start work" request with the same Idempotency-Key returns the first answer instead of starting the work again (see IdempotencyStore).
 async Task RunIdempotent(HttpContext context, string key, Func<Task> next)

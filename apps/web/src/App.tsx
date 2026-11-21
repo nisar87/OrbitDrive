@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { api, ApiError, AUTH_MODE, GATEWAY_URL, loadDevice, loadSession, saveDevice, saveSession, setTokenProvider, type Session } from './api';
+import { api, ApiError, AUTH_MODE, GATEWAY_URL, loadDevice, loadSession, saveDevice, saveSession, setTokenProvider, trackDeviceOwner, type Session } from './api';
 import { firebaseAuth, type AuthUser } from './features/auth/firebaseAuth';
 import { AccountForms, VerifyEmail } from './features/auth/AccountForms';
 import { takePairingLinkFromLocation, type PairingLink } from './features/pairing/pairingLink';
@@ -130,7 +130,7 @@ function FirebaseApp() {
     firebaseAuth().then((auth) => {
       if (cancelled) return;
       setTokenProvider(auth.getToken);
-      stop = auth.onChange((next) => { setUser(next); setDevice(next ? loadDevice(next.uid) : undefined); });
+      stop = auth.onChange((next) => { trackDeviceOwner(next?.uid); setUser(next); setDevice(next ? loadDevice(next.uid) : undefined); });
     }).catch((e: unknown) => setFailure(e instanceof Error ? e.message : 'Sign-in is not configured.'));
     return () => { cancelled = true; stop(); };
   }, []);

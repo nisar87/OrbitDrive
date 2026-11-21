@@ -20,7 +20,14 @@ public sealed class BrowserDeviceRecord
     public required string Id { get; init; }
     public required string OwnerUid { get; init; }
     public required string Name { get; set; }
-    public required byte[] SecretHash { get; init; }
+    public required byte[] SecretHash { get; set; }
+    /// <summary>When this approval was made, when its secret was last replaced, and when the browser last used it (durable, updated at most hourly). The secret is replaced on a schedule and an unused approval lapses: see Store.Authorize / RotateIfDue.</summary>
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset SecretIssuedAt { get; set; }
+    public DateTimeOffset LastUsedAt { get; set; }
+    /// <summary>The secret before the last rotation stays valid for a short grace window, so a second open tab or an in-flight request that still holds it is not locked out.</summary>
+    public byte[]? PreviousSecretHash { get; set; }
+    public DateTimeOffset PreviousValidUntil { get; set; }
     public bool Active { get; set; }
     public bool Revoked { get; set; }
     /// <summary>Last authenticated request, in memory only (best effort: it says nothing about notification delivery).</summary>
@@ -134,7 +141,8 @@ public static class Secrets
 public sealed class Store
 {
     public sealed record PcDto(string PcId, string Spki, string Name, string AgentVersion, string? OwnerUid, long LastSeenUnixMs);
-    public sealed record DeviceDto(string Id, string OwnerUid, string Name, string SecretHash, bool Active, bool Revoked, string[] PcIds);
+    public sealed record DeviceDto(string Id, string OwnerUid, string Name, string SecretHash, bool Active, bool Revoked, string[] PcIds,
+        long? CreatedAtUnixMs = null, long? SecretIssuedAtUnixMs = null, long? LastUsedAtUnixMs = null, string? PreviousSecretHash = null, long? PreviousValidUntilUnixMs = null);
     public sealed record PrefDto(string OwnerUid, int HistoryRetentionDays, bool NotifyInvitations, bool DiagnosticsConsent);
     public sealed record Snapshot(int Version, PcDto[] Pcs, DeviceDto[] Devices, string[]? Suspended = null, PrefDto[]? Prefs = null);
 
@@ -165,6 +173,10 @@ public sealed class Store
             foreach (var d in snapshot.Devices)
             {
                 var device = new BrowserDeviceRecord { Id = d.Id, OwnerUid = d.OwnerUid, Name = d.Name, SecretHash = Convert.FromBase64String(d.SecretHash), Active = d.Active, Revoked = d.Revoked };
+                // Approvals saved before these fields existed start their clocks now: nobody is locked out by an upgrade.
+                DateTimeOffset At(long? ms) => ms is { } v ? DateTimeOffset.FromUnixTimeMilliseconds(v) : time.GetUtcNow();
+                device.CreatedAt = At(d.CreatedAtUnixMs); device.SecretIssuedAt = At(d.SecretIssuedAtUnixMs); device.LastUsedAt = At(d.LastUsedAtUnixMs);
+                if (d.PreviousSecretHash is { Length: > 0 } previous) { device.PreviousSecretHash = Convert.FromBase64String(previous); device.PreviousValidUntil = At(d.PreviousValidUntilUnixMs); }
                 foreach (var pcId in d.PcIds) if (_pcs.ContainsKey(pcId)) device.PcIds.Add(pcId);
                 _devices[d.Id] = device;
             }
@@ -185,7 +197,9 @@ public sealed class Store
         if (_backend is null) return;
         _backend.Save(new Snapshot(1,
             [.. _pcs.Values.Select(p => new PcDto(p.PcId, Convert.ToBase64String(p.PublicKeySpki), p.Name, p.AgentVersion, p.OwnerUid, p.LastSeen.ToUnixTimeMilliseconds()))],
-            [.. _devices.Values.Where(d => d.Active || d.Revoked).Select(d => new DeviceDto(d.Id, d.OwnerUid, d.Name, Convert.ToBase64String(d.SecretHash), d.Active, d.Revoked, [.. d.PcIds]))],
+            [.. _devices.Values.Where(d => d.Active || d.Revoked).Select(d => new DeviceDto(d.Id, d.OwnerUid, d.Name, Convert.ToBase64String(d.SecretHash), d.Active, d.Revoked, [.. d.PcIds],
+                d.CreatedAt.ToUnixTimeMilliseconds(), d.SecretIssuedAt.ToUnixTimeMilliseconds(), d.LastUsedAt.ToUnixTimeMilliseconds(),
+                d.PreviousSecretHash is null ? null : Convert.ToBase64String(d.PreviousSecretHash), d.PreviousSecretHash is null ? null : d.PreviousValidUntil.ToUnixTimeMilliseconds()))],
             [.. _suspended], [.. _prefs.Select(e => new PrefDto(e.Key, e.Value.HistoryRetentionDays, e.Value.NotifyInvitations, e.Value.DiagnosticsConsent))]));
     }
 
@@ -259,7 +273,7 @@ public sealed class Store
             else
             {
                 deviceSecret = Secrets.Token();
-                device = new BrowserDeviceRecord { Id = Secrets.Token(12), OwnerUid = identity.Uid, Name = browserName, SecretHash = Secrets.Hash(deviceSecret) };
+                device = new BrowserDeviceRecord { Id = Secrets.Token(12), OwnerUid = identity.Uid, Name = browserName, SecretHash = Secrets.Hash(deviceSecret), CreatedAt = time.GetUtcNow(), SecretIssuedAt = time.GetUtcNow(), LastUsedAt = time.GetUtcNow() };
                 _devices[device.Id] = device;
             }
             pairing.State = PairingState.Claimed;
@@ -325,13 +339,44 @@ public sealed class Store
         if (parts is not { Length: 2 }) throw denied;
         lock (_gate)
         {
-            if (!_devices.TryGetValue(parts[0], out var device) || !Secrets.Matches(device.SecretHash, parts[1]) ||
-                device.OwnerUid != identity.Uid || !device.Active || device.Revoked) throw denied;
+            var now = time.GetUtcNow();
+            if (!_devices.TryGetValue(parts[0], out var device) || device.OwnerUid != identity.Uid || !device.Active || device.Revoked) throw denied;
+            var current = Secrets.Matches(device.SecretHash, parts[1]);
+            var previous = !current && device.PreviousSecretHash is not null && now < device.PreviousValidUntil && Secrets.Matches(device.PreviousSecretHash, parts[1]);
+            if (!current && !previous) throw denied;
+            if (now - device.LastUsedAt > TimeSpan.FromDays(options.DeviceIdleDays))
+            {
+                // An approval nobody has used for this long lapses: the browser must be paired again. (Checked after the secret, so a stranger learns nothing.)
+                device.Active = false; Save();
+                throw new ProtocolException(ErrorCode.Forbidden, "This browser has not been used for a long time, so its approval ended. Pair it with your PC again.");
+            }
             if (_suspended.Contains(identity.Uid)) throw Suspension;
             if (pcId is not null && (!_pcs.TryGetValue(pcId, out var pc) || pc.OwnerUid != identity.Uid || !device.PcIds.Contains(pcId)))
                 throw new ProtocolException(ErrorCode.NotFound, "PC not found.");
-            device.LastSeenUnixMs = time.GetUtcNow().ToUnixTimeMilliseconds();
+            device.LastSeenUnixMs = now.ToUnixTimeMilliseconds();
+            if (now - device.LastUsedAt > TimeSpan.FromHours(1)) { device.LastUsedAt = now; Save(); }   // coarse on purpose: this is a durable write
             return device;
+        }
+    }
+
+    /// <summary>
+    /// Returns a NEW secret (shown once, to that browser, in a response header) when one is due: the current secret is older than DeviceRotateDays, or the browser still
+    /// presents the previous secret inside its grace window (so it never received the new one: the answer carrying it was lost). Returns null otherwise.
+    /// Only called for a request that has just been authorised.
+    /// </summary>
+    public string? RotateIfDue(BrowserDeviceRecord device, string presentedSecret)
+    {
+        lock (_gate)
+        {
+            var now = time.GetUtcNow();
+            var current = Secrets.Matches(device.SecretHash, presentedSecret);
+            var unconfirmed = !current && device.PreviousSecretHash is not null && now < device.PreviousValidUntil && Secrets.Matches(device.PreviousSecretHash, presentedSecret);
+            if (!unconfirmed && !(current && now - device.SecretIssuedAt >= TimeSpan.FromDays(options.DeviceRotateDays))) return null;
+            var secret = Secrets.Token();
+            if (current) { device.PreviousSecretHash = device.SecretHash; device.PreviousValidUntil = now.AddMinutes(options.DeviceRotationGraceMinutes); }
+            device.SecretHash = Secrets.Hash(secret); device.SecretIssuedAt = now;   // (unconfirmed: the previous secret and its deadline stay as they were)
+            Save();
+            return secret;
         }
     }
 

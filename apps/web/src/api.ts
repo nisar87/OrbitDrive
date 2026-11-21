@@ -33,6 +33,28 @@ export function saveDevice(uid: string, device: Session['device']): void {
 export function startsWork(method: string, path: string): boolean {
   return method === 'POST' && (path === '/v1/download-sessions' || /^\/v1\/pcs\/[^/]+\/(archives|searches|uploads)$/.test(path));
 }
+/**
+ * The service replaces a browser's secret from time to time and hands the new one back, once, in a response header. It is stored here, and every request
+ * reads the newest stored one first, so a second tab that still holds the old secret in memory does not fall behind.
+ */
+export const ROTATED_HEADER = 'X-OrbitDrive-Device-Rotated';
+function currentDeviceSecret(session: Session, uid?: string): string | undefined {
+  if (!session.device) return undefined;
+  const stored = uid ? loadDevice(uid) : undefined;
+  return stored?.id === session.device.id ? stored.secret : session.device.secret;
+}
+function adoptRotation(session: Session | null, response: Response): void {
+  const rotated = response.headers.get(ROTATED_HEADER);
+  if (!session?.device || !rotated) return;
+  const dot = rotated.indexOf('.');
+  if (dot <= 0 || rotated.slice(0, dot) !== session.device.id || rotated.length - dot - 1 < 16) return;   // only a new secret for THIS browser's own approval
+  session.device = { id: session.device.id, secret: rotated.slice(dot + 1) };
+  if (deviceOwner) saveDevice(deviceOwner, session.device);
+}
+let deviceOwner: string | undefined;
+/** Which account's stored approval to keep current (set at sign-in; cleared at sign-out). */
+export function trackDeviceOwner(uid: string | undefined): void { deviceOwner = uid; }
+
 export const retryTuning = { networkRetries: 2, delayMs: 600 };
 const newKey = (): string => (globalThis.crypto?.randomUUID?.() ?? `k${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`);
 
@@ -42,7 +64,7 @@ async function call<K extends keyof ProtocolTypeMap>(type: K, session: Session |
   if (idempotent) headers['Idempotency-Key'] = newKey();
   const token = session ? (tokenProvider ? await tokenProvider() : session.idToken) : null;
   if (token) headers.Authorization = `Bearer ${token}`;
-  if (session?.device) headers['X-OrbitDrive-Device'] = `${session.device.id}.${session.device.secret}`;
+  if (session?.device) headers['X-OrbitDrive-Device'] = `${session.device.id}.${currentDeviceSecret(session, deviceOwner)}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   let response: Response | undefined;
   for (let attempt = 0; response === undefined; attempt++) {
@@ -54,6 +76,7 @@ async function call<K extends keyof ProtocolTypeMap>(type: K, session: Session |
       await new Promise((resolve) => setTimeout(resolve, retryTuning.delayMs * (attempt + 1)));
     }
   }
+  adoptRotation(session, response);
   const json: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     try { const failure = validate('ErrorResponse', json); throw new ApiError(failure.error.code, failure.error.message, response.status); }
@@ -70,7 +93,7 @@ async function sendChunk(s: Session, pcId: string, uploadId: string, offset: num
   const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream', 'X-Chunk-Sha256': sha256 };
   const token = tokenProvider ? await tokenProvider() : s.idToken;
   if (token) headers.Authorization = `Bearer ${token}`;
-  if (s.device) headers['X-OrbitDrive-Device'] = `${s.device.id}.${s.device.secret}`;
+  if (s.device) headers['X-OrbitDrive-Device'] = `${s.device.id}.${currentDeviceSecret(s, deviceOwner)}`;
   let response: Response;
   try {
     response = await fetch(`${GATEWAY_URL}/v1/pcs/${encodeURIComponent(pcId)}/uploads/${encodeURIComponent(uploadId)}/chunk?offset=${offset}`,
@@ -79,6 +102,7 @@ async function sendChunk(s: Session, pcId: string, uploadId: string, offset: num
     if (e instanceof DOMException && e.name === 'AbortError') throw e;
     throw new ApiError('network', 'Cannot reach the OrbitDrive service. Check your connection.', 0);
   }
+  adoptRotation(s, response);
   const json: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     try { const failure = validate('ErrorResponse', json); throw new ApiError(failure.error.code, failure.error.message, response.status); }

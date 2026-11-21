@@ -62,7 +62,10 @@ public sealed class FirestoreSnapshotBackend : ISnapshotBackend, IHostedService,
 
         var snapshot = new Store.Snapshot(1,
             [.. pcs.Select(d => new Store.PcDto(d.Id, Text(d, "spki"), Text(d, "name"), Text(d, "agentVersion"), d.ContainsField("ownerUid") ? d.GetValue<string?>("ownerUid") : null, d.GetValue<long>("lastSeenUnixMs")))],
-            [.. devices.Select(d => new Store.DeviceDto(d.Id, Text(d, "ownerUid"), Text(d, "name"), Text(d, "secretHash"), d.GetValue<bool>("active"), d.GetValue<bool>("revoked"), [.. d.GetValue<List<string>>("pcIds")]))],
+            [.. devices.Select(d => new Store.DeviceDto(d.Id, Text(d, "ownerUid"), Text(d, "name"), Text(d, "secretHash"), d.GetValue<bool>("active"), d.GetValue<bool>("revoked"), [.. d.GetValue<List<string>>("pcIds")],
+                d.ContainsField("createdAtUnixMs") ? d.GetValue<long>("createdAtUnixMs") : null, d.ContainsField("secretIssuedAtUnixMs") ? d.GetValue<long>("secretIssuedAtUnixMs") : null,
+                d.ContainsField("lastUsedAtUnixMs") ? d.GetValue<long>("lastUsedAtUnixMs") : null, d.ContainsField("previousSecretHash") ? d.GetValue<string>("previousSecretHash") : null,
+                d.ContainsField("previousValidUntilUnixMs") ? d.GetValue<long>("previousValidUntilUnixMs") : null))],
             [.. owners.Where(d => d.GetValue<bool>("suspended")).Select(d => d.Id)],
             [.. owners.Where(d => d.ContainsField("historyRetentionDays")).Select(d => new Store.PrefDto(d.Id, d.GetValue<int>("historyRetentionDays"), d.GetValue<bool>("notifyInvitations"), d.GetValue<bool>("diagnosticsConsent")))]);
         _stored = Documents(snapshot).ToDictionary(e => e.Key, e => e.Value.Fingerprint);
@@ -172,7 +175,14 @@ public sealed class FirestoreSnapshotBackend : ISnapshotBackend, IHostedService,
             Add($"{Pcs}/{p.PcId}", data);
         }
         foreach (var d in snapshot.Devices)
-            Add($"{Devices}/{d.Id}", new Dictionary<string, object> { ["ownerUid"] = d.OwnerUid, ["name"] = d.Name, ["secretHash"] = d.SecretHash, ["active"] = d.Active, ["revoked"] = d.Revoked, ["pcIds"] = d.PcIds.Order().ToList() });
+        {
+            var data = new Dictionary<string, object> { ["ownerUid"] = d.OwnerUid, ["name"] = d.Name, ["secretHash"] = d.SecretHash, ["active"] = d.Active, ["revoked"] = d.Revoked, ["pcIds"] = d.PcIds.Order().ToList() };
+            if (d.CreatedAtUnixMs is { } created) data["createdAtUnixMs"] = created;
+            if (d.SecretIssuedAtUnixMs is { } issued) data["secretIssuedAtUnixMs"] = issued;
+            if (d.LastUsedAtUnixMs is { } used) data["lastUsedAtUnixMs"] = used;
+            if (d.PreviousSecretHash is not null) { data["previousSecretHash"] = d.PreviousSecretHash; data["previousValidUntilUnixMs"] = d.PreviousValidUntilUnixMs ?? 0L; }
+            Add($"{Devices}/{d.Id}", data);
+        }
         var owners = new Dictionary<string, Dictionary<string, object>>();
         foreach (var uid in snapshot.Suspended ?? []) owners[uid] = new Dictionary<string, object> { ["suspended"] = true };
         foreach (var pref in snapshot.Prefs ?? [])
