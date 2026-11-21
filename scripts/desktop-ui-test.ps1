@@ -302,7 +302,8 @@ try {
 
     # The agent is stopped from outside; the console must not relaunch it in a loop.
     & $AgentExe ctl quit --state $state | Out-Null
-    Start-Sleep -Seconds 5
+    for ($i = 0; $i -lt 50 -and (Agents).Count -ne 0; $i++) { Start-Sleep -Milliseconds 200 }   # the process may take a moment to exit
+    Start-Sleep -Seconds 5                                                                         # then it must stay gone
     Check ((Agents).Count -eq 0) 'an agent stopped elsewhere is not silently relaunched by the console'
 
     Nav 'Home'
