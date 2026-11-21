@@ -618,3 +618,12 @@ Published (c0824ac, eight workflows green incl. release-candidate): `main` fast-
 - Test wording changed with the product copy (e.g. "Online" → "Sharing is on"); assertions are unchanged in meaning. Two of my own new checks were wrong first (Border has no UIA peer; first-run state) and were corrected, not weakened.
 - Screenshots (windows-2025 runner, NOT Windows 11, so no Mica evidence): `docs/evidence/screenshots/console-redesign/home/`.
 - Unverified: Mica backdrop, DPI 100-200 %, high contrast, lock/unlock (owner checklist).
+
+## Console redesign — step 3: Shared folders page (branch `feature/console-redesign`, SHA a49bd3a)
+
+- Folder cards with a status pill (Read-only / Can add files / Unavailable), one primary action (Share a folder… with the system picker), drag-and-drop of folders from Explorer, actions for the selected folder, typed-path sharing kept for keyboard/automation. Confirmations: stop sharing, allow adding files, sharing a whole drive. Agent commands and automation IDs unchanged.
+- CI: `desktop` and `desktop-ui` green for this SHA (107 UI Automation checks). New checks: the main action exists; per-folder actions appear only after a folder is selected. The existing missing-folder, read-only, hidden-items (agent-verified) and persistence checks still pass.
+- Test adaptation (not a weaker assertion): an empty list is now replaced by an empty-state message, so an absent `RootsList` counts as zero items.
+- Design fix from screenshots: stock list selection (saturated blue) lowered secondary-text contrast; replaced by `Style.CardItem` (subtle fill + accent bar).
+- Screenshots (windows-2025, not Windows 11): `docs/evidence/screenshots/console-redesign/folders/`.
+- Unverified on real hardware: drag-and-drop from Explorer, the system folder picker, the confirmation dialogs (modal, not exercised by the UI test), DPI/high contrast.
