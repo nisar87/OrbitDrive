@@ -44,6 +44,8 @@ function ListItems([string]$id) {
     $condition = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::ListItem)
     @((Find $id).FindAll($Scope::Descendants, $condition) | ForEach-Object { $_.Current.Name })
 }
+function TextsUnder([string]$id) { @((Find $id).FindAll($Scope::Descendants, [System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object { $_.Current.Name }) }
+function Exists([string]$id) { try { [void](Find $id 1500); $true } catch { $false } }
 function Shot([string]$name) {
     $script:shots++
     $rect = $script:win.Current.BoundingRectangle
@@ -98,10 +100,10 @@ try {
 
     $console = Start-Process -FilePath $Exe -ArgumentList '--state', "`"$state`"" -PassThru
     AttachWindow $console
-    [void](WaitText 'StateText' '^Not set up$')
-    Check $true 'fresh install shows "Not set up" (real agent state over the local channel)'
+    [void](WaitText 'StateText' '^Not set up yet$')
+    Check $true 'fresh install shows "Not set up yet" (real agent state over the local channel)'
     Check ((Agents).Count -eq 1) 'the console started exactly one agent'
-    Shot 'overview-not-set-up'
+    Shot 'home-not-set-up'
 
     $second = Start-Process -FilePath $Exe -ArgumentList '--state', "`"$state`"" -PassThru -Wait
     Check ($second.ExitCode -eq 3) 'a second console instance exits instead of opening'
@@ -137,10 +139,11 @@ try {
         [void](WaitText 'ThumbnailStatus' '^Paired devices can see small previews')
         Check (IsOn 'ThumbnailsToggle') 'the previews switch turns previews on again'
     }
-    Nav 'Overview'
-    [void](WaitText 'StateText' '^Online$')
-    Check $true 'console shows Online once the agent reaches the relay'
-    Shot 'overview-online'
+    Nav 'Home'
+    [void](WaitText 'StateText' '^Sharing is on$')
+    Check $true 'console shows "Sharing is on" once the agent reaches the relay'
+    Shot 'home-online'
+    Check ((Exists 'GetStartedCard') -and (Exists 'GetStartedPairButton') -and -not (Exists 'GetStartedShareButton')) 'Home shows the get-started card with only the open step (a folder is already shared, no device is paired)'
 
     Nav 'Devices'
     Click 'PairButton'
@@ -154,6 +157,10 @@ try {
     $claim = (Api 'Post' "/v1/pairing-requests/$($parts[0])/claim" @{ secret = $parts[1]; browserName = 'Pixel 9' } $auth)
     Check ($claim.status -eq 200) 'the browser claimed the code'
     $device = @{ Authorization = $auth.Authorization; 'X-OrbitDrive-Device' = "$($claim.body.browserDeviceId).$($claim.body.deviceSecret)" }
+    Nav 'Home'
+    Check (Exists 'ReviewApprovalButton') 'Home tells the owner a device is asking to connect, with a Review button'
+    Shot 'home-approval'
+    Click 'ReviewApprovalButton'
     $prompt = WaitText 'ApprovalText' 'owner@example\.test'
     Check ($prompt -match 'Pixel 9' -and $prompt -match $claim.body.confirmationCode) 'approval prompt shows the account, browser name and the same confirmation code'
     Check ((Api 'Get' '/v1/pcs' $null $device).status -eq 403) 'the browser has no access before the owner approves'
@@ -194,16 +201,23 @@ try {
     Click 'ToggleHiddenButton'
     for ($i = 0; $i -lt 40; $i++) { $withHidden = (Api 'Post' "/v1/pcs/$pcId/directory-queries" @{ rootId = $roots[0].rootId; pageSize = 50 } $device).body; if (@($withHidden.entries | Where-Object { $_.name -eq 'private-diary.txt' }).Count -eq 0) { break }; Start-Sleep -Milliseconds 250 }
     Check (@($withHidden.entries | Where-Object { $_.name -eq 'private-diary.txt' }).Count -eq 0) 'turning it off hides the file again'
-    Nav 'Overview'
-
-    Nav 'Overview'
+    Nav 'Home'
     Click 'PauseButton'
-    [void](WaitText 'StateText' '^Paused$')
-    Check ((Api 'Get' "/v1/pcs/$pcId/roots" $null $device).status -eq 503) 'Pause Remote Access cuts access immediately'
-    Shot 'overview-paused'
+    [void](WaitText 'StateText' '^Sharing is paused$')
+    Check ((Api 'Get' "/v1/pcs/$pcId/roots" $null $device).status -eq 503) 'Pause sharing cuts access immediately'
+    Shot 'home-paused'
     Click 'PauseButton'
-    [void](WaitText 'StateText' '^Online$')
+    [void](WaitText 'StateText' '^Sharing is on$')
     Check ((Api 'Get' "/v1/pcs/$pcId/roots" $null $device).status -eq 200) 'Resume restores access'
+    # Home: the newest few events in plain words (kinds, counts and sizes only), and the get-started card is gone once its two steps are done.
+    Nav 'Home'
+    $recent = ''
+    for ($i = 0; $i -lt 40 -and $recent -notmatch 'A file was sent to a browser'; $i++) { Start-Sleep -Milliseconds 500; $recent = (@(TextsUnder 'HomeRecentList') -join "`n") }
+    Check ($recent -match 'A file was sent to a browser' -and $recent -match 'Shared folders changed') 'Home lists the newest activity in plain words'
+    Check ($recent -notmatch '[A-Za-z]:\\') 'Home shows no file system paths'
+    for ($i = 0; $i -lt 40 -and (Exists 'GetStartedCard'); $i++) { Start-Sleep -Milliseconds 500 }
+    Check (-not (Exists 'GetStartedCard')) 'the get-started card is gone once a folder is shared and a device is paired'
+    Shot 'home-recent'
     Nav 'Activity'
     Check (@(ListItems 'ActivityList').Count -ge 4) 'activity history recorded the session'
     # The stored history (kept by the agent, shown in plain words) appears on the same page. The list is virtualised and newest-first, so the
@@ -220,7 +234,7 @@ try {
     $diagnostics = WaitText 'DiagnosticsText' 'PC id'
     Shot 'diagnostics'
 
-    Nav 'Overview'
+    Nav 'Settings'
     Click 'QuitButton'
     Check ($console.WaitForExit(15000)) 'Quit closes the console'
     for ($i = 0; $i -lt 50 -and (Agents).Count -gt 0; $i++) { Start-Sleep -Milliseconds 200 }
@@ -229,7 +243,7 @@ try {
 
     $console = Start-Process -FilePath $Exe -ArgumentList '--state', "`"$state`"" -PassThru
     AttachWindow $console
-    [void](WaitText 'StateText' '^Online$')
+    [void](WaitText 'StateText' '^Sharing is on$')
     Nav 'Shared folders'
     Check (@(ListItems 'RootsList').Count -eq 1) 'relay address, identity and shared folder persist across a restart'
     Check ((Api 'Get' "/v1/pcs/$pcId/roots" $null $device).status -eq 200) 'the paired browser works again without re-pairing'
@@ -258,11 +272,11 @@ try {
     Start-Sleep -Seconds 5
     Check ((Agents).Count -eq 0) 'an agent stopped elsewhere is not silently relaunched by the console'
 
-    Nav 'Overview'
-    [void](WaitText 'StateText' '^Stopped$')
+    Nav 'Home'
+    [void](WaitText 'StateText' '^OrbitDrive is stopped$')
     Check $true 'the console says the agent was stopped (a deliberate stop is not treated as a crash)'
     Click 'StartAgentButton'
-    [void](WaitText 'StateText' '^Online$' 60000)
+    [void](WaitText 'StateText' '^Sharing is on$' 60000)
     Check ((Agents).Count -eq 1) 'Start brings the agent back'
 
     # Crash recovery: an agent that dies unexpectedly is restarted, but only a bounded number of times.
@@ -272,23 +286,23 @@ try {
         $back = $false
         for ($i = 0; $i -lt 160 -and -not $back; $i++) { Start-Sleep -Milliseconds 250; $now = Agents; $back = ($now.Count -eq 1 -and $now[0].Id -ne $old) }
         Check $back "crash $crash of 3: the console restarted the agent by itself"
-        [void](WaitText 'StateText' '^Online$' 60000)
+        [void](WaitText 'StateText' '^Sharing is on$' 60000)
     }
     Check ((Agents).Count -eq 1) 'exactly one agent after three recoveries (no duplicates)'
     Stop-Process -Id (Agents)[0].Id -Force
-    [void](WaitText 'StateText' '^Agent keeps stopping$' 30000)
+    [void](WaitText 'StateText' '^OrbitDrive keeps stopping$' 30000)
     Start-Sleep -Seconds 6
     Check ((Agents).Count -eq 0) 'a fourth crash in a row is NOT restarted (no launch loop)'
-    Shot 'overview-agent-keeps-stopping'
+    Shot 'home-agent-keeps-stopping'
     Click 'StartAgentButton'
-    [void](WaitText 'StateText' '^Online$' 60000)
+    [void](WaitText 'StateText' '^Sharing is on$' 60000)
     Check ((Agents).Count -eq 1) 'the owner can start it again explicitly'
 
     # A leftover agent of this installation holds the agent lock but no longer answers (as after an interrupted update): Start must replace it.
     $lockFile = Join-Path $state 'agent.lock'
     & $AgentExe ctl quit --state $state | Out-Null
     for ($i = 0; $i -lt 80 -and (Agents).Count -ne 0; $i++) { Start-Sleep -Milliseconds 250 }
-    [void](WaitText 'StateText' '^Stopped$')
+    [void](WaitText 'StateText' '^OrbitDrive is stopped$')
     $stuck = Start-Process -FilePath $AgentExe -ArgumentList @('run', '--state', ('"' + $state + '"')) -PassThru -WindowStyle Hidden
     # Freeze it the moment it holds the lock, before it can answer: if the console attached to it while it still worked, this would not be the case under test.
     Add-Type -Namespace Native -Name Proc -MemberDefinition '[DllImport("ntdll.dll")] public static extern int NtSuspendProcess(System.IntPtr handle);'
@@ -302,7 +316,7 @@ try {
     # freeze and has to notice the silence itself (about a minute) and replace it.
     try { Click 'StartAgentButton' } catch { Write-Host 'console had attached to the frozen agent; waiting for it to notice the silence' }
     for ($i = 0; $i -lt 600 -and (Get-Process -Id $stuck.Id -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Milliseconds 250 }
-    try { [void](WaitText 'StateText' '^Online$' 90000) }
+    try { [void](WaitText 'StateText' '^Sharing is on$' 90000) }
     catch {
         Nav 'Activity'
         Write-Host "DIAGNOSTIC stand-in alive: $($null -ne (Get-Process -Id $stuck.Id -ErrorAction SilentlyContinue)); agents: $((Agents).Count)"
@@ -310,7 +324,7 @@ try {
         throw
     }
     if (Get-Process -Id $stuck.Id -ErrorAction SilentlyContinue) {
-        Nav 'Overview'
+        Nav 'Home'
         Write-Host ("DIAGNOSTIC state: " + (Find 'StateText').Current.Name + " / " + (Find 'StateDetail').Current.Name)
         Nav 'Activity'
         Write-Host ("DIAGNOSTIC activity: " + ((@(ListItems 'ActivityList')) -join ' | '))
@@ -322,12 +336,12 @@ try {
     $note = $false
     for ($i = 0; $i -lt 20 -and -not $note; $i++) { $note = ((@(ListItems 'ActivityList') -join "`n") -match 'was not answering and was stopped'); if (-not $note) { Start-Sleep -Milliseconds 500 } }
     Check $note 'the console says plainly that it stopped a leftover agent'
-    Nav 'Overview'
+    Nav 'Home'
 
     # A different program holding the lock is NOT this installation's agent: it must never be killed.
     & $AgentExe ctl quit --state $state | Out-Null
     for ($i = 0; $i -lt 80 -and (Agents).Count -ne 0; $i++) { Start-Sleep -Milliseconds 250 }
-    [void](WaitText 'StateText' '^Stopped$')
+    [void](WaitText 'StateText' '^OrbitDrive is stopped$')
     $holderScript = '$f = [IO.File]::Open(''' + $lockFile + ''', ''OpenOrCreate'', ''ReadWrite'', ''None''); Start-Sleep -Seconds 120'
     $holder = Start-Process -FilePath 'powershell.exe' -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile', '-EncodedCommand', [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($holderScript)))
     for ($i = 0; $i -lt 80; $i++) { try { $probe = [IO.File]::Open($lockFile, 'OpenOrCreate', 'ReadWrite', 'None'); $probe.Close(); Start-Sleep -Milliseconds 250 } catch [System.IO.IOException] { break } }
@@ -341,21 +355,21 @@ try {
     $unknown = $false
     for ($i = 0; $i -lt 20 -and -not $unknown; $i++) { $unknown = ((@(ListItems 'ActivityList') -join "`n") -match 'could not be identified'); if (-not $unknown) { Start-Sleep -Milliseconds 500 } }
     Check $unknown 'the console says it could not identify the program holding the lock'
-    Nav 'Overview'
+    Nav 'Home'
     Stop-Process -Id $holder.Id -Force
     Start-Sleep -Seconds 1
     Click 'StartAgentButton'
-    [void](WaitText 'StateText' '^Online$' 60000)
+    [void](WaitText 'StateText' '^Sharing is on$' 60000)
     Check ((Agents).Count -eq 1) 'once the lock is free the agent starts again'
-    Shot 'overview-online-final'
+    Shot 'home-online-final'
 
     # Keyboard reachability on every page.
-    foreach ($page in 'Overview', 'Shared folders', 'Devices', 'Transfers', 'Activity', 'Settings', 'Diagnostics') {
+    foreach ($page in 'Home', 'Shared folders', 'Devices', 'Transfers', 'Activity', 'Settings', 'Diagnostics') {
         Nav $page
         $bad = @(UnreachableControls)
         Check ($bad.Count -eq 0) "every control on '$page' is reachable by keyboard $($bad -join ', ')"
     }
-    Nav 'Overview'
+    Nav 'Home'
     $script:win.SetFocus(); Start-Sleep -Milliseconds 300
     [System.Windows.Forms.SendKeys]::SendWait('^3'); Start-Sleep -Milliseconds 800
     Check (-not (Find 'PairButton').Current.IsOffscreen) 'Ctrl+3 jumps to Devices from the keyboard'
@@ -389,7 +403,7 @@ try {
     Toggle 'StartAtSignIn'
     Check (-not (IsOn 'StartAtSignIn') -and @(RunEntries).Count -eq 0) 'turning it off removes the registration'
 
-    Nav 'Overview'
+    Nav 'Settings'
     Click 'QuitButton'
     Check ($console.WaitForExit(15000)) 'Quit closes the console again'
     for ($i = 0; $i -lt 50 -and (Agents).Count -gt 0; $i++) { Start-Sleep -Milliseconds 200 }
@@ -405,11 +419,11 @@ try {
     $again = Start-Process -FilePath $Exe -ArgumentList '--state', "`"$state`"" -PassThru -Wait
     Check ($again.ExitCode -eq 3) 'launching OrbitDrive again does not start a second copy'
     AttachWindow $console
-    [void](WaitText 'StateText' '^Online$' 60000)
+    [void](WaitText 'StateText' '^Sharing is on$' 60000)
     Check ((Agents).Count -eq 1) '...and instead brings the running console''s window forward'
     Nav 'Settings'
     Check (IsOn 'PauseWhenLocked') 'the lock setting persisted across a restart'
-    Nav 'Overview'
+    Nav 'Settings'
     Click 'QuitButton'
     [void]$console.WaitForExit(15000)
     for ($i = 0; $i -lt 50 -and (Agents).Count -gt 0; $i++) { Start-Sleep -Milliseconds 200 }
@@ -417,8 +431,8 @@ try {
     # Dark theme: same real console, forced dark, for visual review.
     $console = Start-Process -FilePath $Exe -ArgumentList '--theme', 'dark', '--state', "`"$state`"" -PassThru
     AttachWindow $console
-    [void](WaitText 'StateText' '^Online$' 60000)
-    Shot 'dark-overview'
+    [void](WaitText 'StateText' '^Sharing is on$' 60000)
+    Shot 'dark-home'
     Nav 'Shared folders'; Shot 'dark-shared-folders'
     Nav 'Devices'; Click 'PairButton'; [void](WaitText 'PairCode' '^[A-Z0-9]{6}-[A-Z0-9]{10}$'); Start-Sleep -Milliseconds 600; Shot 'dark-devices'
     Nav 'Settings'; Shot 'dark-settings'
@@ -427,7 +441,7 @@ try {
     $diagnostics = (Find 'DiagnosticsText').Current.Name
     Check ($diagnostics -match 'Network cost: (unrestricted|metered|unknown)') "Windows answered the network-cost query: $([regex]::Match($diagnostics, 'Network cost: [^\r\n]*').Value)"
     Shot 'dark-diagnostics'
-    Nav 'Overview'
+    Nav 'Settings'
     Click 'QuitButton'
     [void]$console.WaitForExit(15000)
     for ($i = 0; $i -lt 50 -and (Agents).Count -gt 0; $i++) { Start-Sleep -Milliseconds 200 }

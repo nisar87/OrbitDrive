@@ -36,6 +36,9 @@ internal sealed class UpdatePanel
     private bool _busy;
 
     public Border Card { get; }
+    /// <summary>The version an update is waiting for, or null. Home shows a notice from this.</summary>
+    public string? AvailableVersion { get; private set; }
+    public event Action? Changed;
     /// <summary>A one-line notice for the Overview page; collapsed unless an update is waiting.</summary>
     public TextBlock Banner => _banner;
 
@@ -90,6 +93,8 @@ internal sealed class UpdatePanel
         {
             var check = await _client.CheckAsync(_running, CancellationToken.None);
             _available = check.Update;
+            AvailableVersion = check.State == UpdateState.Available ? check.Update!.Version.ToString() : null;
+            Changed?.Invoke();
             _install.Visibility = check.State == UpdateState.Available ? Visibility.Visible : Visibility.Collapsed;
             _banner.Visibility = check.State == UpdateState.Available ? Visibility.Visible : Visibility.Collapsed;
             _banner.Text = check.State == UpdateState.Available ? $"Update available: {check.Update!.Version}. Open Settings and press Update now." : "";

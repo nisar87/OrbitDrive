@@ -25,9 +25,12 @@ public sealed partial class MainWindow : Window
         _host = new ConsoleHost(stateDirectory, Dispatcher);
         var legacy = new LegacyConsole(_host, this);
 
-        string[] names = ["Overview", "Shared folders", "Devices", "Transfers", "Activity", "Settings", "Diagnostics"];
-        string[] glyphs = ["", "", "", "", "", "", ""];
-        _shell = new ShellViewModel(names.Select((name, i) => new NavItem(glyphs[i], new LegacyPageViewModel(name, legacy.Pages[name]), $"Ctrl+{i + 1}")));
+        string[] legacyNames = ["Shared folders", "Devices", "Transfers", "Activity", "Settings", "Diagnostics"];
+        string[] legacyGlyphs = ["\uE8B7", "\uE8EA", "\uE896", "\uE81C", "\uE713", "\uE9D9"];
+        var home = new HomePageViewModel(_host, title => _shell!.GoTo(title), legacy.Updates);
+        var items = new List<NavItem> { new("\uE80F", home, "Ctrl+1") };
+        items.AddRange(legacyNames.Select((name, i) => new NavItem(legacyGlyphs[i], new LegacyPageViewModel(name, legacy.Pages[name]), $"Ctrl+{i + 2}")));
+        _shell = new ShellViewModel(items);
         legacy.CurrentPageName = () => _shell.SelectedTitle;
         DataContext = _shell;
         _shell.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ShellViewModel.CurrentPage)) PageScroll.ScrollToTop(); };

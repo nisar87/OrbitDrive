@@ -13,7 +13,9 @@ internal sealed class ConsoleHost
 {
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly List<Func<JsonObject?, Task>> _consumers = [];
+    private readonly List<Func<ConsoleStatus?, Task>> _typedConsumers = [];
     private bool _quitting;
+    private int _deviceTick;
 
     public ConsoleHost(string stateDirectory, Dispatcher dispatcher)
     {
@@ -32,6 +34,10 @@ internal sealed class ConsoleHost
     public ConsoleSettings Settings { get; }
     public PausePolicies Policies { get; }
     public bool Paused { get; private set; }
+    /// <summary>The latest status the agent reported; null while the agent cannot be reached.</summary>
+    public ConsoleStatus? Status { get; private set; }
+    /// <summary>The paired devices as the relay last listed them; null until the first list arrives.</summary>
+    public IReadOnlyList<DeviceInfo>? Devices { get; private set; }
     public bool IsQuitting => _quitting;
 
     /// <summary>A plain-words line for the session log.</summary>
@@ -48,6 +54,9 @@ internal sealed class ConsoleHost
     /// <summary>Registers something that wants every fresh status (null when there is none). Called in order, on the UI thread.</summary>
     public void AddStatusConsumer(Func<JsonObject?, Task> consumer) => _consumers.Add(consumer);
 
+    /// <summary>Same, with the typed status. Called after <see cref="Status"/> and <see cref="Devices"/> are current.</summary>
+    public void AddStatusConsumer(Func<ConsoleStatus?, Task> consumer) => _typedConsumers.Add(consumer);
+
     public void Start()
     {
         _timer.Start();                 // also when started hidden at sign-in (no window is shown, so no Loaded event)
@@ -58,12 +67,26 @@ internal sealed class ConsoleHost
     {
         if (_quitting) return;
         var status = await Connection.PollAsync();
+        Status = status is null ? null : ConsoleStatus.Parse(status);
         if (status is not null)
         {
             Paused = status["paused"]!.GetValue<bool>();
             Policies.OnTick(Paused);
+            await RefreshDevicesAsync(status["state"]!.GetValue<string>());
         }
         foreach (var consumer in _consumers) await consumer(status);
+        foreach (var consumer in _typedConsumers) await consumer(Status);
+    }
+
+    /// <summary>The device list is a relay round trip, so it is fetched every fifth refresh (and straight away after a pairing or a removal).</summary>
+    private async Task RefreshDevicesAsync(string state)
+    {
+        if (state is not ("online" or "paused") || _deviceTick++ % 5 != 0) return;
+        try
+        {
+            if (Connection.Client is { } client && await client.SendAsync("devices") is JsonArray list) Devices = ConsoleStatus.ParseDevices(list);
+        }
+        catch (Exception e) when (e is IpcException or TimeoutException) { }
     }
 
     private void OnAgentEvent(string name, JsonNode? data)
@@ -85,6 +108,7 @@ internal sealed class ConsoleHost
             _ => name,
         };
         Log(line);
+        if (name is "pairing_result" or "device_revoked") _deviceTick = 0;
         AgentEvent?.Invoke(name, data);
         if (name == "pairing_claimed") AttentionNeeded?.Invoke();
         _ = RefreshAsync();

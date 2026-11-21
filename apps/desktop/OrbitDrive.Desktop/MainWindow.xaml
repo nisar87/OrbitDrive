@@ -3,11 +3,15 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:OrbitDrive.Desktop"
         xmlns:vm="clr-namespace:OrbitDrive.Desktop.ViewModels"
+        xmlns:views="clr-namespace:OrbitDrive.Desktop.Views"
         Title="OrbitDrive" Width="980" Height="680" MinWidth="680" MinHeight="460" WindowStartupLocation="CenterScreen"
         FontFamily="{StaticResource Font.Text}" UseLayoutRounding="True"
         AutomationProperties.AutomationId="OrbitDriveMainWindow">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+        <DataTemplate DataType="{x:Type vm:HomePageViewModel}">
+            <views:HomePage/>
+        </DataTemplate>
         <!-- TRANSITIONAL: a page not yet rebuilt is shown as it was. -->
         <DataTemplate DataType="{x:Type vm:LegacyPageViewModel}">
             <ContentPresenter Content="{Binding View}"/>
