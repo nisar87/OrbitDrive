@@ -59,6 +59,7 @@ export default function AdminApp({ session, onSignOut }: Props) {
             <dt>Downloads completed / failed</dt><dd>{overview.downloadsCompleted} / {overview.downloadsFailed}</dd>
             <dt>Upload pieces stored / refused</dt><dd>{overview.uploadPiecesRelayed} / {overview.uploadPiecesFailed}</dd>
             <dt>Refused for daily allowance</dt><dd>{overview.quotaRefusals}</dd>
+            <dt>Relayed today, all accounts</dt><dd data-testid="m-today">{formatBytes(overview.relayBytesToday)}{overview.costAlert && <strong role="alert"> Over the daily cost alert ({formatBytes(overview.relayBytesDailyAlert)})</strong>}</dd>
             <dt>Daily allowance per account</dt><dd>{overview.relayBytesPerOwnerPerDay === '0' ? 'No limit' : formatBytes(overview.relayBytesPerOwnerPerDay)}</dd>
           </dl>
         </article>

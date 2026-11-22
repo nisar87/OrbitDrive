@@ -23,6 +23,10 @@ public sealed class Metrics(GatewayOptions options, TimeProvider time)
     public long PiecesFailed => Interlocked.Read(ref _piecesFailed);
     public long QuotaRefusals => Interlocked.Read(ref _refusals);
 
+    /// <summary>Bytes relayed today (UTC) by every account together: the number to watch for cost.</summary>
+    public long RelayBytesTodayAll { get { lock (_gate) return _daily.Where(e => e.Value.Day == Today).Sum(e => e.Value.Bytes); } }
+    public bool CostAlert => options.RelayBytesDailyAlert > 0 && RelayBytesTodayAll >= options.RelayBytesDailyAlert;
+
     private int Today => (int)(time.GetUtcNow().ToUnixTimeSeconds() / 86400);
 
     /// <summary>Refuses new relay work for an account that already used its day's allowance. The check is before the work, so one transfer may run slightly past the cap.</summary>

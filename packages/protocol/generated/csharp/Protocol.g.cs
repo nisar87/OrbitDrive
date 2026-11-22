@@ -652,6 +652,9 @@ public sealed record AdminOverview
     [JsonPropertyName("quotaRefusals")] [JsonConverter(typeof(Int64StringConverter))] public required long QuotaRefusals { get; init; }
     [JsonPropertyName("minAgentVersion")] public required string MinAgentVersion { get; init; }
     [JsonPropertyName("relayBytesPerOwnerPerDay")] [JsonConverter(typeof(Int64StringConverter))] public required long RelayBytesPerOwnerPerDay { get; init; }
+    [JsonPropertyName("relayBytesToday")] [JsonConverter(typeof(Int64StringConverter))] public required long RelayBytesToday { get; init; }
+    [JsonPropertyName("relayBytesDailyAlert")] [JsonConverter(typeof(Int64StringConverter))] public required long RelayBytesDailyAlert { get; init; }
+    [JsonPropertyName("costAlert")] public required bool CostAlert { get; init; }
 }
 
 public sealed record AdminUser

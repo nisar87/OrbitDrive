@@ -479,6 +479,9 @@ export interface AdminOverview {
   quotaRefusals: Int64String;
   minAgentVersion: string;
   relayBytesPerOwnerPerDay: Int64String;
+  relayBytesToday: Int64String;
+  relayBytesDailyAlert: Int64String;
+  costAlert: boolean;
 }
 
 export interface AdminUser {
@@ -1049,7 +1052,10 @@ export const SCHEMA = {
       "uploadPiecesFailed": "int64",
       "quotaRefusals": "int64",
       "minAgentVersion": "string",
-      "relayBytesPerOwnerPerDay": "int64"
+      "relayBytesPerOwnerPerDay": "int64",
+      "relayBytesToday": "int64",
+      "relayBytesDailyAlert": "int64",
+      "costAlert": "bool"
     },
     "AdminUser": {
       "uid": "string",

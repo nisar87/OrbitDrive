@@ -89,6 +89,10 @@ public sealed class GatewayOptions
     public int OperatorMaxAuthAgeSeconds { get; set; } = 900;
     /// <summary>Relay bytes one account may move in a UTC day (downloads plus upload pieces). 0 = no cap.</summary>
     public long MaxRelayBytesPerOwnerPerDay { get; set; }
+    /// <summary>When all accounts together have relayed more than this many bytes today (UTC), the operator overview raises a cost alert. 0 turns it off.</summary>
+    public long RelayBytesDailyAlert { get; set; }
+    /// <summary>Archive preparations one account may start per minute across all its browsers (each one makes the PC read and zip files).</summary>
+    public int ArchiveStartsPerOwnerPerMinute { get; set; } = 40;
     /// <summary>PCs reporting an older OrbitDrive version are refused with an update message. Empty = no minimum. An operator can change it while running.</summary>
     public string MinAgentVersion { get; set; } = "";
     public int MaxControlMessageBytes { get; set; } = 262144;
@@ -134,6 +138,7 @@ public sealed class GatewayOptions
         if (OperatorUids.Any(u => u.Length is 0 or > 128 || u.Any(char.IsWhiteSpace))) throw new InvalidOperationException("OperatorUids must be non-empty user ids without spaces.");
         if (OperatorMaxAuthAgeSeconds is < 60 or > 3600) throw new InvalidOperationException("OperatorMaxAuthAgeSeconds must be 60-3600.");
         if (MaxPendingHandshakes < 1) throw new InvalidOperationException("MaxPendingHandshakes must be at least 1.");
+        if (RelayBytesDailyAlert < 0 || ArchiveStartsPerOwnerPerMinute < 1) throw new InvalidOperationException("RelayBytesDailyAlert cannot be negative and ArchiveStartsPerOwnerPerMinute must be at least 1.");
         if (MaxRelayBytesPerOwnerPerDay < 0) throw new InvalidOperationException("MaxRelayBytesPerOwnerPerDay cannot be negative.");
         if (MinAgentVersion.Length > 0 && !Version.TryParse(MinAgentVersion, out _)) throw new InvalidOperationException("MinAgentVersion must be a version such as 1.2.3.");
         foreach (var origin in AllowedWebOrigins)

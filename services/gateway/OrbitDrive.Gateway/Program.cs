@@ -346,6 +346,7 @@ app.MapPost("/v1/pcs/{pcId}/archives", async (HttpContext context, string pcId) 
 {
     var device = AuthorizeBrowser(context, pcId);
     Throttle(context, "archive:" + device.Id, 20, "Too many archive requests. Wait a moment.");
+    Throttle(context, "archive-owner:" + device.OwnerUid, options.ArchiveStartsPerOwnerPerMinute, "This account is preparing archives too fast. Wait a moment.");
     AllowLargerBody(context);
     var request = await ReadJson<ArchiveRequest>(context);
     await WriteJson(context, await hub.Get(pcId).RequestAsync<ArchiveRef>(Actions.StartArchive, request, agentTimeout, context.RequestAborted), 202);
@@ -811,6 +812,7 @@ app.MapGet("/v1/admin/overview", (HttpContext context) =>
         RelayBytesDown = metrics.Down, RelayBytesUp = metrics.Up, DownloadsCompleted = metrics.DownloadsCompleted, DownloadsFailed = metrics.DownloadsFailed,
         UploadPiecesRelayed = metrics.PiecesRelayed, UploadPiecesFailed = metrics.PiecesFailed, QuotaRefusals = metrics.QuotaRefusals,
         MinAgentVersion = adminLog.MinAgentVersion, RelayBytesPerOwnerPerDay = options.MaxRelayBytesPerOwnerPerDay,
+        RelayBytesToday = metrics.RelayBytesTodayAll, RelayBytesDailyAlert = options.RelayBytesDailyAlert, CostAlert = metrics.CostAlert,
     });
 });
 
