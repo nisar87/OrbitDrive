@@ -167,6 +167,8 @@ public sealed record AgentHello
     [JsonPropertyName("name")] public required string Name { get; init; }
     [JsonPropertyName("agentVersion")] public required string AgentVersion { get; init; }
     [JsonPropertyName("capabilities")] public required IReadOnlyList<string> Capabilities { get; init; }
+    [JsonPropertyName("rotateToSpki")] public string? RotateToSpki { get; init; }
+    [JsonPropertyName("rotateToSignature")] public string? RotateToSignature { get; init; }
 }
 
 public sealed record AgentWelcome
@@ -175,6 +177,7 @@ public sealed record AgentWelcome
     [JsonPropertyName("generation")] [JsonConverter(typeof(Int64StringConverter))] public required long Generation { get; init; }
     [JsonPropertyName("protocolVersion")] public required int ProtocolVersion { get; init; }
     [JsonPropertyName("ownerBound")] public required bool OwnerBound { get; init; }
+    [JsonPropertyName("rotated")] public bool? Rotated { get; init; }
     [JsonPropertyName("heartbeatSeconds")] public int? HeartbeatSeconds { get; init; }
     [JsonPropertyName("leaseSeconds")] public int? LeaseSeconds { get; init; }
 }

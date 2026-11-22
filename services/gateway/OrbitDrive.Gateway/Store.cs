@@ -8,7 +8,7 @@ namespace OrbitDrive.Gateway;
 public sealed class PcRecord
 {
     public required string PcId { get; init; }
-    public required byte[] PublicKeySpki { get; init; }
+    public required byte[] PublicKeySpki { get; set; }
     public string Name { get; set; } = "";
     public string AgentVersion { get; set; } = "";
     public string? OwnerUid { get; set; }
@@ -216,6 +216,20 @@ public sealed class Store
             pc!.Name = name; pc.AgentVersion = agentVersion; pc.LastSeen = time.GetUtcNow();
             if (changed || pc.OwnerUid is not null) Save(); // last-seen is kept for owned PCs so "offline since" survives a restart
             return pc;
+        }
+    }
+
+    /// <summary>The key a known PC is currently bound to (null for a PC the relay has never seen).</summary>
+    public byte[]? PcKey(string pcId) { lock (_gate) return _pcs.TryGetValue(pcId, out var pc) ? pc.PublicKeySpki : null; }
+
+    /// <summary>Moves a known PC to a new key. The caller has already proved possession of both keys; the PC keeps its id, owner, name and every pairing.</summary>
+    public void RotatePcKey(string pcId, byte[] newSpki)
+    {
+        lock (_gate)
+        {
+            if (!_pcs.TryGetValue(pcId, out var pc)) throw new ProtocolException(ErrorCode.Unauthenticated, "PC identity could not be verified.");
+            pc.PublicKeySpki = newSpki;
+            Save();
         }
     }
 

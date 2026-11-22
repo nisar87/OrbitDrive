@@ -54,6 +54,8 @@ export interface AgentHello {
   name: string;
   agentVersion: string;
   capabilities: string[];
+  rotateToSpki?: string | null;
+  rotateToSignature?: string | null;
 }
 
 export interface AgentWelcome {
@@ -61,6 +63,7 @@ export interface AgentWelcome {
   generation: Int64String;
   protocolVersion: number;
   ownerBound: boolean;
+  rotated?: boolean | null;
   heartbeatSeconds?: number | null;
   leaseSeconds?: number | null;
 }
@@ -687,13 +690,16 @@ export const SCHEMA = {
       "signature": "string",
       "name": "string",
       "agentVersion": "string",
-      "capabilities": "string[]"
+      "capabilities": "string[]",
+      "rotateToSpki": "string?",
+      "rotateToSignature": "string?"
     },
     "AgentWelcome": {
       "pcId": "string",
       "generation": "int64",
       "protocolVersion": "int32",
       "ownerBound": "bool",
+      "rotated": "bool?",
       "heartbeatSeconds": "int32?",
       "leaseSeconds": "int32?"
     },

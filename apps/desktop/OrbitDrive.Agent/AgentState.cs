@@ -2,6 +2,7 @@ using System.Buffers.Text;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using OrbitDrive.Core;
 
@@ -71,9 +72,16 @@ internal sealed class AgentState
     private readonly string _configPath;
     private volatile IReadOnlyList<SharedRoot> _roots = [];
 
-    public ECDsa Identity { get; }
+    /// <summary>The key this PC signs in with now. It changes only when a rotation has been accepted by the relay.</summary>
+    public ECDsa Identity { get; private set; }
+    /// <summary>The PC's stable id: the hash of its FIRST key. It never changes, so rotating the key keeps every pairing.</summary>
     public string PcId { get; }
-    public string PublicKeySpki { get; }
+    public string PublicKeySpki { get; private set; }
+    private readonly string _identityPath, _nextIdentityPath;
+    private readonly Lock _rotation = new();
+    private ECDsa? _pendingIdentity;
+    /// <summary>A new key has been made and the relay has not yet accepted it.</summary>
+    public bool RotationPending { get { lock (_rotation) return _pendingIdentity is not null; } }
     public SealedTokens Tokens { get; }
     public IReadOnlyList<SharedRoot> Roots => _roots;
     public string? Gateway { get; private set; }
@@ -115,7 +123,19 @@ internal sealed class AgentState
         else LocalProtection.Write(identityPath, Identity.ExportPkcs8PrivateKey());
         var spki = Identity.ExportSubjectPublicKeyInfo();
         PublicKeySpki = Base64Url.EncodeToString(spki);
-        PcId = Base64Url.EncodeToString(SHA256.HashData(spki));
+        _identityPath = identityPath;
+        _nextIdentityPath = Path.Join(directory, "identity-next.bin");
+        var pcIdPath = Path.Join(directory, "pc-id.txt");
+        if (File.Exists(pcIdPath)) PcId = File.ReadAllText(pcIdPath).Trim();
+        else { PcId = Base64Url.EncodeToString(SHA256.HashData(spki)); File.WriteAllText(pcIdPath, PcId); }   // installs from before rotation: the id is the hash of the key they already have
+        if (File.Exists(_nextIdentityPath))
+        {
+            // A rotation was started. If the relay already took the new key before we recorded it, the current key IS the new one and nothing is pending.
+            var next = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            next.ImportPkcs8PrivateKey(LocalProtection.Read(_nextIdentityPath), out _);
+            if (next.ExportSubjectPublicKeyInfo().AsSpan().SequenceEqual(spki)) { next.Dispose(); File.Delete(_nextIdentityPath); }
+            else _pendingIdentity = next;
+        }
 
         if (!File.Exists(tokenPath)) LocalProtection.Write(tokenPath, RandomNumberGenerator.GetBytes(32));
         Tokens = new SealedTokens(LocalProtection.Read(tokenPath));
@@ -221,6 +241,46 @@ internal sealed class AgentState
     }
 
     public void SetSendToShortcuts(bool enabled) { SendToShortcuts = enabled; Save([.. _roots]); }
+    /// <summary>Starts moving this PC to a fresh identity key. The old key keeps signing in until the relay accepts the new one, so a failed attempt loses nothing.</summary>
+    public void BeginRotation()
+    {
+        lock (_rotation)
+        {
+            if (_pendingIdentity is not null) return;
+            var next = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            LocalProtection.Write(_nextIdentityPath, next.ExportPkcs8PrivateKey());
+            _pendingIdentity = next;
+        }
+    }
+
+    /// <summary>The new key's signature over the rotation statement for this challenge, or null when no rotation is pending.</summary>
+    public (string Spki, string Signature)? SignRotation(string nonce)
+    {
+        lock (_rotation)
+        {
+            if (_pendingIdentity is null) return null;
+            var spki = _pendingIdentity.ExportSubjectPublicKeyInfo();
+            var message = $"orbitdrive-agent-rotate-v1\n{nonce}\n{PcId}\n{Base64Url.EncodeToString(SHA256.HashData(spki))}";
+            return (Base64Url.EncodeToString(spki), Base64Url.EncodeToString(_pendingIdentity.SignData(Encoding.UTF8.GetBytes(message), HashAlgorithmName.SHA256)));
+        }
+    }
+
+    /// <summary>The relay accepted the new key: it becomes the identity (written before the pending copy is removed, so a crash in between is harmless).</summary>
+    public void CommitRotation()
+    {
+        lock (_rotation)
+        {
+            if (_pendingIdentity is null) return;
+            LocalProtection.Write(_identityPath, _pendingIdentity.ExportPkcs8PrivateKey());
+            var old = Identity;
+            Identity = _pendingIdentity;
+            PublicKeySpki = Base64Url.EncodeToString(Identity.ExportSubjectPublicKeyInfo());
+            _pendingIdentity = null;
+            File.Delete(_nextIdentityPath);
+            old.Dispose();
+        }
+    }
+
     public const int MaxPcNameLength = 60;
 
     /// <summary>Sets the PC's display name. Empty goes back to the Windows computer name. Control characters are refused; the name is only ever text.</summary>

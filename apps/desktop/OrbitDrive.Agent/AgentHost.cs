@@ -129,6 +129,7 @@ internal sealed class AgentHost : IDisposable
                 ["paused"] = _paused,
                 ["pcId"] = _state.PcId,
                 ["pcName"] = _pcName,
+                ["identityRotationPending"] = _state.RotationPending,
                 ["gateway"] = _state.Gateway,
                 ["webOrigin"] = _state.WebOrigin,
                 ["maxUploadKBps"] = _state.MaxUploadKBps,
@@ -267,6 +268,10 @@ internal sealed class AgentHost : IDisposable
                 case "set_limits":
                     try { _state.SetLimits(args["maxUploadKBps"]?.GetValue<int>() ?? -1, args["maxConcurrentTransfers"]?.GetValue<int>() ?? -1); }
                     catch (Exception e) when (e is ArgumentException or FormatException or InvalidOperationException) { throw new IpcException(e is ArgumentException ? e.Message : "Limits must be whole numbers."); }
+                    return null;
+                case "rotate_identity":
+                    _state.BeginRotation();
+                    StartClient();               // sign in again: the hello carries the rotation proof
                     return null;
                 case "set_pc_name":
                     lock (_gate) _pcName = _state.SetPcName(args["name"]?.GetValue<string>()) ?? _defaultPcName;

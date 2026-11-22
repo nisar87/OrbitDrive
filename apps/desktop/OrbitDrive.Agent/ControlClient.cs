@@ -166,19 +166,21 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
         var challenge = ProtocolJson.FromElement<AgentChallenge>(challengeEnvelope.Payload.Value);
         if (ProtocolInfo.Version < challenge.MinProtocolVersion || ProtocolInfo.Version > challenge.MaxProtocolVersion)
             throw new ProtocolException(ErrorCode.UnsupportedVersion, "This version of OrbitDrive is no longer supported by the service. Please update.");
+        var rotation = state.SignRotation(challenge.Nonce);
         var signature = state.Identity.SignData(Encoding.UTF8.GetBytes($"orbitdrive-agent-auth-v1\n{challenge.Nonce}\n{state.PcId}"), HashAlgorithmName.SHA256);
         await SendAsync(socket, new Envelope
         {
             V = ProtocolInfo.Version, Id = "hello", Kind = EnvelopeKind.Req, Action = Actions.Hello,
             Payload = ProtocolJson.ToElement(new AgentHello
             {
-                ProtocolVersion = ProtocolInfo.Version, PcId = state.PcId, PublicKeySpki = state.PublicKeySpki, Signature = Base64Url.EncodeToString(signature),
+                ProtocolVersion = ProtocolInfo.Version, PcId = state.PcId, PublicKeySpki = state.PublicKeySpki, Signature = Base64Url.EncodeToString(signature), RotateToSpki = rotation?.Spki, RotateToSignature = rotation?.Signature,
                 Name = pcName, AgentVersion = AgentVersion, Capabilities = state.Thumbnails.HasHelper ? ["browse", "range-read", "heartbeat", "preview", "thumbnails", "archive", "search", "entry-check"] : ["browse", "range-read", "heartbeat", "preview", "archive", "search", "entry-check"],
             }),
         }, cancellation);
         var welcome = await ReceiveAsync(socket, cancellation) ?? throw new IOException("Gateway closed during handshake.");
         if (welcome.Error is not null) throw new ProtocolException(welcome.Error.Code, welcome.Error.Message);
         var info = ProtocolJson.FromElement<AgentWelcome>(welcome.Payload ?? throw new JsonException());
+        if (info.Rotated == true) state.CommitRotation();   // only the relay's word moves us to the new key
         return info;
     }
 

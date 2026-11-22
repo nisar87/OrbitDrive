@@ -103,6 +103,23 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
     public AgentConnection Get(string pcId) =>
         _connections.TryGetValue(pcId, out var connection) ? connection : throw new ProtocolException(ErrorCode.PcOffline, "The PC is offline. It must be on, awake and running OrbitDrive.");
 
+    /// <summary>Reads and checks the optional rotation statement: the NEW key signed "rotate" for this PC and this challenge.</summary>
+    private static bool ReadRotation(AgentHello hello, string nonce, out byte[] newSpki)
+    {
+        newSpki = [];
+        if (hello.RotateToSpki is not { Length: > 0 } to || hello.RotateToSignature is not { Length: > 0 } sig) return false;
+        try
+        {
+            newSpki = Base64Url.DecodeFromChars(to);
+            using var next = ECDsa.Create();
+            next.ImportSubjectPublicKeyInfo(newSpki, out _);
+            return next.KeySize == 256 && next.VerifyData(Encoding.UTF8.GetBytes(RotateMessage(nonce, hello.PcId, newSpki)), Base64Url.DecodeFromChars(sig), HashAlgorithmName.SHA256);
+        }
+        catch (Exception e) when (e is FormatException or CryptographicException) { return false; }
+    }
+
+    public static string RotateMessage(string nonce, string pcId, byte[] newSpki) => $"orbitdrive-agent-rotate-v1\n{nonce}\n{pcId}\n{Base64Url.EncodeToString(SHA256.HashData(newSpki))}";
+
     public static string AuthMessage(string nonce, string pcId) => $"orbitdrive-agent-auth-v1\n{nonce}\n{pcId}";
 
     private async Task<Envelope?> ReceiveAsync(WebSocket socket, CancellationToken cancellation)
@@ -160,6 +177,7 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
 
         ProtocolException? rejection = null;
         byte[] spki = [];
+        bool rotatedAlready = false, rotatedNow = false;
         if (agent.ProtocolVersion < ProtocolInfo.MinVersion || agent.ProtocolVersion > ProtocolInfo.Version)
             rejection = new ProtocolException(ErrorCode.UnsupportedVersion, $"Update required: this service speaks protocol {ProtocolInfo.MinVersion}-{ProtocolInfo.Version}.");
         else if (admin.IsBelowMinimum(agent.AgentVersion))
@@ -171,9 +189,16 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
                 spki = Base64Url.DecodeFromChars(agent.PublicKeySpki);
                 using var key = ECDsa.Create();
                 key.ImportSubjectPublicKeyInfo(spki, out _);
-                var valid = key.KeySize == 256 && agent.PcId == Base64Url.EncodeToString(SHA256.HashData(spki)) && agent.Name.Length is > 0 and <= 64 &&
+                var stored = store.PcKey(agent.PcId);
+                // A PC the relay has never seen must use the hash of its key as its id. A known PC must present the key the relay holds for it, or - if it is
+                // moving to a new key - prove it holds BOTH: the old key signs the hello, the new key signs the rotation statement.
+                var identity = stored is null ? agent.PcId == Base64Url.EncodeToString(SHA256.HashData(spki)) : spki.AsSpan().SequenceEqual(stored);
+                var rotation = ReadRotation(agent, nonce, out var newSpki);
+                if (!identity && stored is not null && rotation && newSpki.AsSpan().SequenceEqual(stored)) { identity = true; rotatedAlready = true; }   // the move was applied but the PC never heard
+                var valid = key.KeySize == 256 && identity && agent.Name.Length is > 0 and <= 64 &&
                             key.VerifyData(Encoding.UTF8.GetBytes(AuthMessage(nonce, agent.PcId)), Base64Url.DecodeFromChars(agent.Signature), HashAlgorithmName.SHA256);
                 if (!valid) rejection = new ProtocolException(ErrorCode.Unauthenticated, "PC identity could not be verified.");
+                else if (rotation && !rotatedAlready) { store.RotatePcKey(agent.PcId, newSpki); rotatedNow = true; logger.LogInformation("A PC moved to a new identity key"); }
             }
             catch (Exception e) when (e is FormatException or CryptographicException)
             { rejection = new ProtocolException(ErrorCode.Unauthenticated, "PC identity could not be verified."); }
@@ -198,7 +223,7 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
             var lease = TimeSpan.FromSeconds(options.AgentLeaseSeconds);
             await connection.SendAsync(Reply(first, new AgentWelcome
             {
-                PcId = agent.PcId, Generation = connection.Generation, ProtocolVersion = agent.ProtocolVersion, OwnerBound = pc.OwnerUid is not null,
+                PcId = agent.PcId, Generation = connection.Generation, ProtocolVersion = agent.ProtocolVersion, OwnerBound = pc.OwnerUid is not null, Rotated = rotatedNow || rotatedAlready ? true : null,
                 HeartbeatSeconds = leased ? options.AgentHeartbeatSeconds : null, LeaseSeconds = leased ? options.AgentLeaseSeconds : null,
             }), cancellation);
             using var silence = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
