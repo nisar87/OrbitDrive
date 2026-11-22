@@ -95,12 +95,13 @@ describe('identity and pairing (R05, R06, R53)', () => {
     assert.ok(pairing.url.startsWith(`${WEB_ORIGIN}/pair#`), 'secret must live in the URL fragment');
     const [id, secret] = pairing.code.split('-');
     secretsSeen.push(secret);
-    const claim = await owner.post(`/v1/pairing-requests/${id}/claim`, { secret, browserName: 'Owner phone' });
+    const claim = await owner.post(`/v1/pairing-requests/${id}/claim`, { secret, browserName: 'Owner phone' }, { origin: WEB_ORIGIN });
     assert.equal(claim.status, 200);
     secretsSeen.push(claim.body.deviceSecret);
     const shown = await agent.next('pairing_claimed');
     assert.equal(shown.confirmationCode, claim.body.confirmationCode);
     assert.equal(shown.accountLabel, 'owner@example.test');
+    assert.equal(shown.browserOrigin, WEB_ORIGIN, 'the PC is told which web app address asked (R53)');
     assert.match(shown.confirmationCode, /^\d{6}$/);
 
     owner.device = { id: claim.body.browserDeviceId, secret: claim.body.deviceSecret };

@@ -192,6 +192,7 @@ public sealed record PairingClaimedEvent
     [JsonPropertyName("accountLabel")] public required string AccountLabel { get; init; }
     [JsonPropertyName("browserName")] public required string BrowserName { get; init; }
     [JsonPropertyName("confirmationCode")] public required string ConfirmationCode { get; init; }
+    [JsonPropertyName("browserOrigin")] public string? BrowserOrigin { get; init; }
 }
 
 public sealed record ConfirmPairingRequest

@@ -5,7 +5,7 @@ namespace OrbitDrive.Desktop;
 
 internal sealed record RootInfo(string RootId, string Name, string Path, bool Available, bool ShowHidden, bool UploadsEnabled);
 internal sealed record TransferInfo(string Name, long Sent, long Length, long Offset, string Outcome, DateTimeOffset Started);
-internal sealed record ApprovalInfo(string AccountLabel, string BrowserName, string ConfirmationCode);
+internal sealed record ApprovalInfo(string AccountLabel, string BrowserName, string ConfirmationCode, string? BrowserOrigin = null);
 internal sealed record PairingInfo(string Code, string Url, DateTimeOffset? ExpiresAt);
 internal sealed record DeviceInfo(string DeviceId, string Name, DateTimeOffset? LastSeen);
 
@@ -31,7 +31,7 @@ internal sealed record ConsoleStatus(
             .Select(t => new TransferInfo(Text(t["name"]), Number(t["sent"]), Number(t["length"]), Number(t["offset"]), Text(t["outcome"]),
                 Moment(t["startedUnixMs"]) ?? DateTimeOffset.UnixEpoch)).ToList();
         var approval = status["pendingApproval"] is JsonObject a
-            ? new ApprovalInfo(Text(a["accountLabel"]), Text(a["browserName"]), Text(a["confirmationCode"])) : null;
+            ? new ApprovalInfo(Text(a["accountLabel"]), Text(a["browserName"]), Text(a["confirmationCode"]), Optional(a["browserOrigin"])) : null;
         var pairing = status["activePairing"] is JsonObject p
             ? new PairingInfo(Text(p["code"]), Text(p["url"]), Moment(p["expiresAtUnixMs"])) : null;
         string? Optional(JsonNode? node) => Text(node) is { Length: > 0 } text ? text : null;

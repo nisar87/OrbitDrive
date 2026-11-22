@@ -29,9 +29,10 @@
                 <TextBlock Style="{StaticResource Style.Text.Base}" TextWrapping="Wrap" AutomationProperties.AutomationId="ApprovalText">
                     <Run Text="Browser: "/><Run Text="{Binding ApprovalBrowser, Mode=OneWay}" FontWeight="SemiBold"/><LineBreak/>
                     <Run Text="Account: "/><Run Text="{Binding ApprovalAccount, Mode=OneWay}" FontWeight="SemiBold"/><LineBreak/>
+                    <Run Text="From site: "/><Run Text="{Binding ApprovalOrigin, Mode=OneWay}" FontWeight="SemiBold"/><LineBreak/>
                     <Run Text="Code: "/><Run Text="{Binding ApprovalCode, Mode=OneWay}" FontFamily="{StaticResource Font.Display}" FontSize="26" FontWeight="SemiBold"/>
                 </TextBlock>
-                <TextBlock Text="Approve only if this is you and the same code is shown in your browser." Style="{StaticResource Style.Text.Muted}" Margin="0,8,0,14"/>
+                <TextBlock Text="Approve only if you started this yourself, the site above is your OrbitDrive address, and the same code is shown in your browser. Never approve a request you did not start, even if someone asks you to." Style="{StaticResource Style.Text.Muted}" Margin="0,8,0,14"/>
                 <StackPanel Orientation="Horizontal">
                     <Button Content="Approve" Command="{Binding ApproveCommand}" Style="{DynamicResource AccentButtonStyle}" Padding="{StaticResource Inset.Button}" Margin="0,0,8,0"
                             MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="ApproveButton"/>

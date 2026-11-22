@@ -76,6 +76,7 @@ export interface PairingClaimedEvent {
   accountLabel: string;
   browserName: string;
   confirmationCode: string;
+  browserOrigin?: string | null;
 }
 
 export interface ConfirmPairingRequest {
@@ -702,7 +703,8 @@ export const SCHEMA = {
       "pairingId": "string",
       "accountLabel": "string",
       "browserName": "string",
-      "confirmationCode": "string"
+      "confirmationCode": "string",
+      "browserOrigin": "string?"
     },
     "ConfirmPairingRequest": {
       "pairingId": "string",

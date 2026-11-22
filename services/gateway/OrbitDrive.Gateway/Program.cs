@@ -58,7 +58,7 @@ builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy => policy
     .WithOrigins(options.AllowedWebOrigins)
     .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")
     .WithHeaders("Authorization", "Content-Type", "X-OrbitDrive-Device", "X-Chunk-Sha256", "Range", "If-Range", IdempotencyStore.Header)
-    .WithExposedHeaders("X-OrbitDrive-Device-Rotated", "Content-Range", "Accept-Ranges", "ETag", "Content-Length", "Content-Disposition", "Retry-After", IdempotencyStore.ReplayHeader)));
+    .WithExposedHeaders("X-OrbitDrive-Device-Rotated", "Content-Range", "Accept-Ranges", "ETag", "Content-Length", "Content-Disposition", "Retry-After", RequestLogging.Header, IdempotencyStore.ReplayHeader)));
 
 var app = builder.Build();
 var store = app.Services.GetRequiredService<Store>();
@@ -224,6 +224,7 @@ app.Use(async (context, next) =>
         await WriteJson(context, new ErrorResponse { Error = new ErrorInfo { Code = ErrorCode.InvalidRequest, Message = "Request rejected." } }, e.StatusCode);
     }
 });
+app.UseMiddleware<RequestLogging>();
 app.UseCors();
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
 
@@ -267,6 +268,10 @@ app.Map("/v1/agent-control", async (HttpContext context) =>
     using (socket) await hub.RunAsync(socket, context.RequestAborted);
 });
 
+// The web app address the claim came from. Browsers always send it and CORS has already limited it to the allowed web origins; the PC shows it so the owner can see which site is asking.
+static string? ClaimOrigin(HttpContext context) =>
+    context.Request.Headers.Origin.ToString() is { Length: > 0 and <= 200 } origin && origin.All(c => c is >= ' ' and < '\u007f') ? origin : null;
+
 app.MapPost("/v1/pairing-requests/{id}/claim", async (HttpContext context, string id) =>
 {
     // Guessing defence in depth: each code dies after 5 wrong secrets (Store), and every attempt - right or wrong -
@@ -289,7 +294,7 @@ app.MapPost("/v1/pairing-requests/{id}/claim", async (HttpContext context, strin
         await hub.Get(pc.PcId).SendAsync(new Envelope
         {
             V = ProtocolInfo.Version, Id = Secrets.Token(12), Kind = EnvelopeKind.Evt, Action = Actions.PairingClaimed,
-            Payload = ProtocolJson.ToElement(new PairingClaimedEvent { PairingId = pairing.Id, AccountLabel = identity.Email, BrowserName = device.Name, ConfirmationCode = code }),
+            Payload = ProtocolJson.ToElement(new PairingClaimedEvent { PairingId = pairing.Id, AccountLabel = identity.Email, BrowserName = device.Name, ConfirmationCode = code, BrowserOrigin = ClaimOrigin(context) }),
         }, context.RequestAborted);
     }
     catch (Exception e) when (e is ProtocolException or System.Net.WebSockets.WebSocketException or ObjectDisposedException)

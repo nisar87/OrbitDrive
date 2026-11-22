@@ -19,7 +19,7 @@
     "AgentHello": { "protocolVersion": "int32", "pcId": "string", "publicKeySpki": "string", "signature": "string", "name": "string", "agentVersion": "string", "capabilities": "string[]" },
     "AgentWelcome": { "pcId": "string", "generation": "int64", "protocolVersion": "int32", "ownerBound": "bool", "heartbeatSeconds": "int32?", "leaseSeconds": "int32?" },
     "CreatePairingResult": { "pairingId": "string", "secret": "string", "expiresAtUnixMs": "int64" },
-    "PairingClaimedEvent": { "pairingId": "string", "accountLabel": "string", "browserName": "string", "confirmationCode": "string" },
+    "PairingClaimedEvent": { "pairingId": "string", "accountLabel": "string", "browserName": "string", "confirmationCode": "string", "browserOrigin": "string?" },
     "ConfirmPairingRequest": { "pairingId": "string", "approve": "bool" },
     "ConfirmPairingResult": { "state": "PairingState" },
     "ClaimPairingRequest": { "secret": "string", "browserName": "string" },

@@ -88,6 +88,8 @@ internal sealed class DevicesPageViewModel : PageViewModel
     public bool NoApproval => _approval is null;
     public string ApprovalBrowser => _approval?.BrowserName ?? "";
     public string ApprovalAccount => _approval?.AccountLabel ?? "";
+    /// <summary>Which web app address is asking, so the owner can tell their own site from a look-alike. Empty when the relay didn't say.</summary>
+    public string ApprovalOrigin => _approval?.BrowserOrigin ?? "Not reported by the relay";
     public string ApprovalCode => _approval?.ConfirmationCode ?? "";
 
     public string Error { get => _error; private set { if (SetProperty(ref _error, value)) OnPropertyChanged(nameof(HasError)); } }
@@ -131,7 +133,7 @@ internal sealed class DevicesPageViewModel : PageViewModel
         {
             _approval = status.Approval;
             OnPropertyChanged(nameof(ShowApproval)); OnPropertyChanged(nameof(NoApproval));
-            OnPropertyChanged(nameof(ApprovalBrowser)); OnPropertyChanged(nameof(ApprovalAccount)); OnPropertyChanged(nameof(ApprovalCode));
+            OnPropertyChanged(nameof(ApprovalBrowser)); OnPropertyChanged(nameof(ApprovalAccount)); OnPropertyChanged(nameof(ApprovalOrigin)); OnPropertyChanged(nameof(ApprovalCode));
         }
 
         if (_host.Devices is { } devices)

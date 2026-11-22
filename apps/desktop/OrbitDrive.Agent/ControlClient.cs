@@ -223,7 +223,7 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
                 case EnvelopeKind.Evt when envelope.Action == Actions.PairingClaimed && envelope.Payload is not null:
                     var claimed = ProtocolJson.FromElement<PairingClaimedEvent>(envelope.Payload.Value);
                     PendingPairingId = claimed.PairingId;
-                    emit("pairing_claimed", new { accountLabel = claimed.AccountLabel, browserName = claimed.BrowserName, confirmationCode = claimed.ConfirmationCode });
+                    emit("pairing_claimed", new { accountLabel = claimed.AccountLabel, browserName = claimed.BrowserName, confirmationCode = claimed.ConfirmationCode, browserOrigin = claimed.BrowserOrigin });
                     break;
                 case EnvelopeKind.Req:
                     if (!await _requestSlots.WaitAsync(0, cancellation))
