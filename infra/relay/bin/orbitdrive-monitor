@@ -25,8 +25,29 @@ alerts=()
 [ "$egress_gb" -lt "${ORBIT_WARN_EGRESS_GB:-8000}" ] || alerts+=("egress_near_free_limit")   # Always Free: 10 TB/month
 last=$(tail -1 /var/log/orbitdrive/deploy.log 2>/dev/null | jq -r '.action // empty' 2>/dev/null || true)
 case "$last" in rollback_failed|failed) alerts+=("deploy_$last");; rolled_back) alerts+=("release_rolled_back");; esac
+# ---- Log digest: what the gateway itself says went wrong in the last few minutes. Counts, route templates and exception TYPE names only -
+# never message text, ids, addresses or file names, so the public copy stays free of anything private.
+WINDOW=${ORBIT_LOG_WINDOW_MIN:-6}
+logs_all()  { if [ -n "${ORBIT_LOG_ALL_FILE:-}" ]; then cat "$ORBIT_LOG_ALL_FILE" 2>/dev/null || true; else journalctl -u orbitdrive-gateway --since "-${WINDOW}min" -o cat --no-pager 2>/dev/null || true; fi; }
+logs_warn() { if [ -n "${ORBIT_LOG_WARN_FILE:-}" ]; then cat "$ORBIT_LOG_WARN_FILE" 2>/dev/null || true; else journalctl -u orbitdrive-gateway --since "-${WINDOW}min" -p warning -o cat --no-pager 2>/dev/null || true; fi; }
+requests=$(logs_all | grep -E '^[[:space:]]*(GET|POST|PUT|PATCH|DELETE|HEAD) [^ ]+ -> [0-9]{3} in [0-9]+ ms' || true)
+count_status() { grep -cE " -> $1 in " <<<"$requests" || true; }
+total=$(grep -c . <<<"$requests" || true); s5=$(count_status '5[0-9]{2}'); s429=$(count_status '429'); s4auth=$(count_status '40[13]')
+slowest=$(grep -oE 'in [0-9]+ ms' <<<"$requests" | grep -oE '[0-9]+' | sort -n | tail -1 || true)
+warn_lines=$(logs_warn | grep -c . || true)
+fail_lines=$(logs_warn | grep -cE '^(fail|crit):|Unhandled exception' || true)
+top_routes=$(grep -E " -> 5[0-9]{2} in " <<<"$requests" | sed -E 's/^[[:space:]]*([A-Z]+ [^ ]+) -> .*/\1/' | sort | uniq -c | sort -rn | head -5 | awk '{c=$1; $1=""; sub(/^ /,""); printf "%s{\"route\":\"%s\",\"count\":%d}", (n++?",":""), $0, c}' || true)
+top_exceptions=$(logs_warn | grep -oE '[A-Z][A-Za-z0-9]*(\.[A-Z][A-Za-z0-9]*)*Exception' | sort | uniq -c | sort -rn | head -5 | awk '{printf "%s{\"type\":\"%s\",\"count\":%d}", (n++?",":""), $2, $1}' || true)
+restarts=$(systemctl show orbitdrive-gateway -p NRestarts --value 2>/dev/null || echo 0); restarts=${restarts:-0}
+[ "$s5" -lt "${ORBIT_WARN_5XX:-5}" ] || alerts+=("http_5xx_spike")
+[ "$fail_lines" -lt "${ORBIT_WARN_ERRORS:-3}" ] || alerts+=("gateway_errors")
+[ "$s429" -lt "${ORBIT_WARN_429:-200}" ] || alerts+=("rate_limit_flood")
+[ "$s4auth" -lt "${ORBIT_WARN_AUTH:-100}" ] || alerts+=("auth_failures_spike")
+read -r saved_restarts < <(cat "$STATE/restarts" 2>/dev/null || echo "$restarts"); echo "$restarts" >"$STATE/restarts"
+[ "$restarts" -le "$saved_restarts" ] || alerts+=("gateway_restarted")
 jq -n --arg time "$(date -u +%FT%TZ)" --arg version "$version" --argjson mem "$mem" --argjson swap "$swap" --argjson disk "$disk" \
   --argjson egress "$egress_gb" --arg alerts "${alerts[*]:-}" \
-  '{time:$time, version:$version, memAvailableMb:$mem, swapFreeMb:$swap, diskUsedPct:$disk, egressGbThisMonth:$egress, alerts:($alerts|split(" ")|map(select(length>0)))}' \
+  --argjson logs "{\"windowMin\":$WINDOW,\"requests\":$total,\"status5xx\":$s5,\"status429\":$s429,\"status401403\":$s4auth,\"slowestMs\":${slowest:-0},\"warningLines\":$warn_lines,\"errorLines\":$fail_lines,\"gatewayRestarts\":$restarts,\"topFailingRoutes\":[$top_routes],\"topExceptions\":[$top_exceptions]}" \
+  '{time:$time, version:$version, memAvailableMb:$mem, swapFreeMb:$swap, diskUsedPct:$disk, egressGbThisMonth:$egress, logs:$logs, alerts:($alerts|split(" ")|map(select(length>0)))}' \
   >"$STATE/public/status.json.tmp"
 mv "$STATE/public/status.json.tmp" "$STATE/public/status.json"

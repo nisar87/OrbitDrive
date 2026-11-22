@@ -16,6 +16,9 @@ third-party convenience for development until the owner has a domain).
 | HTTPS | Caddy obtains and renews certificates automatically; streams without buffering | `bootstrap.sh` |
 | Security updates | unattended-upgrades, reboot at 22:00 UTC when required | `bootstrap.sh` |
 | Monitoring | `orbitdrive-monitor` every 5 min writes `/relay-status.json` (health, memory, swap, disk, monthly egress, alerts) | `infra/relay/bin/orbitdrive-monitor` |
+| Log digest | The same monitor reads the gateway's own log (journald, last 6 min) and adds a `logs` block to `/relay-status.json`: request count, 5xx / 429 / 401+403 counts, slowest request, warning and error lines, gateway restarts, top failing **route templates** and top **exception type names**. Counts only: no message text, ids, addresses, accounts or file names. Alerts: `http_5xx_spike`, `gateway_errors`, `rate_limit_flood`, `auth_failures_spike`, `gateway_restarted` (thresholds `ORBIT_WARN_*`) | `infra/relay/bin/orbitdrive-monitor` |
+| Health history | Every 30-min check appends one JSON line to `history/YYYY-MM.jsonl` on the data-only `relay-logs` branch (no code, no secrets) | `relay-monitor.yml` |
+| Daily review | A scheduled Claude task reads that history each morning, looks for trends and anomalies, and opens or updates a `[relay-review]` GitHub issue (read-only; it changes nothing on the relay) | scheduled task |
 | Notification | `relay-monitor.yml` probes from outside every 30 min; problems open/update a GitHub issue (emailed to the owner), recovery closes it | `.github/workflows/relay-monitor.yml` |
 | Logs and disk | journald capped at 200 MB / 30 days; deploy log rotated weekly; installs refused above 90 % disk; three releases kept | `bootstrap.sh`, updater |
 | Backup | Daily verified archive of configuration/state, seven kept, restore-tested on every run | `infra/relay/bin/orbitdrive-backup` |
@@ -25,6 +28,10 @@ Trust model: anyone who can publish a `relay-dev-*` release in this repository c
 Releases are created only by `relay-release.yml` on `main` after tests. Build-provenance attestation and off-host
 backups (Oracle Object Storage) are not implemented yet. Production has no automatic path: a `prod` channel host would
 only follow `relay-prod-*` releases, which nothing creates today.
+
+**Applying the log digest to an existing host:** the updater replaces only the gateway binary; the host scripts come from the bootstrap. Re-run the pinned bootstrap once (same arguments as before) so `/usr/local/bin/orbitdrive-monitor` is the new version. Until then `/relay-status.json` has no `logs` block and the history lines simply lack it.
+
+**Reading logs by hand:** `sudo journalctl -u orbitdrive-gateway --since "-1h" -p warning` for problems; every request line ends in a correlation id `[abc123...]` that the browser also receives as the `X-Request-Id` response header, so a user can quote it.
 
 ## One-time setup (the only routine SSH session)
 

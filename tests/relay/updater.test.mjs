@@ -158,11 +158,41 @@ test('monitor reports health, resources and alerts without leaking anything priv
   assert.equal(first.status, 0, first.stderr);
   const status = JSON.parse(readFileSync(join(state, 'public/status.json'), 'utf8'));
   assert.equal(status.version, '1.4.0');
-  assert.deepEqual(Object.keys(status).sort(), ['alerts', 'diskUsedPct', 'egressGbThisMonth', 'memAvailableMb', 'swapFreeMb', 'time', 'version']);
+  assert.deepEqual(Object.keys(status).sort(), ['alerts', 'diskUsedPct', 'egressGbThisMonth', 'logs', 'memAvailableMb', 'swapFreeMb', 'time', 'version']);
   assert.ok(status.memAvailableMb > 0 && status.diskUsedPct >= 0);
   run({ ORBIT_HEALTH_URL: 'http://127.0.0.1:1', ORBIT_WARN_DISK_PCT: '0', ORBIT_MIN_MEM_MB: '99999999' });
   const bad = JSON.parse(readFileSync(join(state, 'public/status.json'), 'utf8'));
   assert.deepEqual(bad.alerts.filter((a) => ['gateway_down', 'low_memory', 'disk_filling'].includes(a)).sort(), ['disk_filling', 'gateway_down', 'low_memory']);
+});
+
+test('monitor digests the gateway log into counts only, alerts on spikes, and leaks no message text', { skip }, () => {
+  const state = join(work, 'state-logs'), all = join(work, 'log-all.txt'), warn = join(work, 'log-warn.txt');
+  const secret = 'alice@example.test token=SECRET123 C:\\Users\\alice\\tax.pdf';
+  const lines = [];
+  for (let i = 0; i < 6; i++) lines.push(`      GET /v1/pcs/{pcId}/roots -> 500 in ${40 + i} ms [abcdefgh${i}]`);
+  for (let i = 0; i < 4; i++) lines.push(`      POST /v1/pairing-requests/{id}/claim -> 429 in 2 ms [zzzzzzzz${i}]`);
+  lines.push('      GET /healthz -> 200 in 1 ms [okokokok1]', '      GET /v1/pcs -> 401 in 3 ms [authauth1]');
+  writeFileSync(all, lines.join('\n') + '\n');
+  writeFileSync(warn, [`fail: Microsoft.AspNetCore.Server.Kestrel[13]`, `      Unhandled exception: System.InvalidOperationException ${secret}`, `fail: x`, `      System.InvalidOperationException ${secret}`, `fail: y`, `      System.IO.IOException ${secret}`, ''].join('\n'));
+  const run = spawnSync('bash', [bin('orbitdrive-monitor')], { env: { ...process.env, ORBIT_STATE: state, ORBIT_HEALTH_URL: `http://127.0.0.1:${port}`, ORBIT_LOG_ALL_FILE: all, ORBIT_LOG_WARN_FILE: warn }, encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+  const raw = readFileSync(join(state, 'public/status.json'), 'utf8');
+  const status = JSON.parse(raw);
+  assert.equal(status.logs.requests, 12);
+  assert.equal(status.logs.status5xx, 6);
+  assert.equal(status.logs.status429, 4);
+  assert.equal(status.logs.status401403, 1);
+  assert.equal(status.logs.slowestMs, 45);
+  assert.deepEqual(status.logs.topFailingRoutes, [{ route: 'GET /v1/pcs/{pcId}/roots', count: 6 }]);
+  assert.deepEqual(status.logs.topExceptions.map((e) => e.type), ['System.InvalidOperationException', 'System.IO.IOException']);
+  assert.ok(status.alerts.includes('http_5xx_spike') && status.alerts.includes('gateway_errors'));
+  for (const private_ of ['alice', 'SECRET123', 'tax.pdf', 'abcdefgh']) assert.ok(!raw.includes(private_), `the public status must not contain ${private_}`);
+  // Quiet logs raise nothing.
+  writeFileSync(all, '      GET /healthz -> 200 in 1 ms [okokokok1]\n'); writeFileSync(warn, '');
+  const calm = spawnSync('bash', [bin('orbitdrive-monitor')], { env: { ...process.env, ORBIT_STATE: state, ORBIT_HEALTH_URL: `http://127.0.0.1:${port}`, ORBIT_LOG_ALL_FILE: all, ORBIT_LOG_WARN_FILE: warn }, encoding: 'utf8' });
+  assert.equal(calm.status, 0, calm.stderr);
+  const quiet = JSON.parse(readFileSync(join(state, 'public/status.json'), 'utf8'));
+  assert.ok(!quiet.alerts.some((a) => ['http_5xx_spike', 'gateway_errors', 'rate_limit_flood', 'auth_failures_spike'].includes(a)));
 });
 
 test('backup archives configuration, proves it restores, and keeps seven copies', { skip }, () => {

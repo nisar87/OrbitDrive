@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      contents: read
+      contents: write   # only to append one line of health history to the data-only `relay-logs` branch
       issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -39,3 +39,25 @@ jobs:
             exit 1
           fi
           if [ -n "$OPEN" ]; then gh issue close "$OPEN" --repo "${{ github.repository }}" --comment "Recovered: the relay is healthy again ($STATUS)."; fi
+      # History for trend-spotting: one JSON line per check on a data-only branch (no code, no secrets, counts only), read by the daily review.
+      - name: Record health history
+        if: always()
+        run: |
+          [ "$(jq -r .enabled infra/relay/environments/dev.json)" = "true" ] || exit 0
+          URL=$(jq -r .url infra/relay/environments/dev.json)
+          NOW=$(date -u +%FT%TZ)
+          if STATUS=$(curl -fsS -m 15 "$URL/relay-status.json") && jq -e . >/dev/null 2>&1 <<<"$STATUS"; then
+            LINE=$(jq -c --arg checked "$NOW" '{checked:$checked} + .' <<<"$STATUS")
+          else
+            LINE=$(jq -nc --arg checked "$NOW" '{checked:$checked, unreachable:true, alerts:["relay_unreachable"]}')
+          fi
+          git config user.name "relay-monitor"; git config user.email "relay-monitor@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin relay-logs >/dev/null 2>&1; then
+            git fetch --depth 1 origin relay-logs && git worktree add -B relay-logs ../history FETCH_HEAD
+          else
+            git worktree add --orphan -b relay-logs ../history; rm -rf ../history/* 2>/dev/null || true
+            printf '# relay-logs\n\nData-only branch written by the relay-monitor workflow: one JSON line per check in `history/YYYY-MM.jsonl` (counts and health only).\n' > ../history/README.md
+          fi
+          mkdir -p ../history/history
+          echo "$LINE" >> "../history/history/$(date -u +%Y-%m).jsonl"
+          cd ../history && git add -A && git commit -qm "relay health $NOW" && git push -q origin relay-logs
