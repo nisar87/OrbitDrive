@@ -158,7 +158,7 @@ test('monitor reports health, resources and alerts without leaking anything priv
   assert.equal(first.status, 0, first.stderr);
   const status = JSON.parse(readFileSync(join(state, 'public/status.json'), 'utf8'));
   assert.equal(status.version, '1.4.0');
-  assert.deepEqual(Object.keys(status).sort(), ['alerts', 'diskUsedPct', 'egressGbThisMonth', 'logs', 'memAvailableMb', 'swapFreeMb', 'time', 'version']);
+  assert.deepEqual(Object.keys(status).sort(), ['alerts', 'diskUsedPct', 'egressGbThisMonth', 'last24h', 'logs', 'memAvailableMb', 'swapFreeMb', 'time', 'version']);
   assert.ok(status.memAvailableMb > 0 && status.diskUsedPct >= 0);
   run({ ORBIT_HEALTH_URL: 'http://127.0.0.1:1', ORBIT_WARN_DISK_PCT: '0', ORBIT_MIN_MEM_MB: '99999999' });
   const bad = JSON.parse(readFileSync(join(state, 'public/status.json'), 'utf8'));
@@ -171,18 +171,18 @@ test('monitor digests the gateway log into counts only, alerts on spikes, and le
   const lines = [];
   for (let i = 0; i < 6; i++) lines.push(`      GET /v1/pcs/{pcId}/roots -> 500 in ${40 + i} ms [abcdefgh${i}]`);
   for (let i = 0; i < 4; i++) lines.push(`      POST /v1/pairing-requests/{id}/claim -> 429 in 2 ms [zzzzzzzz${i}]`);
-  lines.push('      GET /healthz -> 200 in 1 ms [okokokok1]', '      GET /v1/pcs -> 401 in 3 ms [authauth1]');
+  lines.push('      GET /healthz -> 200 in 1 ms [okokokok1]', '      GET /v1/pcs -> 401 in 3 ms [authauth1]', '      GET /v1/agent-control -> 101 in 158899 ms [longlong1]', '      GET /v1/downloads/{capability} -> 200 in 90000 ms [streamst1]');   // long-lived by design
   writeFileSync(all, lines.join('\n') + '\n');
   writeFileSync(warn, [`fail: Microsoft.AspNetCore.Server.Kestrel[13]`, `      Unhandled exception: System.InvalidOperationException ${secret}`, `fail: x`, `      System.InvalidOperationException ${secret}`, `fail: y`, `      System.IO.IOException ${secret}`, ''].join('\n'));
   const run = spawnSync('bash', [bin('orbitdrive-monitor')], { env: { ...process.env, ORBIT_STATE: state, ORBIT_HEALTH_URL: `http://127.0.0.1:${port}`, ORBIT_LOG_ALL_FILE: all, ORBIT_LOG_WARN_FILE: warn }, encoding: 'utf8' });
   assert.equal(run.status, 0, run.stderr);
   const raw = readFileSync(join(state, 'public/status.json'), 'utf8');
   const status = JSON.parse(raw);
-  assert.equal(status.logs.requests, 12);
+  assert.equal(status.logs.requests, 14);
   assert.equal(status.logs.status5xx, 6);
   assert.equal(status.logs.status429, 4);
   assert.equal(status.logs.status401403, 1);
-  assert.equal(status.logs.slowestMs, 45);
+  assert.equal(status.logs.slowestMs, 45, 'permanent connections are not "slow requests"');
   assert.deepEqual(status.logs.topFailingRoutes, [{ route: 'GET /v1/pcs/{pcId}/roots', count: 6 }]);
   assert.deepEqual(status.logs.topExceptions.map((e) => e.type), ['System.InvalidOperationException', 'System.IO.IOException']);
   assert.ok(status.alerts.includes('http_5xx_spike') && status.alerts.includes('gateway_errors'));
@@ -193,6 +193,13 @@ test('monitor digests the gateway log into counts only, alerts on spikes, and le
   assert.equal(calm.status, 0, calm.stderr);
   const quiet = JSON.parse(readFileSync(join(state, 'public/status.json'), 'utf8'));
   assert.ok(!quiet.alerts.some((a) => ['http_5xx_spike', 'gateway_errors', 'rate_limit_flood', 'auth_failures_spike'].includes(a)));
+  // The host remembers the last day itself: the earlier spike is still visible although the current window is calm.
+  assert.equal(quiet.last24h.samples, 2);
+  assert.equal(quiet.last24h.status5xx, 6);
+  assert.equal(quiet.last24h.requests, 15);
+  assert.ok(quiet.last24h.recentAlerts.includes('http_5xx_spike') && quiet.last24h.recentAlerts.includes('gateway_errors'));
+  assert.equal(quiet.last24h.slowestMs, 45);
+  assert.ok(!JSON.stringify(quiet).includes('alice'), 'the rolling summary holds counts only');
 });
 
 test('backup archives configuration, proves it restores, and keeps seven copies', { skip }, () => {

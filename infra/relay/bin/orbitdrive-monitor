@@ -27,13 +27,14 @@ last=$(tail -1 /var/log/orbitdrive/deploy.log 2>/dev/null | jq -r '.action // em
 case "$last" in rollback_failed|failed) alerts+=("deploy_$last");; rolled_back) alerts+=("release_rolled_back");; esac
 # ---- Log digest: what the gateway itself says went wrong in the last few minutes. Counts, route templates and exception TYPE names only -
 # never message text, ids, addresses or file names, so the public copy stays free of anything private.
-WINDOW=${ORBIT_LOG_WINDOW_MIN:-6}
+WINDOW=${ORBIT_LOG_WINDOW_MIN:-5}
 logs_all()  { if [ -n "${ORBIT_LOG_ALL_FILE:-}" ]; then cat "$ORBIT_LOG_ALL_FILE" 2>/dev/null || true; else journalctl -u orbitdrive-gateway --since "-${WINDOW}min" -o cat --no-pager 2>/dev/null || true; fi; }
 logs_warn() { if [ -n "${ORBIT_LOG_WARN_FILE:-}" ]; then cat "$ORBIT_LOG_WARN_FILE" 2>/dev/null || true; else journalctl -u orbitdrive-gateway --since "-${WINDOW}min" -p warning -o cat --no-pager 2>/dev/null || true; fi; }
 requests=$(logs_all | grep -E '^[[:space:]]*(GET|POST|PUT|PATCH|DELETE|HEAD) [^ ]+ -> [0-9]{3} in [0-9]+ ms' || true)
 count_status() { grep -cE " -> $1 in " <<<"$requests" || true; }
 total=$(grep -c . <<<"$requests" || true); s5=$(count_status '5[0-9]{2}'); s429=$(count_status '429'); s4auth=$(count_status '40[13]')
-slowest=$(grep -oE 'in [0-9]+ ms' <<<"$requests" | grep -oE '[0-9]+' | sort -n | tail -1 || true)
+# Connections that are SUPPOSED to stay open (a PC's control socket, file streams) would make every day look slow, so they are left out of the slowest-request figure.
+slowest=$(grep -vE ' /v1/(agent-control|downloads/|agent-downlinks/|agent-streams/)' <<<"$requests" | grep -oE 'in [0-9]+ ms' | grep -oE '[0-9]+' | sort -n | tail -1 || true)
 warn_lines=$(logs_warn | grep -c . || true)
 fail_lines=$(logs_warn | grep -cE '^(fail|crit):|Unhandled exception' || true)
 top_routes=$(grep -E " -> 5[0-9]{2} in " <<<"$requests" | sed -E 's/^[[:space:]]*([A-Z]+ [^ ]+) -> .*/\1/' | sort | uniq -c | sort -rn | head -5 | awk '{c=$1; $1=""; sub(/^ /,""); printf "%s{\"route\":\"%s\",\"count\":%d}", (n++?",":""), $0, c}' || true)
@@ -45,9 +46,20 @@ restarts=$(systemctl show orbitdrive-gateway -p NRestarts --value 2>/dev/null ||
 [ "$s4auth" -lt "${ORBIT_WARN_AUTH:-100}" ] || alerts+=("auth_failures_spike")
 read -r saved_restarts < <(cat "$STATE/restarts" 2>/dev/null || echo "$restarts"); echo "$restarts" >"$STATE/restarts"
 [ "$restarts" -le "$saved_restarts" ] || alerts+=("gateway_restarted")
+# ---- Rolling 24 hours: GitHub runs its outside check only a few times a day, so the host keeps its own memory of the last day (one tiny sample per run, counts only)
+# and an outside reader sees what happened BETWEEN checks, not just the last few minutes.
+SAMPLES="$STATE/log-samples.jsonl"
+delta=$(( restarts > saved_restarts ? restarts - saved_restarts : 0 ))
+jq -nc --arg t "$(date -u +%FT%TZ)" --argjson requests "$total" --argjson s5 "$s5" --argjson s429 "$s429" --argjson s4 "$s4auth" --argjson slow "${slowest:-0}" \
+  --argjson warn "$warn_lines" --argjson err "$fail_lines" --argjson restarts "$delta" --arg alerts "${alerts[*]:-}" \
+  '{t:$t,requests:$requests,status5xx:$s5,status429:$s429,status401403:$s4,slowestMs:$slow,warningLines:$warn,errorLines:$err,gatewayRestarts:$restarts,alerts:($alerts|split(" ")|map(select(length>0)))}' >>"$SAMPLES"
+tail -n 288 "$SAMPLES" >"$SAMPLES.tmp" && mv "$SAMPLES.tmp" "$SAMPLES"
+last24h=$(jq -sc '{samples:length, requests:(map(.requests)|add), status5xx:(map(.status5xx)|add), status429:(map(.status429)|add), status401403:(map(.status401403)|add),
+  slowestMs:(map(.slowestMs)|max), warningLines:(map(.warningLines)|add), errorLines:(map(.errorLines)|add), gatewayRestarts:(map(.gatewayRestarts)|add),
+  firstSample:(.[0].t), recentAlerts:(map(.alerts[])|unique)}' "$SAMPLES")
 jq -n --arg time "$(date -u +%FT%TZ)" --arg version "$version" --argjson mem "$mem" --argjson swap "$swap" --argjson disk "$disk" \
   --argjson egress "$egress_gb" --arg alerts "${alerts[*]:-}" \
-  --argjson logs "{\"windowMin\":$WINDOW,\"requests\":$total,\"status5xx\":$s5,\"status429\":$s429,\"status401403\":$s4auth,\"slowestMs\":${slowest:-0},\"warningLines\":$warn_lines,\"errorLines\":$fail_lines,\"gatewayRestarts\":$restarts,\"topFailingRoutes\":[$top_routes],\"topExceptions\":[$top_exceptions]}" \
-  '{time:$time, version:$version, memAvailableMb:$mem, swapFreeMb:$swap, diskUsedPct:$disk, egressGbThisMonth:$egress, logs:$logs, alerts:($alerts|split(" ")|map(select(length>0)))}' \
+  --argjson last24h "$last24h" --argjson logs "{\"windowMin\":$WINDOW,\"requests\":$total,\"status5xx\":$s5,\"status429\":$s429,\"status401403\":$s4auth,\"slowestMs\":${slowest:-0},\"warningLines\":$warn_lines,\"errorLines\":$fail_lines,\"gatewayRestarts\":$restarts,\"topFailingRoutes\":[$top_routes],\"topExceptions\":[$top_exceptions]}" \
+  '{time:$time, version:$version, memAvailableMb:$mem, swapFreeMb:$swap, diskUsedPct:$disk, egressGbThisMonth:$egress, logs:$logs, last24h:$last24h, alerts:($alerts|split(" ")|map(select(length>0)))}' \
   >"$STATE/public/status.json.tmp"
 mv "$STATE/public/status.json.tmp" "$STATE/public/status.json"
