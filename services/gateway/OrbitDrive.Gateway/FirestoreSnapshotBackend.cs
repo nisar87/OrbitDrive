@@ -28,12 +28,21 @@ public sealed class FirestoreSnapshotBackend : ISnapshotBackend, IHostedService,
     private Dictionary<string, string> _stored = [];   // document path -> content fingerprint of what Firestore currently holds
     private Exception? _lastError;
     private bool _closed;                      // set once shutdown starts: later saves are refused (logged), never queued for a worker that is going away
+    private readonly TimeSpan? _leaseDuration;          // null: no single-writer lease (tests that deliberately overlap two backends)
+    private readonly Action? _onLeaseLost;
+    private readonly string _instanceId = Guid.NewGuid().ToString("N");
+    private long _leaseEpoch;
+    private bool _leaseLost;
+    private Task? _renewer;
     private readonly Lazy<Task> _dispose;      // shutdown runs exactly once however many callers (or container registrations) ask for it
 
     /// <param name="legacy">The previous file backend: when Firestore holds nothing yet, its content is imported once (so switching backends never drops existing pairings).</param>
-    public FirestoreSnapshotBackend(FirestoreDb db, TimeProvider time, ILogger? log = null, TimeSpan? retryDelay = null, ISnapshotBackend? legacy = null)
+    /// <param name="writerLease">When set, this instance must hold the database's single-writer lease (meta/writer) before it loads anything: a SECOND live gateway on the same
+    /// database refuses to start instead of racing the first one and overwriting its state. The lease is renewed every third of its length and given back on clean shutdown.</param>
+    /// <param name="onLeaseLost">Called once if the lease is taken over (this instance stalled longer than the lease). The instance stops writing at once; the host should stop.</param>
+    public FirestoreSnapshotBackend(FirestoreDb db, TimeProvider time, ILogger? log = null, TimeSpan? retryDelay = null, ISnapshotBackend? legacy = null, TimeSpan? writerLease = null, Action? onLeaseLost = null)
     {
-        _db = db; _time = time; _log = log; _retryDelay = retryDelay ?? TimeSpan.FromSeconds(2); _legacy = legacy;
+        _db = db; _time = time; _log = log; _retryDelay = retryDelay ?? TimeSpan.FromSeconds(2); _legacy = legacy; _leaseDuration = writerLease; _onLeaseLost = onLeaseLost;
         _dispose = new Lazy<Task>(ShutDownAsync, LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
@@ -45,6 +54,7 @@ public sealed class FirestoreSnapshotBackend : ISnapshotBackend, IHostedService,
 
     public Store.Snapshot? Load()
     {
+        AcquireWriterLease();
         var pcs = _db.Collection(Pcs).GetSnapshotAsync().GetAwaiter().GetResult();
         var devices = _db.Collection(Devices).GetSnapshotAsync().GetAwaiter().GetResult();
         var owners = _db.Collection(Owners).GetSnapshotAsync().GetAwaiter().GetResult();
@@ -93,6 +103,88 @@ public sealed class FirestoreSnapshotBackend : ISnapshotBackend, IHostedService,
         StartWorker();
     }
 
+    // ---- single-writer lease -------------------------------------------------------------------------------------------------------------------
+
+    private DocumentReference LeaseDocument => _db.Document($"{Meta}/writer");
+
+    /// <summary>
+    /// Takes the lease, or throws. A holder that is still renewing after we have waited out one whole lease is a live second gateway on this database, which must never be
+    /// allowed to write. A holder that simply stops renewing (a crashed or killed process) expires, so an ordinary restart waits briefly and then takes over.
+    /// </summary>
+    private void AcquireWriterLease()
+    {
+        if (_leaseDuration is not { } duration) return;
+        var deadline = _time.GetUtcNow() + duration + TimeSpan.FromSeconds(5);
+        while (true)
+        {
+            var now = _time.GetUtcNow().ToUnixTimeMilliseconds();
+            var remainingMs = _db.RunTransactionAsync(async transaction =>
+            {
+                var held = await transaction.GetSnapshotAsync(LeaseDocument);
+                var holder = held.Exists && held.ContainsField("holder") ? held.GetValue<string>("holder") : "";
+                var expires = held.Exists && held.ContainsField("expiresUnixMs") ? held.GetValue<long>("expiresUnixMs") : 0;
+                var epoch = held.Exists && held.ContainsField("epoch") ? held.GetValue<long>("epoch") : 0;
+                if (holder.Length > 0 && holder != _instanceId && expires > now) return expires - now;
+                _leaseEpoch = holder == _instanceId ? epoch : epoch + 1;
+                transaction.Set(LeaseDocument, new Dictionary<string, object> { ["holder"] = _instanceId, ["expiresUnixMs"] = now + (long)duration.TotalMilliseconds, ["epoch"] = _leaseEpoch });
+                return 0L;
+            }).GetAwaiter().GetResult();
+            if (remainingMs == 0) break;
+            if (_time.GetUtcNow() >= deadline)
+                throw new InvalidOperationException("Another OrbitDrive gateway instance is running on this database and keeps renewing its writer lease. Two gateways must not share one database; stop the other one.");
+            _log?.LogWarning("The Firestore writer lease is held for another {Seconds} s (a previous instance that did not shut down cleanly, or a second gateway); waiting", remainingMs / 1000);
+            Thread.Sleep((int)Math.Min(remainingMs + 500, 5000));
+        }
+        _renewer = Task.Run(() => RenewLoopAsync(duration, _stop.Token));
+    }
+
+    private async Task RenewLoopAsync(TimeSpan duration, CancellationToken stop)
+    {
+        var every = TimeSpan.FromTicks(duration.Ticks / 3);
+        while (!stop.IsCancellationRequested)
+        {
+            try { await Task.Delay(every, stop); } catch (OperationCanceledException) { return; }
+            try
+            {
+                var now = _time.GetUtcNow().ToUnixTimeMilliseconds();
+                var stillOurs = await _db.RunTransactionAsync(async transaction =>
+                {
+                    var held = await transaction.GetSnapshotAsync(LeaseDocument);
+                    if (!held.Exists || held.GetValue<string>("holder") != _instanceId || held.GetValue<long>("epoch") != _leaseEpoch) return false;
+                    transaction.Update(LeaseDocument, new Dictionary<string, object> { ["expiresUnixMs"] = now + (long)duration.TotalMilliseconds });
+                    return true;
+                }, cancellationToken: stop);
+                if (!stillOurs) { LoseLease(); return; }
+            }
+            catch (OperationCanceledException) { return; }
+            catch (Exception e) { _log?.LogWarning(e, "Renewing the Firestore writer lease failed; will retry"); }   // a later renewal may still succeed before it expires
+        }
+    }
+
+    private void LoseLease()
+    {
+        lock (_gate) { if (_leaseLost) return; _leaseLost = true; _pending = null; }
+        _log?.LogCritical("The Firestore writer lease was taken over by another gateway instance. This instance has stopped writing and is shutting down.");
+        _onLeaseLost?.Invoke();
+    }
+
+    /// <summary>True once another instance has taken the lease over; nothing more is written.</summary>
+    public bool LeaseLost { get { lock (_gate) return _leaseLost; } }
+
+    private async Task ReleaseWriterLeaseAsync()
+    {
+        if (_leaseDuration is null || _leaseEpoch == 0) return;
+        try
+        {
+            await _db.RunTransactionAsync(async transaction =>
+            {
+                var held = await transaction.GetSnapshotAsync(LeaseDocument);
+                if (held.Exists && held.GetValue<string>("holder") == _instanceId) transaction.Update(LeaseDocument, new Dictionary<string, object> { ["expiresUnixMs"] = 0L });
+            });
+        }
+        catch (Exception e) { _log?.LogWarning(e, "Could not give the Firestore writer lease back; it will expire by itself"); }
+    }
+
     // ---- saving --------------------------------------------------------------------------------------------------------------------------------
 
     public void Save(Store.Snapshot snapshot)
@@ -100,6 +192,7 @@ public sealed class FirestoreSnapshotBackend : ISnapshotBackend, IHostedService,
         lock (_gate)
         {
             if (_closed) { _log?.LogError("Control metadata changed after the Firestore backend shut down; the change is NOT stored"); return; }
+            if (_leaseLost) { _log?.LogError("Control metadata changed after this gateway lost the Firestore writer lease; the change is NOT stored"); return; }
             _pending = snapshot; _acceptedGeneration++;
         }
         StartWorker();
@@ -122,7 +215,7 @@ public sealed class FirestoreSnapshotBackend : ISnapshotBackend, IHostedService,
                 Store.Snapshot snapshot; long generation;
                 lock (_gate)
                 {
-                    if (_pending is null) break;
+                    if (_pending is null || _leaseLost) { _pending = null; break; }
                     snapshot = _pending; generation = _acceptedGeneration; _pending = null; _writing = true;
                 }
                 try
@@ -201,7 +294,7 @@ public sealed class FirestoreSnapshotBackend : ISnapshotBackend, IHostedService,
         while (true)
         {
             Exception? error;
-            lock (_gate) { if (_pending is null && !_writing && _storedGeneration == _acceptedGeneration) return; error = _lastError; }
+            lock (_gate) { if (_leaseLost || (_pending is null && !_writing && _storedGeneration == _acceptedGeneration)) return; error = _lastError; }
             if (_time.GetUtcNow() > deadline) throw new TimeoutException("Firestore did not accept the pending control metadata in time.", error);
             await Task.Delay(20);
         }
@@ -226,6 +319,8 @@ public sealed class FirestoreSnapshotBackend : ISnapshotBackend, IHostedService,
             try { await FlushAsync(TimeSpan.FromSeconds(10)); }
             catch (TimeoutException e) { _log?.LogError(e, "Shutting down with control metadata not yet stored in Firestore"); }
             try { _stop.Cancel(); } catch (ObjectDisposedException) { /* already cancelled and disposed */ }
+            if (_renewer is not null) { try { await _renewer.WaitAsync(TimeSpan.FromSeconds(5)); } catch (Exception) { /* stopping anyway */ } }
+            await ReleaseWriterLeaseAsync();
             Task? worker; lock (_gate) worker = _worker;
             if (worker is not null)
                 try { await worker.WaitAsync(TimeSpan.FromSeconds(5)); }

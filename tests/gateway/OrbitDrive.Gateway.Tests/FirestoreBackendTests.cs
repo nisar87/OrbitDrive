@@ -239,4 +239,72 @@ public sealed class FirestoreBackendTests
         await Task.WhenAll(writers.Append(Task.Run(async () => { await Task.Delay(5); await backend.DisposeAsync(); }))).WaitAsync(TimeSpan.FromSeconds(60));
         await backend.DisposeAsync();
     }
+
+    // ---- R41: one writer per database ----
+
+    private static FirestoreSnapshotBackend Leased(FirestoreDb db, TimeSpan lease, Action? lost = null) => new(db, TimeProvider.System, writerLease: lease, onLeaseLost: lost);
+
+    [Fact]
+    public async Task A_second_live_gateway_on_the_same_database_refuses_to_start_and_the_first_is_unharmed()
+    {
+        if (EmulatorMissing()) return;
+        var db = NewProject();
+        await using var first = Leased(db, TimeSpan.FromSeconds(3));
+        first.Load();
+        var second = Leased(db, TimeSpan.FromSeconds(3));
+        var refused = Assert.Throws<InvalidOperationException>(() => second.Load());
+        Assert.Contains("Two gateways must not share one database", refused.Message);
+        var (store, device) = await PairedAsync(first);       // the first keeps working and can still save
+        Assert.Single(store.PcsFor(device));
+        Assert.False(first.LeaseLost);
+    }
+
+    [Fact]
+    public async Task A_clean_shutdown_gives_the_lease_back_so_a_restart_starts_at_once()
+    {
+        if (EmulatorMissing()) return;
+        var db = NewProject();
+        var first = Leased(db, TimeSpan.FromSeconds(30));
+        first.Load();
+        await first.DisposeAsync();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        await using var second = Leased(db, TimeSpan.FromSeconds(30));
+        second.Load();
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), "a clean restart must not wait for the old lease to expire");
+    }
+
+    [Fact]
+    public async Task After_a_crash_the_next_instance_waits_out_the_dead_holders_lease_and_takes_over_without_losing_data()
+    {
+        if (EmulatorMissing()) return;
+        var db = NewProject();
+        await using (var before = new FirestoreSnapshotBackend(db, TimeProvider.System)) { await PairedAsync(before); }
+        // A killed process leaves its lease behind, expiring in two seconds, and never renews it.
+        await db.Document("meta/writer").SetAsync(new Dictionary<string, object> { ["holder"] = "dead-instance", ["expiresUnixMs"] = DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeMilliseconds(), ["epoch"] = 5L });
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        await using var next = Leased(db, TimeSpan.FromSeconds(30));
+        var snapshot = next.Load();
+        Assert.True(started.Elapsed >= TimeSpan.FromSeconds(1.5), "it must wait for the old lease, not steal it");
+        Assert.True(started.Elapsed < TimeSpan.FromSeconds(15));
+        Assert.NotNull(snapshot);
+        Assert.Single(snapshot!.Pcs);
+    }
+
+    [Fact]
+    public async Task An_instance_whose_lease_is_taken_over_stops_writing_and_tells_its_host()
+    {
+        if (EmulatorMissing()) return;
+        var db = NewProject();
+        var lost = new TaskCompletionSource();
+        await using var old = Leased(db, TimeSpan.FromSeconds(3), () => lost.TrySetResult());
+        old.Load();
+        // Another instance takes the lease while the old one is "stalled": rewrite the lease document the way a takeover would.
+        await db.Document("meta/writer").SetAsync(new Dictionary<string, object> { ["holder"] = "someone-else", ["expiresUnixMs"] = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeMilliseconds(), ["epoch"] = 99L });
+        await lost.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.True(old.LeaseLost);
+        var store = Open(old);
+        store.UpsertPc("pc-after-loss", [7], "Late PC", "0.1.0");
+        await old.FlushAsync(TimeSpan.FromSeconds(5));
+        Assert.False((await db.Document("pcs/pc-after-loss").GetSnapshotAsync()).Exists, "a gateway that lost the lease must not write");
+    }
 }
