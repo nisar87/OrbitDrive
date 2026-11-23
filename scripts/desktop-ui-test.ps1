@@ -48,6 +48,23 @@ function ConfirmYes {
     }
     throw 'no confirmation dialog appeared'
 }
+# Answers a Yes/No confirmation with No, after checking that its text mentions what is being asked (a native message box: its own accelerator is N).
+function ConfirmNo([string]$mustMention) {
+    Add-Type -AssemblyName System.Windows.Forms
+    $yes = New-Object System.Windows.Automation.PropertyCondition($AE::NameProperty, 'Yes')
+    $mine = New-Object System.Windows.Automation.PropertyCondition($AE::ProcessIdProperty, $script:win.Current.ProcessId)
+    for ($i = 0; $i -lt 50; $i++) {
+        foreach ($w in $AE::RootElement.FindAll($Scope::Children, $mine)) {
+            if ($w.FindFirst($Scope::Descendants, $yes)) {
+                $text = (($w.FindAll($Scope::Descendants, [System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object { $_.Current.Name }) -join ' ')
+                if ($text -notmatch $mustMention) { throw "the confirmation did not mention /$mustMention/: $text" }
+                try { $w.SetFocus() } catch { }; Start-Sleep -Milliseconds 300; [System.Windows.Forms.SendKeys]::SendWait('n'); return
+            }
+        }
+        Start-Sleep -Milliseconds 200
+    }
+    throw 'no confirmation dialog appeared'
+}
 function Nav([string]$page) {
     $condition = New-Object System.Windows.Automation.PropertyCondition($AE::NameProperty, $page)
     $item = (Find 'Navigation').FindFirst($Scope::Descendants, $condition)
@@ -135,6 +152,13 @@ try {
     [void](WaitText 'RootError' 'Folder not found')
     Check (@(ListItems 'RootsList').Count -eq 0) 'a missing folder is refused with a clear message'
     Shot 'shared-folders-error'
+    # Sharing a whole drive needs an explicit confirmation naming the drive; answering No shares nothing.
+    $driveRoot = ($env:SystemDrive + '\')
+    SetText 'RootName' 'Everything'; SetText 'RootPath' $driveRoot; Click 'AddRootButton'
+    ConfirmNo 'whole drive'
+    Start-Sleep -Milliseconds 800
+    Check (@(ListItems 'RootsList').Count -eq 0) 'sharing a whole drive asks first, and answering No shares nothing'
+    Check ((& $AgentExe ctl status --state $state | ConvertFrom-Json).roots.Count -eq 0) 'the agent holds no folder after the drive was declined'
     SetText 'RootName' 'Holiday Photos'; SetText 'RootPath' $share; Click 'AddRootButton'
     for ($i = 0; $i -lt 50 -and @(ListItems 'RootsList').Count -eq 0; $i++) { Start-Sleep -Milliseconds 200 }
     $items = @(ListItems 'RootsList')
