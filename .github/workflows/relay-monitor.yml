@@ -15,7 +15,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      contents: write   # only to append one line of health history to the data-only `relay-logs` branch
+      contents: read
+      actions: read     # to fetch the previous history artifact
       issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -39,25 +40,29 @@ jobs:
             exit 1
           fi
           if [ -n "$OPEN" ]; then gh issue close "$OPEN" --repo "${{ github.repository }}" --comment "Recovered: the relay is healthy again ($STATUS)."; fi
-      # History for trend-spotting: one JSON line per check on a data-only branch (no code, no secrets, counts only), read by the daily review.
+      # History for trend-spotting: one JSON line per check in a rolling `relay-history` artifact (counts and health only, newest ~2000 checks), read by the daily review.
+      # An artifact needs no write access to the repository.
       - name: Record health history
         if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           [ "$(jq -r .enabled infra/relay/environments/dev.json)" = "true" ] || exit 0
-          URL=$(jq -r .url infra/relay/environments/dev.json)
-          NOW=$(date -u +%FT%TZ)
+          URL=$(jq -r .url infra/relay/environments/dev.json); NOW=$(date -u +%FT%TZ)
+          mkdir -p history; : > history/relay-history.jsonl
+          PREV=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=relay-history&per_page=1" --jq '.artifacts[0] | select(.expired==false) | .archive_download_url' 2>/dev/null || true)
+          if [ -n "$PREV" ] && gh api "$PREV" > prev.zip 2>/dev/null; then unzip -p prev.zip relay-history.jsonl >> history/relay-history.jsonl 2>/dev/null || true; fi
           if STATUS=$(curl -fsS -m 15 "$URL/relay-status.json") && jq -e . >/dev/null 2>&1 <<<"$STATUS"; then
-            LINE=$(jq -c --arg checked "$NOW" '{checked:$checked} + .' <<<"$STATUS")
+            jq -c --arg checked "$NOW" '{checked:$checked} + .' <<<"$STATUS" >> history/relay-history.jsonl
           else
-            LINE=$(jq -nc --arg checked "$NOW" '{checked:$checked, unreachable:true, alerts:["relay_unreachable"]}')
+            jq -nc --arg checked "$NOW" '{checked:$checked, unreachable:true, alerts:["relay_unreachable"]}' >> history/relay-history.jsonl
           fi
-          git config user.name "relay-monitor"; git config user.email "relay-monitor@users.noreply.github.com"
-          if git ls-remote --exit-code --heads origin relay-logs >/dev/null 2>&1; then
-            git fetch --depth 1 origin relay-logs && git worktree add -B relay-logs ../history FETCH_HEAD
-          else
-            git worktree add --orphan -b relay-logs ../history; rm -rf ../history/* 2>/dev/null || true
-            printf '# relay-logs\n\nData-only branch written by the relay-monitor workflow: one JSON line per check in `history/YYYY-MM.jsonl` (counts and health only).\n' > ../history/README.md
-          fi
-          mkdir -p ../history/history
-          echo "$LINE" >> "../history/history/$(date -u +%Y-%m).jsonl"
-          cd ../history && git add -A && git commit -qm "relay health $NOW" && git push -q origin relay-logs
+          tail -n 2000 history/relay-history.jsonl > history/tmp && mv history/tmp history/relay-history.jsonl
+      - name: Keep the history
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: relay-history
+          path: history/relay-history.jsonl
+          retention-days: 90
+          overwrite: true
