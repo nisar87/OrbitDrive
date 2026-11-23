@@ -39,3 +39,16 @@ jobs:
           name: soak-report-${{ matrix.os }}
           path: artifacts/
           retention-days: 30
+  large-archive:
+    # R26: a real ZIP past 4 GiB (a sparse source file, no compression) written by the archive writer and read back by the framework's own reader.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+      - name: Real 4 GiB+ archive
+        run: dotnet test tests/desktop/OrbitDrive.Core.Tests -c Release --filter FullyQualifiedName~ZipWriterLargeTests
+        env:
+          ORBIT_ZIP64_REAL: '1'

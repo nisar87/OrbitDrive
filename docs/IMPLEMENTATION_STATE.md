@@ -139,3 +139,6 @@ Toolchain: .NET SDK 10.0.x (CI 10.0.404), Node 22, Playwright 1.65, TypeScript 7
 - Done and green in CI (7db0537): shell + tokens + shared components; Home, Shared folders, Devices, Activity, Settings (all XAML + view models). Design doc: `docs/design/console-redesign.md`; screenshots: `docs/evidence/screenshots/console-redesign/`.
 - Toasts done and green (0808bef): Deny + Review only (never Approve), plain finished-transfer notice, tray-balloon fallback; notice rules unit-tested in Core. File-type icons in the web explorer (cae9a4a).
 - Next: tray flyout, rebuild the update panel as XAML, accessibility checks on Windows 11 (owner).
+
+## 2026-11-24 completion pass
+Added: PC identity key rotation (R07), two-PC isolation test (R32), relay log digest, health history and daily review (R46), ZipWriter fuzzing (R47), Firestore single-writer lease (R41), tablet/landscape viewport test and window re-fit fix (R33), whole-drive confirmation UI test (R08), opt-in real >4 GiB archive job (R26). Stale matrix rows corrected. Full split of built vs owner/device-blocked: `docs/evidence/COMPLETION_AUDIT.md`.
