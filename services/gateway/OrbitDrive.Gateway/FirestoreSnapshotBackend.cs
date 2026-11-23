@@ -113,7 +113,7 @@ public sealed class FirestoreSnapshotBackend : ISnapshotBackend, IHostedService,
     /// </summary>
     private void AcquireWriterLease()
     {
-        if (_leaseDuration is not { } duration) return;
+        if (_leaseDuration is not { } duration || _renewer is not null) return;   // once per instance: Load may run again (a Store opened on the same backend)
         var deadline = _time.GetUtcNow() + duration + TimeSpan.FromSeconds(5);
         while (true)
         {
