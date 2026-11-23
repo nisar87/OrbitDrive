@@ -181,3 +181,26 @@ test('Upload (confirmation and finished) and Administration have no automaticall
   await expect(admin.getByTestId('admin-metrics')).toBeVisible();
   for (const theme of ['light', 'dark']) { await setTheme(page, theme); await expectAccessible(page, `Administration, ${theme}`); }
 });
+
+// R33: tablets and landscape phones. Emulated viewports in a real browser; physical devices remain a manual check.
+const VIEWPORTS = [
+  { name: 'tablet portrait', width: 820, height: 1180 },
+  { name: 'tablet landscape', width: 1180, height: 820 },
+  { name: 'phone landscape', width: 915, height: 412 },
+  { name: 'small phone landscape', width: 667, height: 375 },
+];
+test('layout: tablets and landscape phones keep the window on screen, never scroll sideways and stay accessible', async ({ page }) => {
+  await signInAndPair(page);
+  await page.getByRole('region', { name: "This account's PCs" }).getByRole('button', { name: /Share/ }).click();
+  await expect(explorer(page).getByRole('button', { name: 'Preview photo.png' })).toBeVisible();
+  for (const { name, width, height } of VIEWPORTS) {
+    await page.setViewportSize({ width, height });   // the same window stays open while the "screen" changes size, like rotating a tablet
+    await expect(explorer(page).getByRole('button', { name: 'Preview photo.png' }), `${name}: Explorer opens`).toBeVisible();
+    // The app re-fits its windows a frame after the screen changes size, so the position is polled rather than read once.
+    const edges = async () => { const box = await explorer(page).boundingBox(); return box ? { left: box.x, top: box.y, right: box.x + box.width, bottom: box.y + box.height } : null; };
+    await expect.poll(async () => { const e = await edges(); return e !== null && e.left >= -1 && e.top >= -1 && e.right <= width + 1 && e.bottom <= height + 1; }, { message: `${name}: the Explorer window fits on the screen`, timeout: 5000 }).toBe(true);
+    const size = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }));
+    expect(size.scroll, `${name}: no sideways scrolling`).toBeLessThanOrEqual(size.inner);
+    await expectAccessible(page, `Explorer at ${name}`);
+  }
+});

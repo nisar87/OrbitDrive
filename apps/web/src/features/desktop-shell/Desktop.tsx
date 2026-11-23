@@ -43,6 +43,17 @@ function clamp(layout: WindowLayout): WindowLayout {
   return { ...layout, w, h, x: Math.min(Math.max(layout.x, 200 - w), window.innerWidth - 200), y: Math.min(Math.max(layout.y, 0), Math.max(0, window.innerHeight - TASKBAR - 44)) };
 }
 
+/**
+ * After the screen changes (a tablet rotates, the browser window shrinks) or a layout saved on a bigger screen is restored, the whole window is brought back on
+ * screen. Dragging keeps the looser {@link clamp}, so a window can still be parked partly off the edge on purpose.
+ */
+function refit(layout: WindowLayout): WindowLayout {
+  const fitted = clamp(layout);
+  const w = Math.min(fitted.w, Math.max(MIN_W, window.innerWidth - 16)), h = Math.min(fitted.h, Math.max(MIN_H, window.innerHeight - TASKBAR - 16));
+  const x = Math.max(8, Math.min(fitted.x, window.innerWidth - w - 8)), y = Math.max(0, Math.min(fitted.y, window.innerHeight - TASKBAR - h));
+  return { ...fitted, w, h, x, y };
+}
+
 function Clock() {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => { const timer = setInterval(() => setNow(new Date()), 20_000); return () => clearInterval(timer); }, []);
@@ -77,7 +88,7 @@ export function Desktop({ apps, account, prefs, onPrefs, onSignOut, openRef }: P
   const [windows, setWindows] = useState<Record<string, WindowState>>(() => ({ [apps[0].id]: { open: true, minimized: false, z: 1 } }));
   const [layouts, setLayouts] = useState<Record<string, WindowLayout>>(() => {
     const initial: Record<string, WindowLayout> = {};
-    apps.forEach((app, index) => { const saved = prefs.windows[app.id]; initial[app.id] = saved && saved.w >= MIN_W && saved.h >= MIN_H ? clamp(saved) : defaultLayout(index); });
+    apps.forEach((app, index) => { const saved = prefs.windows[app.id]; initial[app.id] = saved && saved.w >= MIN_W && saved.h >= MIN_H ? refit(saved) : defaultLayout(index); });
     return initial;
   });
   // An app can appear after the desktop was created (the operator area, once the service confirms the account is an operator): it gets a default window.
@@ -118,7 +129,7 @@ export function Desktop({ apps, account, prefs, onPrefs, onSignOut, openRef }: P
   }, [saveLayout]);
 
   useEffect(() => {
-    const onResize = () => setLayouts((current) => Object.fromEntries(Object.entries(current).map(([id, layout]) => [id, clamp(layout)])));
+    const onResize = () => setLayouts((current) => Object.fromEntries(Object.entries(current).map(([id, layout]) => [id, refit(layout)])));
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
