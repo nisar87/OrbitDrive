@@ -2,7 +2,7 @@
 """Renders docs/branding/CONCEPT_BOARD.png from docs/branding/concepts (run logos.py first)."""
 import subprocess
 from PIL import Image, ImageDraw, ImageFont
-C = ['A-connected-m', 'B-personal-portal', 'C-connected-orbit']
+C = ['F-folder-orbit-v2', 'C-connected-orbit', 'A-connected-m']
 def r(svg, w=None, h=None, out='/tmp/_b.png'):
     a = ['rsvg-convert', '-o', out] + (['-w', str(w)] if w else []) + (['-h', str(h)] if h else [])
     subprocess.run(a + [svg], check=True); return Image.open(out).convert('RGBA')

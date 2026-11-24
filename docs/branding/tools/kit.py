@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 out = sys.argv[1] if len(sys.argv) > 1 else 'docs/branding/kit-provisional'
 for sub in ('svg', 'png', 'pwa', 'windows', 'social'): os.makedirs(f'{out}/{sub}', exist_ok=True)
-A = 'docs/branding/concepts/A-connected-m'
+A = 'docs/branding/concepts/F-folder-orbit-v2'
 L.build('docs/branding/concepts')
 
 def raster(svg, png, w=None, h=None):
@@ -22,7 +22,7 @@ shutil.copy('docs/branding/concepts/wordmark-light.svg', f'{out}/svg/wordmark-li
 
 # Full-bleed icon (maskable / app tiles): navy square, mark inside the 80% safe zone
 def fullbleed(scale):
-    inner = L.mark_A(dict(bg=None, fg=L.PEARL, acc=L.MINT))
+    inner = L.mark_F(dict(bg=None, fg=L.PEARL, acc=L.MINT))
     t = (64 - 64 * scale) / 2
     return L.svg(64, 64, f'<rect width="64" height="64" fill="{L.NAVY}"/><g transform="translate({t} {t}) scale({scale})">{inner.replace(L.MINT, L.MINT)}</g>', 'MyOrbitDrive maskable icon')
 # the node ring colour for tile-less marks falls back to the fg colour; on the navy field it must be navy

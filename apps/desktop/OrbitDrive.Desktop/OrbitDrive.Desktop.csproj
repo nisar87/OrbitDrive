@@ -5,6 +5,7 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>OrbitDrive</AssemblyName>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <RootNamespace>OrbitDrive.Desktop</RootNamespace>
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>

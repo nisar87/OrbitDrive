@@ -41,7 +41,38 @@ def mark_C(c):  # Connected Orbit: tilted orbit with a satellite around a folder
       f'<path d="M24 26.5a2.5 2.5 0 0 1 2.5-2.5h4l2.6 3H38a2.5 2.5 0 0 1 2.5 2.5V37a2.5 2.5 0 0 1-2.5 2.5H26.5A2.5 2.5 0 0 1 24 37Z" fill="{c["acc"]}"/>'
       f'<circle cx="50.4" cy="24.2" r="5" fill="{c["acc"]}" stroke="{c["bg"] or "#fff"}" stroke-width="2.4"/>')
 
-MARKS = {'A-connected-m': mark_A, 'B-personal-portal': mark_B, 'C-connected-orbit': mark_C}
+def mark_D(c):  # Orbit Gap: an open orbit ring whose satellite sits in the gap, around a solid core
+    ring = c['fg']; core = c['fg']; sat = c['acc']
+    return (tile(c) +
+      f'<path d="M50.35 27.08A19 19 0 1 1 36.92 13.65" fill="none" stroke="{ring}" stroke-width="6.4" stroke-linecap="round"/>'
+      f'<circle cx="32" cy="32" r="8.2" fill="{core}"/>'
+      f'<circle cx="46.2" cy="17.8" r="5.4" fill="{sat}"/>')
+
+def mark_E(c):  # Folder Orbit: a solid folder at the core, wrapped by a tilted orbit with its satellite
+    ring = c['fg']; core = c['acc']; sat = c['fg']
+    return (tile(c) +
+      '<g transform="rotate(-32 32 32)">'
+      f'<path d="M10.2 32a21.8 11.4 0 0 0 43.6 0" fill="none" stroke="{ring}" stroke-width="5.6" stroke-linecap="round"/></g>'
+      f'<path d="M21 25.4a3 3 0 0 1 3-3h6.2l3.4 3.8H40a3 3 0 0 1 3 3V38a3 3 0 0 1-3 3H24a3 3 0 0 1-3-3Z" fill="{core}"/>'
+      '<g transform="rotate(-32 32 32)">'
+      f'<path d="M53.8 32a21.8 11.4 0 0 0-8.6-9" fill="none" stroke="{ring}" stroke-width="5.6" stroke-linecap="round"/></g>'
+      f'<circle cx="46.9" cy="17.6" r="4.6" fill="{sat}"/>')
+
+def mark_F(c):  # Folder Orbit v2: an upright folder at the core, an orbit passing behind (top) and in front (bottom), a satellite
+    import math
+    ring = c['fg']; core = c['acc']; sat = c['acc']
+    rx, ry = 25.0, 13.0
+    ang = math.radians(-18)
+    sx, sy = 32 + rx * math.cos(ang), 32 + ry * math.sin(ang)
+    return (tile(c) +
+      '<g transform="rotate(-28 32 32)">'
+      f'<path d="M{32-rx} 32A{rx} {ry} 0 0 1 {32+rx} 32" fill="none" stroke="{ring}" stroke-width="5.2" stroke-linecap="round"/></g>'
+      f'<path d="M20.5 24.6a3.2 3.2 0 0 1 3.2-3.2h6.6l3.6 4H40.3a3.2 3.2 0 0 1 3.2 3.2V39a3.2 3.2 0 0 1-3.2 3.2H23.7a3.2 3.2 0 0 1-3.2-3.2Z" fill="{core}"/>'
+      '<g transform="rotate(-28 32 32)">'
+      f'<path d="M{32-rx} 32A{rx} {ry} 0 0 0 {32+rx} 32" fill="none" stroke="{ring}" stroke-width="5.2" stroke-linecap="round"/>'
+      f'<circle cx="{sx:.2f}" cy="{sy:.2f}" r="0" fill="{sat}"/></g>')
+
+MARKS = {'A-connected-m': mark_A, 'B-personal-portal': mark_B, 'C-connected-orbit': mark_C, 'D-orbit-gap': mark_D, 'E-folder-orbit': mark_E, 'F-folder-orbit-v2': mark_F}
 SCHEMES = {  # tile icon colours / on-light / on-dark / mono
   'icon':       dict(bg=NAVY,  fg=PEARL, acc=MINT),
   'mark-light': dict(bg=None,  fg=NAVY,  acc=TEAL),
