@@ -9,7 +9,7 @@ import { createRequire } from 'node:module';
 const repo = resolve(import.meta.dirname, '../../..');
 const require = createRequire(join(repo, 'apps/web/package.json'));
 const { chromium } = require('@playwright/test');
-const { startGateway, startAgent, agentCli, tempDir, sleep } = await import(join(repo, 'tests/integration/harness.mjs'));
+const { startGateway, startAgent, agentCli, connectIpc, tempDir, sleep } = await import(join(repo, 'tests/integration/harness.mjs'));
 
 const out = resolve(process.argv[2] ?? join(repo, 'apps/site/screenshots'));
 mkdirSync(out, { recursive: true });
@@ -23,6 +23,7 @@ const vite = spawn('npx', ['vite', '--mode', 'e2e', '--port', '5173', '--strictP
 for (let i = 0; i < 60; i++) { try { if ((await fetch('http://localhost:5173')).ok) break; } catch { /* starting */ } await sleep(500); }
 const gateway = await startGateway({}, 5199);
 const agent = await startAgent(gateway, state, 'Home PC');
+const ipc = await connectIpc(agent.ready.pipe);
 const sha = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repo }).toString().trim();
 const manifest = { generatedBy: 'apps/site/capture/capture.mjs', commit: sha, webVersion: '0.1.0', account: 'demo@example.test (dev auth, local only)',
   dataset: 'synthetic images and documents from make-demo-files.py; no real data', captures: [], failed: [] };
@@ -94,6 +95,13 @@ async function run(kind) {
     await taskbar(page, 'Transfers').click();
     await page.getByRole('dialog', { name: 'Transfers' }).getByTestId('transfer').first().waitFor();
   });
+  await step('13-inbox', 'A file sent from the PC waits in the Inbox until accepted', async () => {
+    const devices = (await ipc.send('devices')).data;
+    const reply = await ipc.send('send_files', { receiverId: devices[devices.length - 1].deviceId, paths: [join(root, 'Documents', 'Travel plan.pdf')] });
+    if (!reply.ok) throw new Error('send_files failed');
+    await page.getByRole('navigation', { name: 'Taskbar' }).getByRole('button', { name: /^Inbox/ }).click();
+    await page.getByRole('dialog', { name: 'Inbox' }).getByTestId('invitation').first().waitFor({ timeout: 20000 });
+  });
   await step('11-dark', 'Dark theme (real Settings toggle)', async () => {
     await taskbar(page, 'Settings').click();
     await page.getByRole('dialog', { name: 'Settings' }).getByRole('radio', { name: 'Dark' }).check();
@@ -104,6 +112,6 @@ async function run(kind) {
 try { await run('desktop'); await run('phone'); }
 finally {
   writeFileSync(join(out, 'manifest.json'), JSON.stringify(manifest, null, 2));
-  await browser.close(); await agent.stop(); await gateway.stop(); vite.kill();
+  ipc.close(); await browser.close(); await agent.stop(); await gateway.stop(); vite.kill();
 }
 console.log(`captured ${manifest.captures.length}, failed ${manifest.failed.length}`, manifest.failed);

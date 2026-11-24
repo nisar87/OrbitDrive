@@ -1,6 +1,6 @@
 {
   "generatedBy": "apps/site/capture/capture.mjs",
-  "commit": "aa8eb36",
+  "commit": "c2bb0d4",
   "webVersion": "0.1.0",
   "account": "demo@example.test (dev auth, local only)",
   "dataset": "synthetic images and documents from make-demo-files.py; no real data",
@@ -130,6 +130,19 @@
       "viewport": "1440x900 @2x",
       "theme": "light",
       "web": "desktop-10-transfers.webp",
+      "webSize": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "file": "desktop-13-inbox.png",
+      "id": "13-inbox",
+      "what": "A file sent from the PC waits in the Inbox until accepted",
+      "surface": "web app in desktop Chrome",
+      "viewport": "1440x900 @2x",
+      "theme": "light",
+      "web": "desktop-13-inbox.webp",
       "webSize": [
         1600,
         1000
@@ -273,6 +286,19 @@
       "viewport": "390x844 @3x",
       "theme": "light",
       "web": "phone-10-transfers.webp",
+      "webSize": [
+        600,
+        1298
+      ]
+    },
+    {
+      "file": "phone-13-inbox.png",
+      "id": "13-inbox",
+      "what": "A file sent from the PC waits in the Inbox until accepted",
+      "surface": "web app, phone-sized viewport (browser emulation, not a physical phone)",
+      "viewport": "390x844 @3x",
+      "theme": "light",
+      "web": "phone-13-inbox.webp",
       "webSize": [
         600,
         1298

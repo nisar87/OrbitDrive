@@ -19,3 +19,6 @@ No third-party requests; no console errors; no sideways scroll; every image load
 
 ## Config the owner must set before any publication
 `CONFIG.appUrl` and `CONFIG.downloadUrl` in `site.js` (currently the dev web app and the `desktop-dev` release page). Hosting target, domain and any DNS change are the owner's decisions.
+
+## Online (owner request, 24 Nov 2026)
+The marketing site is served at **https://orbitdrive-dev.web.app/welcome/** by the existing `deploy-web` workflow: `scripts/deploy-web.mjs` copies `apps/site` (index.html, styles.css, site.js, assets only; no tests, capture tools or dependencies) into the hosting bundle under `/welcome/`. It uses the same development Firebase project, the same keyless deploy and the same security headers as the app. No new project, hosting site, paid resource or DNS record. `myorbitdrive.app` is **not** pointed at it: that is a DNS change that still needs the owner. "Open web app" goes to the app one level up; "Download" goes to the `desktop-dev` release page.

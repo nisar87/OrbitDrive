@@ -14,6 +14,9 @@ All work is on branch `feature/branding`. Nothing is published, no DNS or hostin
 | Security and abuse audit | `docs/branding/SECURITY_AUDIT.md`, `apps/site/headers.hosting.json` |
 | Honest rubric | `docs/branding/RUBRIC.md` (77/100) |
 
+## Online now
+Preview at https://orbitdrive-dev.web.app/welcome/ (development hosting, owner-requested 24 Nov 2026). The custom domain myorbitdrive.app is not connected.
+
 ## Owner decisions and approvals needed (nothing proceeds without them)
 1. Approve, change or reject logo Concept A; run a trademark and similarity search.
 2. Approve the homepage direction and wording (especially the security section and the "preview, unsigned" download wording).

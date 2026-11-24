@@ -44,6 +44,11 @@ run('npm', ['run', 'build'], { cwd: web, env });
 rmSync(staging, { recursive: true, force: true });                 // only our own staging folder
 mkdirSync(staging);
 cpSync(join(web, 'dist'), join(staging, 'dist'), { recursive: true });
+// The marketing site (apps/site, static, no build) is served at /welcome/ from the same hosting site. Only the public files are copied.
+const welcome = join(staging, 'dist', 'welcome');
+mkdirSync(welcome);
+for (const f of ['index.html', 'styles.css', 'site.js']) cpSync(join(root, 'apps', 'site', f), join(welcome, f));
+cpSync(join(root, 'apps', 'site', 'assets'), join(welcome, 'assets'), { recursive: true });
 writeFileSync(join(staging, 'firebase.json'), JSON.stringify(config, null, 2) + '\n');
 writeFileSync(join(staging, '.firebaserc'), JSON.stringify({ projects: { default: project } }) + '\n');
 

@@ -1,7 +1,7 @@
 // MyOrbitDrive marketing site behaviour. No third-party scripts, no tracking, no storage.
 const CONFIG = {
   // Preview values; the owner sets the real addresses when the site is approved.
-  appUrl: 'https://orbitdrive-dev.web.app/',
+  appUrl: '../',
   downloadUrl: 'https://github.com/nisar87/OrbitDrive/releases/tag/desktop-dev',
 };
 document.querySelectorAll('[data-app]').forEach((a) => { a.href = CONFIG.appUrl; });
@@ -52,10 +52,12 @@ const SHOTS = [
   ['desktop-08-preview-pdf', 'desktop', 'A PDF opened in Preview', 'Browser'],
   ['desktop-09-icons', 'desktop', 'Icon view', 'Browser'],
   ['desktop-10-transfers', 'desktop', 'Transfers say what the app can and cannot see', 'Browser'],
+  ['desktop-13-inbox', 'desktop', 'A file offered from the PC waits in the Inbox', 'Browser'],
   ['desktop-11-dark', 'desktop', 'Dark theme', 'Browser'],
   ['phone-05-explorer', 'phone', 'Folder list on a phone-sized screen', 'Phone-sized'],
   ['phone-07-preview-image', 'phone', 'Picture preview on a phone-sized screen', 'Phone-sized'],
   ['phone-10-transfers', 'phone', 'Transfers on a phone-sized screen', 'Phone-sized'],
+  ['phone-13-inbox', 'phone', 'The Inbox on a phone-sized screen', 'Phone-sized'],
   ['phone-11-dark', 'phone', 'Dark theme on a phone-sized screen', 'Phone-sized'],
 ];
 const WIN = [['win-home', 'The Windows app home'], ['win-devices', 'Paired devices, removable at any time'], ['win-pair', 'Pairing with a QR code'], ['win-dark', 'The Windows app in dark theme']];
