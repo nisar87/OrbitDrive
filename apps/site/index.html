@@ -7,6 +7,7 @@
 <meta name="description" content="Open the folders you choose on your Windows PC from your phone or any browser. Read-only by default, approved on the PC, nothing synced to a cloud drive. Preview build.">
 <meta name="theme-color" content="#142C43">
 <meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
 <link rel="icon" href="assets/favicon.ico" sizes="any"><link rel="icon" type="image/svg+xml" href="assets/icon.svg">
 <meta property="og:title" content="MyOrbitDrive: Your PC files, wherever you are"><meta property="og:description" content="Open the folders you choose from your phone or any browser. You approve every folder and device.">
 <meta property="og:type" content="website"><meta property="og:image" content="assets/og-image-1200x630.png"><meta name="twitter:card" content="summary_large_image">
@@ -50,7 +51,7 @@
     <p>This is how the code works. It is generated here in your browser and connects to nothing.</p>
     <div class="code" id="simcode" aria-live="polite">------</div>
     <button type="button" id="simbtn">Show a demo code</button>
-    <p id="simmsg" style="margin:14px 0 0"></p>
+    <p id="simmsg" class="sim-msg"></p>
   </div>
 </div></section>
 
@@ -68,7 +69,7 @@
   <div role="tabpanel" id="p2" aria-labelledby="t2" hidden><div><h3>Look before you download</h3><p class="lead">Pictures and PDFs open in a preview. The original is downloaded only when you ask.</p></div><img class="shot" loading="lazy" src="assets/shots/desktop-08-preview-pdf.webp" width="1600" height="1000" alt="A two-page sample invoice PDF open in the Preview window, with a Download original button"></div>
   <div role="tabpanel" id="p3" aria-labelledby="t3" hidden><div><h3>Honest transfers</h3><p class="lead">The app says what it can see: that the relay sent the file to your browser. It never claims your browser finished saving.</p></div><img class="shot" loading="lazy" src="assets/shots/desktop-10-transfers.webp" width="1600" height="1000" alt="The Transfers window showing a picture handed to the browser, with a note that the app cannot see whether the browser finished saving"></div>
   <div role="tabpanel" id="p4" aria-labelledby="t4" hidden><div><h3>A small Windows app</h3><p class="lead">You decide which folders are shared, who is paired, and you can pause or quit at any time.</p></div><img class="shot" loading="lazy" src="assets/win/win-home.webp" width="980" height="680" alt="The MyOrbitDrive Windows app home screen showing the PC as online"></div>
-  <div role="tabpanel" id="p5" aria-labelledby="t5" hidden><div><h3>Made for a phone browser</h3><p class="lead">The same app in a phone-sized window. Install it to your home screen if you like.</p><p class="fine">Shown as a phone-sized browser window, not a photo of a phone.</p></div><img class="shot" style="max-width:300px;margin:auto" loading="lazy" src="assets/shots/phone-05-explorer.webp" width="600" height="1300" alt="The web app on a phone-sized screen showing the contents of a shared folder"></div>
+  <div role="tabpanel" id="p5" aria-labelledby="t5" hidden><div><h3>Made for a phone browser</h3><p class="lead">The same app in a phone-sized window. Install it to your home screen if you like.</p><p class="fine">Shown as a phone-sized browser window, not a photo of a phone.</p></div><img class="shot phone-shot" loading="lazy" src="assets/shots/phone-05-explorer.webp" width="600" height="1300" alt="The web app on a phone-sized screen showing the contents of a shared folder"></div>
 </div></section>
 
 <section class="tint"><div class="wrap">
@@ -133,7 +134,7 @@
 <section class="final" id="get-started"><div class="wrap">
   <h2>Your files, when you need them</h2><p class="lead">Install the preview on your PC, pair your phone, and approve what you share.</p>
   <div class="cta-row"><a class="btn primary" data-app href="#get-started">Open web app</a><a class="btn ghost" data-dl href="#get-started">Download the Windows preview</a></div>
-  <p class="fine" style="color:#D3DEE6">Unsigned preview build. Check the address before you download.</p>
+  <p class="fine on-dark">Unsigned preview build. Check the address before you download.</p>
 </div></section>
 </main>
 

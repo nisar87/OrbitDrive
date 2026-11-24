@@ -57,3 +57,5 @@ footer{padding:40px 0;font-size:15px;color:var(--mod-slate)}footer .wrap{display
 .reveal{opacity:0;transform:translateY(14px);transition:opacity .5s,transform .5s}.reveal.in{opacity:1;transform:none}
 @media (max-width:900px){.hero .grid,.story,.tabs [role=tabpanel],.two{grid-template-columns:1fr}.steps{grid-template-columns:1fr}.story:nth-of-type(even) .copy{order:0}
  nav.main{display:none;position:absolute;top:68px;left:0;right:0;background:var(--mod-pearl);flex-direction:column;padding:12px 24px 20px;border-bottom:1px solid var(--mod-line)}nav.main.open{display:flex}nav.main a{padding:12px 2px;font-size:17px}.menu-btn{display:block}header .btn{display:none}section{padding:60px 0}}
+.phone-shot{max-width:300px;margin:auto}.sim-msg{margin:14px 0 0}.final .fine.on-dark,.on-dark{color:#D3DEE6}
+.final .fine.on-dark{color:#D3DEE6}
