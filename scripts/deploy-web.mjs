@@ -48,7 +48,7 @@ cpSync(join(web, 'dist'), join(staging, 'dist'), { recursive: true });
 // apex domain myorbitdrive.app). Only the public files are copied; tests, capture tools and node_modules never leave the repo.
 const siteDir = join(staging, 'site');
 mkdirSync(siteDir);
-for (const f of ['index.html', 'styles.css', 'site.js', 'robots.txt', 'sitemap.xml']) cpSync(join(root, 'apps', 'site', f), join(siteDir, f));
+for (const f of ['index.html', 'services.html', 'privacy.html', 'terms.html', 'refund.html', 'delivery.html', 'contact.html', 'styles.css', 'site.js', 'robots.txt', 'sitemap.xml']) cpSync(join(root, 'apps', 'site', f), join(siteDir, f));
 cpSync(join(root, 'apps', 'site', 'assets'), join(siteDir, 'assets'), { recursive: true });
 const siteHeaders = JSON.parse(readFileSync(join(root, 'apps', 'site', 'headers.hosting.json'), 'utf8')).headers;
 const appSite = process.env.APP_HOSTING_SITE || project;            // the web app keeps its existing site (orbitdrive-dev)

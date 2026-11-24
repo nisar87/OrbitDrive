@@ -71,3 +71,20 @@ test('claims guard: nothing promises end-to-end, zero-knowledge, guarantees or c
   // "end-to-end" may appear only in a negation.
   for (const m of text.matchAll(/.{0,40}end-to-end.{0,30}/g)) expect(m[0]).toMatch(/not|no|never|n't|\?/);
 });
+
+for (const slug of ['services', 'privacy', 'terms', 'refund', 'delivery', 'contact']) {
+  test(`${slug} page: loads, has contact footer, no accessibility violations`, async ({ page }) => {
+    await page.goto(`/${slug}.html`);
+    await expect(page.locator('h1')).toBeVisible();
+    await expect(page.locator('footer')).toContainText('+92 321 8554745');
+    await expect(page.locator('footer')).toContainText('Fateh Jang');
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag22aa']).analyze();
+    expect(r.violations.map((v) => v.id)).toEqual([]);
+  });
+}
+test('services page lists eight services and no end-to-end claim', async ({ page }) => {
+  await page.goto('/services.html');
+  await expect(page.locator('.card')).toHaveCount(8);
+  const t = (await page.locator('main').innerText()).toLowerCase();
+  for (const bad of ['zero-knowledge', 'guarantee', 'unhackable']) expect(t).not.toContain(bad);
+});
