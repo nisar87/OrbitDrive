@@ -143,7 +143,7 @@ internal sealed class HomePageViewModel : PageViewModel
     {
         var version = _updates.AvailableVersion;
         ShowUpdateBar = version is not null;
-        UpdateMessage = version is null ? "" : $"OrbitDrive {version} is ready. Open Settings to update.";
+        UpdateMessage = version is null ? "" : $"MyOrbitDrive {version} is ready. Open Settings to update.";
     }
 
     private async Task OnStatusAsync(ConsoleStatus? status)
@@ -159,10 +159,10 @@ internal sealed class HomePageViewModel : PageViewModel
         var connection = _host.Connection;
         (Headline, Detail, StatusGlyph, Kind) = connection.Phase switch
         {
-            AgentPhase.KeepsStopping => ("OrbitDrive keeps stopping", $"The background agent stopped unexpectedly {connection.MaxRestarts + 1} times in a short while, so it was not started again. Nothing is being shared.", "", StatusKind.Critical),
-            AgentPhase.Stopped => ("OrbitDrive is stopped", "Nothing is being shared until you start it again.", "", StatusKind.Critical),
-            AgentPhase.Starting => ("Starting…", "Starting OrbitDrive's background agent.", "", StatusKind.Neutral),
-            _ => ("OrbitDrive isn't running", "The background agent is not running. Nothing is being shared.", "", StatusKind.Critical),
+            AgentPhase.KeepsStopping => ("MyOrbitDrive keeps stopping", $"The background agent stopped unexpectedly {connection.MaxRestarts + 1} times in a short while, so it was not started again. Nothing is being shared.", "", StatusKind.Critical),
+            AgentPhase.Stopped => ("MyOrbitDrive is stopped", "Nothing is being shared until you start it again.", "", StatusKind.Critical),
+            AgentPhase.Starting => ("Starting…", "Starting MyOrbitDrive's background agent.", "", StatusKind.Neutral),
+            _ => ("MyOrbitDrive isn't running", "The background agent is not running. Nothing is being shared.", "", StatusKind.Critical),
         };
         ShowPause = ShowResume = ShowSetUp = ShowUpdates = false;
         ShowStart = !connection.MayStart;
@@ -180,10 +180,10 @@ internal sealed class HomePageViewModel : PageViewModel
         {
             "online" => ("Sharing is on", "Your paired devices can browse the folders you share.", "", StatusKind.Good),
             "paused" => ("Sharing is paused", "Your devices can't see anything until you resume.", "", StatusKind.Neutral),
-            "connecting" => ("Connecting…", "Trying to reach the OrbitDrive relay. Your devices can't connect until this finishes.", "", StatusKind.Warning),
-            "update_required" => ("Update needed", "This version of OrbitDrive is no longer accepted by the service. Update to keep sharing.", "", StatusKind.Critical),
-            "not_configured" => ("Not set up yet", "OrbitDrive doesn't know which relay to use. Add the relay address in Settings.", "", StatusKind.Neutral),
-            _ => ("Not connected", "OrbitDrive can't reach the relay right now. It keeps trying by itself.", "", StatusKind.Warning),
+            "connecting" => ("Connecting…", "Trying to reach the MyOrbitDrive relay. Your devices can't connect until this finishes.", "", StatusKind.Warning),
+            "update_required" => ("Update needed", "This version of MyOrbitDrive is no longer accepted by the service. Update to keep sharing.", "", StatusKind.Critical),
+            "not_configured" => ("Not set up yet", "MyOrbitDrive doesn't know which relay to use. Add the relay address in Settings.", "", StatusKind.Neutral),
+            _ => ("Not connected", "MyOrbitDrive can't reach the relay right now. It keeps trying by itself.", "", StatusKind.Warning),
         };
         var running = status.State is "online" or "paused";
         ShowPause = status.State == "online";

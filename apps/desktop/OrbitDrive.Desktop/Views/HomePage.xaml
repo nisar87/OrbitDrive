@@ -46,7 +46,7 @@
                             Padding="{StaticResource Inset.Button}" MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="PauseButton"/>
                     <Button Content="Resume sharing" Command="{Binding ResumeCommand}" Visibility="{Binding ShowResume, Converter={StaticResource BoolToVisibility}}"
                             Style="{DynamicResource AccentButtonStyle}" Padding="{StaticResource Inset.Button}" MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="PauseButton"/>
-                    <Button Content="Start OrbitDrive" Command="{Binding StartCommand}" Visibility="{Binding ShowStart, Converter={StaticResource BoolToVisibility}}"
+                    <Button Content="Start MyOrbitDrive" Command="{Binding StartCommand}" Visibility="{Binding ShowStart, Converter={StaticResource BoolToVisibility}}"
                             Style="{DynamicResource AccentButtonStyle}" Padding="{StaticResource Inset.Button}" MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="StartAgentButton"/>
                     <Button Content="Set up connection" Command="{Binding SetUpCommand}" Visibility="{Binding ShowSetUp, Converter={StaticResource BoolToVisibility}}"
                             Style="{DynamicResource AccentButtonStyle}" Padding="{StaticResource Inset.Button}" MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="SetUpConnectionButton"/>
@@ -135,7 +135,7 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-                <TextBlock Text="OrbitDrive can see what it has sent to the relay. It cannot see whether a browser finished saving a file." Style="{StaticResource Style.Text.Muted}"/>
+                <TextBlock Text="MyOrbitDrive can see what it has sent to the relay. It cannot see whether a browser finished saving a file." Style="{StaticResource Style.Text.Muted}"/>
             </StackPanel>
         </Border>
 

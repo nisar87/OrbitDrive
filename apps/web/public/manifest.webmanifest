@@ -1,6 +1,6 @@
 {
-  "name": "OrbitDrive",
-  "short_name": "OrbitDrive",
+  "name": "MyOrbitDrive",
+  "short_name": "MyOrbitDrive",
   "description": "Browse and receive files from your own PCs, read-only.",
   "id": "/",
   "start_url": "/",

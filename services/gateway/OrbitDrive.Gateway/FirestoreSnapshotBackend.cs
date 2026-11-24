@@ -154,7 +154,7 @@ public sealed class FirestoreSnapshotBackend : ISnapshotBackend, IHostedService,
             }).GetAwaiter().GetResult();
             if (remainingMs == 0) break;
             if (_time.GetUtcNow() >= deadline)
-                throw new InvalidOperationException("Another OrbitDrive gateway instance is running on this database and keeps renewing its writer lease. Two gateways must not share one database; stop the other one.");
+                throw new InvalidOperationException("Another MyOrbitDrive gateway instance is running on this database and keeps renewing its writer lease. Two gateways must not share one database; stop the other one.");
             _log?.LogWarning("The Firestore writer lease is held for another {Seconds} s (a previous instance that did not shut down cleanly, or a second gateway); waiting", remainingMs / 1000);
             Thread.Sleep((int)Math.Min(remainingMs + 500, 5000));
         }

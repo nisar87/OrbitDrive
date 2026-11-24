@@ -92,7 +92,7 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
       const list = (await api.pcs(session)).pcs;
       setPcs(list);
       for (const pc of list) {
-        if (!pc.online) { setRoots((r) => ({ ...r, [pc.pcId]: 'This PC is offline. It must be on, awake and running OrbitDrive.' })); continue; }
+        if (!pc.online) { setRoots((r) => ({ ...r, [pc.pcId]: 'This PC is offline. It must be on, awake and running MyOrbitDrive.' })); continue; }
         api.roots(session, pc.pcId)
           .then((result) => setRoots((r) => ({ ...r, [pc.pcId]: result.roots })))
           .catch((e: unknown) => setRoots((r) => ({ ...r, [pc.pcId]: e instanceof ApiError ? e.message : 'Unavailable.' })));
@@ -550,7 +550,7 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
             <p role="status" className={transfer.phase === 'failed' ? 'notice error' : 'notice'} data-testid="transfer-status">
               {transfer.phase === 'preparing' && <>Checking <strong><bdi>{transfer.name}</bdi></strong> on the PC…</>}
               {transfer.phase === 'saving' && <>Saving <strong><bdi>{transfer.name}</bdi></strong> to the place you chose. Progress is shown in Transfers.</>}
-              {transfer.phase === 'handed' && <><strong><bdi>{transfer.name}</bdi></strong> ({formatBytes(transfer.size)}) was handed to your browser. Check your browser&apos;s downloads — OrbitDrive cannot see when the file has finished saving.</>}
+              {transfer.phase === 'handed' && <><strong><bdi>{transfer.name}</bdi></strong> ({formatBytes(transfer.size)}) was handed to your browser. Check your browser&apos;s downloads — MyOrbitDrive cannot see when the file has finished saving.</>}
               {transfer.phase === 'failed' && <><strong><bdi>{transfer.name}</bdi></strong>: {transfer.message}</>}
             </p>
           )}
@@ -565,7 +565,7 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
                   <article key={pc.pcId} className="pc">
                     <h2><span className={pc.online ? 'dot online' : 'dot'} aria-hidden="true" /><bdi>{pc.name}</bdi> <small>{pc.online ? 'Online' : `Offline · last seen ${formatTime(pc.lastSeenUnixMs)}`}</small></h2>
                     {typeof state === 'string' && <p className="notice">{state}</p>}
-                    {Array.isArray(state) && state.length === 0 && <p className="empty">No folders are shared from this PC. Choose folders to share in OrbitDrive on the PC.</p>}
+                    {Array.isArray(state) && state.length === 0 && <p className="empty">No folders are shared from this PC. Choose folders to share in MyOrbitDrive on the PC.</p>}
                     {Array.isArray(state) && (
                       <ul className="tiles">
                         {state.map((root) => (
@@ -607,7 +607,7 @@ export function Explorer({ session, prefs, onPrefs, onAuthLost, dataVersion, onO
               {range.end < visible.length && <div ref={sentinel} className="more-rows" aria-hidden="true" />}
               {!loading && !error && entries.length === 0 && <p className="empty">This folder is empty.</p>}
               {!loading && entries.length > 0 && visible.length === 0 && <p className="empty">{filter.trim() ? <>Nothing in this folder matches “<bdi>{filter.trim()}</bdi>”.</> : 'Only hidden items are here. Turn on “Show hidden items” in Settings to see them.'}</p>}
-              {skipped > 0 && <p className="notice">{skipped} link{skipped === 1 ? '' : 's'} or shortcut target{skipped === 1 ? '' : 's'} not shown. OrbitDrive does not follow links out of a shared folder.</p>}
+              {skipped > 0 && <p className="notice">{skipped} link{skipped === 1 ? '' : 's'} or shortcut target{skipped === 1 ? '' : 's'} not shown. MyOrbitDrive does not follow links out of a shared folder.</p>}
               {cursor && (
                 <p className="more">
                   <button type="button" onClick={() => void show(location, cursor)} disabled={loading}>Load more</button>

@@ -102,7 +102,7 @@ public sealed class UploadService
             if (c is (>= '\u0080' and <= '\u009f') or '‎' or '‏' or (>= '‪' and <= '‮') or (>= '⁦' and <= '⁩') or '﻿')
                 throw new ProtocolException(ErrorCode.InvalidRequest, "This file name contains hidden direction or control characters.");
         if (RefusedNames.Contains(name) || RefusedExtensions.Contains(Path.GetExtension(name)))
-            throw new ProtocolException(ErrorCode.InvalidRequest, "Windows reads this kind of file automatically when a folder is opened, so OrbitDrive does not accept it.");
+            throw new ProtocolException(ErrorCode.InvalidRequest, "Windows reads this kind of file automatically when a folder is opened, so MyOrbitDrive does not accept it.");
     }
 
     /// <summary>"name.ext" → "name (2).ext", "name (3).ext" … The first number that is free, so the result is predictable.</summary>

@@ -72,7 +72,7 @@ async function call<K extends keyof ProtocolTypeMap>(type: K, session: Session |
       response = await fetch(GATEWAY_URL + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', referrerPolicy: 'no-referrer' });
     } catch {
       // Only a request that carries its Idempotency-Key is retried: the service answers the repeat with the first answer instead of starting the work again.
-      if (!idempotent || attempt >= retryTuning.networkRetries) throw new ApiError('network', 'Cannot reach the OrbitDrive service. Check your connection.', 0);
+      if (!idempotent || attempt >= retryTuning.networkRetries) throw new ApiError('network', 'Cannot reach the MyOrbitDrive service. Check your connection.', 0);
       await new Promise((resolve) => setTimeout(resolve, retryTuning.delayMs * (attempt + 1)));
     }
   }
@@ -100,7 +100,7 @@ async function sendChunk(s: Session, pcId: string, uploadId: string, offset: num
       { method: 'PUT', headers, body: data, cache: 'no-store', referrerPolicy: 'no-referrer', signal });
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e;
-    throw new ApiError('network', 'Cannot reach the OrbitDrive service. Check your connection.', 0);
+    throw new ApiError('network', 'Cannot reach the MyOrbitDrive service. Check your connection.', 0);
   }
   adoptRotation(s, response);
   const json: unknown = await response.json().catch(() => null);

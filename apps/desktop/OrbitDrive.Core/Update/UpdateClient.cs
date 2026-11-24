@@ -67,8 +67,8 @@ public sealed class UpdateClient(HttpClient http, UpdateVerifier verifier, Updat
             return new UpdateCheck(UpdateState.Unavailable, "Could not reach the update server. Check this PC's internet connection and try again.");
         }
         try { var update = verifier.Verify(bytes, running, stager.HighestAccepted); return new UpdateCheck(UpdateState.Available, $"Version {update.Version} is available.", update); }
-        catch (UpdateRejectedException e) when (e.Reason is UpdateRejection.NotNewer) { return new UpdateCheck(UpdateState.UpToDate, "OrbitDrive is up to date."); }
-        catch (UpdateRejectedException e) when (e.Reason is UpdateRejection.Expired or UpdateRejection.RolledBack) { return new UpdateCheck(UpdateState.UpToDate, "OrbitDrive is up to date (no current update is published)."); }
+        catch (UpdateRejectedException e) when (e.Reason is UpdateRejection.NotNewer) { return new UpdateCheck(UpdateState.UpToDate, "MyOrbitDrive is up to date."); }
+        catch (UpdateRejectedException e) when (e.Reason is UpdateRejection.Expired or UpdateRejection.RolledBack) { return new UpdateCheck(UpdateState.UpToDate, "MyOrbitDrive is up to date (no current update is published)."); }
         catch (UpdateRejectedException e) { return new UpdateCheck(UpdateState.Rejected, "The update was refused for safety: " + e.Message); }
     }
 

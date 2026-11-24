@@ -41,11 +41,11 @@ export function disableNotifications() { try { localStorage.removeItem(NOTIFY_KE
 
 async function notifyGeneric() {
   if (!notificationsEnabled() || document.visibilityState === 'visible') return;
-  const options: NotificationOptions = { body: 'A file is waiting for you. Open OrbitDrive to accept it.', tag: 'orbitdrive-inbox', icon: '/icons/icon-192.png', data: { open: 'inbox' } };
+  const options: NotificationOptions = { body: 'A file is waiting for you. Open MyOrbitDrive to accept it.', tag: 'orbitdrive-inbox', icon: '/icons/icon-192.png', data: { open: 'inbox' } };
   try {
     const registration = await navigator.serviceWorker?.getRegistration();
-    if (registration) await registration.showNotification('OrbitDrive', options);
-    else new Notification('OrbitDrive', options);
+    if (registration) await registration.showNotification('MyOrbitDrive', options);
+    else new Notification('MyOrbitDrive', options);
   } catch { /* a notification that cannot be shown changes nothing else */ }
 }
 

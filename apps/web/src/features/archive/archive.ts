@@ -98,7 +98,7 @@ function poll(job: Internal, delay: number, failures: number) {
       if (job.stop) return;
       if (e instanceof ApiError && (e.code === 'not_found' || e.code === 'forbidden')) update(job, { phase: 'gone', message: 'The PC no longer has this archive. It may have expired, or the folder is no longer shared. Prepare it again.' });
       else if (e instanceof ApiError && e.code === 'pc_offline') update(job, { phase: 'failed', message: 'The PC went offline while the archive was being prepared.' });
-      else if (failures + 1 >= MAX_NETWORK_FAILURES) update(job, { phase: 'failed', message: 'Lost contact with the OrbitDrive service. Check your connection and try again.' });
+      else if (failures + 1 >= MAX_NETWORK_FAILURES) update(job, { phase: 'failed', message: 'Lost contact with the MyOrbitDrive service. Check your connection and try again.' });
       else poll(job, Math.min(MAX_DELAY_MS, delay * 2), failures + 1);
     }
   }, delay);

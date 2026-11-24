@@ -209,7 +209,7 @@ app.Use(async (context, next) =>
         if (maintenance.Active && MaintenanceMode.IsNewWork(context.Request))
         {
             context.Response.Headers.RetryAfter = "60";
-            throw new ProtocolException(ErrorCode.Unavailable, "OrbitDrive is being maintained. Transfers already running continue; please try again in a minute.");
+            throw new ProtocolException(ErrorCode.Unavailable, "MyOrbitDrive is being maintained. Transfers already running continue; please try again in a minute.");
         }
         if (IdempotencyStore.Applies(context.Request) && context.Request.Headers[IdempotencyStore.Header].ToString() is { Length: > 0 } idempotencyKey)
             await RunIdempotent(context, idempotencyKey, () => next(context));

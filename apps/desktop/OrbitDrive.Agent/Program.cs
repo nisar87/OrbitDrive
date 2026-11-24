@@ -97,10 +97,10 @@ if (args[0] == "ctl" && args.Length >= 2)
             File.Move(spool + ".tmp", spool + ".send");
             var desktop = Path.Join(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "OrbitDrive.exe" : "OrbitDrive");
             if (File.Exists(desktop)) { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(desktop, "--background") { UseShellExecute = false }); } catch (Exception) { /* the spool waits */ } }
-            Console.WriteLine("OrbitDrive was not running. Your selection will be sent when it connects (within five minutes).");
+            Console.WriteLine("MyOrbitDrive was not running. Your selection will be sent when it connects (within five minutes).");
             return 0;
         }
-        Console.Error.WriteLine("The OrbitDrive agent is not running for this user.");
+        Console.Error.WriteLine("The MyOrbitDrive agent is not running for this user.");
         return 1;
     }
 }
@@ -140,7 +140,7 @@ FileStream instanceLock;
 try { instanceLock = new FileStream(Path.Join(state.Directory_, "agent.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
 catch (IOException)
 {
-    Console.Error.WriteLine("OrbitDrive agent is already running for this user.");
+    Console.Error.WriteLine("MyOrbitDrive agent is already running for this user.");
     return 3;
 }
 using var instance = instanceLock;

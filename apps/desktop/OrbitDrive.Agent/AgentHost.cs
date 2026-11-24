@@ -380,7 +380,7 @@ internal sealed class AgentHost : IDisposable
                 if (request is null) { if (age > TimeSpan.FromSeconds(30)) TryDelete(file); continue; }
                 if (age > SpoolMaxAge)
                 {
-                    RecordOffers(new JsonArray([.. (request["paths"] as JsonArray ?? []).Select(p => (JsonNode)new JsonObject { ["ok"] = false, ["path"] = p?.GetValue<string>(), ["message"] = "Not sent: OrbitDrive was not running or not connected in time. Send it again." })]), "");
+                    RecordOffers(new JsonArray([.. (request["paths"] as JsonArray ?? []).Select(p => (JsonNode)new JsonObject { ["ok"] = false, ["path"] = p?.GetValue<string>(), ["message"] = "Not sent: MyOrbitDrive was not running or not connected in time. Send it again." })]), "");
                     TryDelete(file);
                     continue;
                 }

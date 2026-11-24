@@ -18,13 +18,13 @@ public static class ConsoleNotices
     public static Notice PairingRequest(string? browserName) => new(
         NoticeKind.PairingRequest,
         "A device wants to connect",
-        $"“{CleanName(browserName)}” is asking to connect to this PC. Open OrbitDrive and check the code before you approve.",
+        $"“{CleanName(browserName)}” is asking to connect to this PC. Open MyOrbitDrive and check the code before you approve.",
         [NoticeAction.Deny, NoticeAction.Review]);
 
     public static Notice FilesSent(int count) => new(
         NoticeKind.FilesSent,
         count == 1 ? "A file was sent" : $"{Math.Max(count, 2)} files were sent",
-        "Handed to the relay for your device. OrbitDrive can't see whether it was saved.",
+        "Handed to the relay for your device. MyOrbitDrive can't see whether it was saved.",
         []);
 
     /// <summary>A browser name comes from another machine: strip control characters, bound the length, never show an empty name.</summary>

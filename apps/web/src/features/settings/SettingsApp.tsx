@@ -15,15 +15,15 @@ function AppPanel() {
     <article className="panel" aria-labelledby="install-title">
       <h2 id="install-title">Install and notifications</h2>
       <p className="hint">
-        OrbitDrive can be added to your home screen. On Android (Chrome) open the browser menu and choose “Install app”. On iPhone and iPad use Share, then
+        MyOrbitDrive can be added to your home screen. On Android (Chrome) open the browser menu and choose “Install app”. On iPhone and iPad use Share, then
         “Add to Home Screen”; on iOS, notifications work only for the installed app, not for an ordinary Safari tab. Notifications are optional and
         are turned on from the Inbox. The installed app caches only its own program files and icons, never your files, listings or sign-in.
       </p>
       {hasUpdate && (
         <>
-          <p role="status">A new version of OrbitDrive is ready.</p>
+          <p role="status">A new version of MyOrbitDrive is ready.</p>
           <button type="button" disabled={!canApply} onClick={() => pwa.applyUpdate()}>Reload to update</button>
-          {!canApply && <p className="hint">A download that OrbitDrive is saving is still running. The update waits until it finishes so nothing is cut off.</p>}
+          {!canApply && <p className="hint">A download that MyOrbitDrive is saving is still running. The update waits until it finishes so nothing is cut off.</p>}
         </>
       )}
     </article>
@@ -63,7 +63,7 @@ export function SettingsApp({ prefs, onPrefs, account, onSignOut, session, onSum
           <dt>Relay</dt><dd><bdi>{GATEWAY_URL}</bdi></dd>
           <dt>Sign-in</dt><dd>{AUTH_MODE === 'dev' ? 'Development identities (not for real use)' : 'Email and password'}</dd>
         </dl>
-        <p className="hint">Files travel over TLS through the OrbitDrive relay, which can process them in transit and stores nothing. This is not end-to-end encryption. Access is read-only.</p>
+        <p className="hint">Files travel over TLS through the MyOrbitDrive relay, which can process them in transit and stores nothing. This is not end-to-end encryption. Access is read-only.</p>
         <button type="button" className="secondary" onClick={onSignOut}>Sign out of this browser</button>
       </article>
     </div>

@@ -102,7 +102,7 @@ public sealed class UpdateVerifier(IReadOnlyDictionary<string, byte[]> trustedKe
         UpdateManifest manifest;
         try { manifest = JsonSerializer.Deserialize<UpdateManifest>(manifestBytes) ?? throw new JsonException(); }
         catch (JsonException) { throw Reject(UpdateRejection.Malformed, "The update information could not be read."); }
-        if (manifest.Format != 1) throw Reject(UpdateRejection.UnsupportedFormat, "This update information is from a different version of OrbitDrive.");
+        if (manifest.Format != 1) throw Reject(UpdateRejection.UnsupportedFormat, "This update information is from a different version of MyOrbitDrive.");
         if (manifest.Channel != channel) throw Reject(UpdateRejection.WrongChannel, "This update is for a different release channel.");
 
         var now = time.GetUtcNow();

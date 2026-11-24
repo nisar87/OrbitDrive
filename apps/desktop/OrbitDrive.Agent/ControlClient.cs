@@ -165,7 +165,7 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
         if (challengeEnvelope.Action != Actions.Challenge || challengeEnvelope.Payload is null) throw new ProtocolException(ErrorCode.Internal, "Unexpected handshake.");
         var challenge = ProtocolJson.FromElement<AgentChallenge>(challengeEnvelope.Payload.Value);
         if (ProtocolInfo.Version < challenge.MinProtocolVersion || ProtocolInfo.Version > challenge.MaxProtocolVersion)
-            throw new ProtocolException(ErrorCode.UnsupportedVersion, "This version of OrbitDrive is no longer supported by the service. Please update.");
+            throw new ProtocolException(ErrorCode.UnsupportedVersion, "This version of MyOrbitDrive is no longer supported by the service. Please update.");
         var rotation = state.SignRotation(challenge.Nonce);
         var signature = state.Identity.SignData(Encoding.UTF8.GetBytes($"orbitdrive-agent-auth-v1\n{challenge.Nonce}\n{state.PcId}"), HashAlgorithmName.SHA256);
         await SendAsync(socket, new Envelope
@@ -363,7 +363,7 @@ internal sealed class ControlClient(Uri gateway, AgentState state, string pcName
 
     private async Task<TResult> RequestAsync<TResult>(string action, object payload, CancellationToken cancellation)
     {
-        var socket = _socket ?? throw new ProtocolException(ErrorCode.PcOffline, "Not connected to the OrbitDrive service.");
+        var socket = _socket ?? throw new ProtocolException(ErrorCode.PcOffline, "Not connected to the MyOrbitDrive service.");
         var id = Guid.NewGuid().ToString("N");
         var completion = new TaskCompletionSource<Envelope>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[id] = completion;

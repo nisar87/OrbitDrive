@@ -138,7 +138,7 @@ internal sealed class AgentConnection
     {
         try
         {
-            var client = await ConnectAsync() ?? throw new IpcException("The OrbitDrive agent is not running.");
+            var client = await ConnectAsync() ?? throw new IpcException("The MyOrbitDrive agent is not running.");
             await action(client);
             return null;
         }

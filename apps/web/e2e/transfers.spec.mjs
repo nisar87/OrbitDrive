@@ -152,7 +152,7 @@ test('save to a file: real progress, the connection drops mid-transfer, resume c
 
   await saveToFile(page, 'big.bin');
   const row = item(page, 'big.bin');
-  await expect(row).toContainText('Written by OrbitDrive');
+  await expect(row).toContainText('Written by MyOrbitDrive');
   await expect(row).toContainText(/Saving… \d/, { timeout: 30_000 });
   for (const percent of [10, 25, 40]) {
     await expect.poll(async () => Number(await row.getByRole('progressbar').getAttribute('value')), { timeout: 60_000 }).toBeGreaterThanOrEqual(percent);

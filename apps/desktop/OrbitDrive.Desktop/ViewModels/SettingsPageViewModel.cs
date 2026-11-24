@@ -33,7 +33,7 @@ internal sealed class SettingsPageViewModel : PageViewModel
         ClearThumbnailsCommand = new AsyncRelayCommand(ClearThumbnailsAsync);
         SendToOnCommand = new AsyncRelayCommand(() => SetSendToAsync(true));
         SendToOffCommand = new AsyncRelayCommand(() => SetSendToAsync(false));
-        CopyDiagnosticsCommand = new RelayCommand(() => { try { _copy(_diagnostics); } catch (ExternalException) { SettingsError = "Windows would not let OrbitDrive use the clipboard just now."; } });
+        CopyDiagnosticsCommand = new RelayCommand(() => { try { _copy(_diagnostics); } catch (ExternalException) { SettingsError = "Windows would not let MyOrbitDrive use the clipboard just now."; } });
         QuitCommand = new AsyncRelayCommand(host.QuitAsync);
         host.AddStatusConsumer(OnStatus);
     }
@@ -128,8 +128,8 @@ internal sealed class SettingsPageViewModel : PageViewModel
 
     public string PrivacyHeadline => "Your files are not stored on a server.";
     public string PrivacyBody =>
-        "When a paired device opens or downloads a file, it passes through OrbitDrive's relay server on its way to that device. The connection is encrypted in transit (HTTPS), " +
-        "but OrbitDrive is not end-to-end encrypted: while a file is passing through, the relay can see its contents and its name. The relay keeps no copy afterwards.";
+        "When a paired device opens or downloads a file, it passes through MyOrbitDrive's relay server on its way to that device. The connection is encrypted in transit (HTTPS), " +
+        "but MyOrbitDrive is not end-to-end encrypted: while a file is passing through, the relay can see its contents and its name. The relay keeps no copy afterwards.";
     public string PrivacyOnThisPc =>
         "Kept on this PC only: your settings, the history on the Activity page (no file names) and the small picture-preview cache. Only folders you share can be seen, " +
         "and paired devices can look and download. They can add files only to folders where you allowed it.";

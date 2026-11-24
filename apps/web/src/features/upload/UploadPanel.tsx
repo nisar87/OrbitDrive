@@ -32,7 +32,7 @@ export function UploadConfirm({ session, files, target, root, onDone }: { sessio
         <label><input type="radio" name="collision" checked={collision === 'reject'} onChange={() => setCollision('reject')} /> Do not send it (nothing is ever replaced)</label>
         <label><input type="radio" name="collision" checked={collision === 'rename'} onChange={() => setCollision('rename')} /> Keep both: add a number, like <bdi>photo (2).jpg</bdi></label>
       </fieldset>
-      <p className="hint">Files are only stored in that folder. OrbitDrive never opens, runs or unpacks them, and an upload cannot overwrite or delete anything on the PC.</p>
+      <p className="hint">Files are only stored in that folder. MyOrbitDrive never opens, runs or unpacks them, and an upload cannot overwrite or delete anything on the PC.</p>
       <p className="actions">
         <button type="button" disabled={sendable.length === 0} onClick={() => { uploads.enqueue(session, target, sendable, collision); onDone(); }}>Upload {sendable.length} file{sendable.length === 1 ? '' : 's'}</button>
         <button type="button" className="ghost" onClick={onDone}>Cancel</button>

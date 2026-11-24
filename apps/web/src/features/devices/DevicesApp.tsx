@@ -37,7 +37,7 @@ export function DevicesApp({ session, onAuthLost, onPairAnother, onChanged, data
           {pcs?.map((pc) => (
             <li key={pc.pcId}>
               <span><strong><span className={pc.online ? 'dot online' : 'dot'} aria-hidden="true" /> <bdi>{pc.name}</bdi></strong>
-                <small>{pc.online ? 'Online' : `Offline · last seen ${formatTime(pc.lastSeenUnixMs)}`} · OrbitDrive {pc.agentVersion}</small></span>
+                <small>{pc.online ? 'Online' : `Offline · last seen ${formatTime(pc.lastSeenUnixMs)}`} · MyOrbitDrive {pc.agentVersion}</small></span>
               <ConfirmButton label="Disconnect this PC" confirmLabel={`Yes, disconnect ${pc.name}`}
                 onConfirm={async () => { try { await api.disconnectPc(session, pc.pcId); setReload((n) => n + 1); onChanged(); } catch (e) { fail(e); } }} />
             </li>

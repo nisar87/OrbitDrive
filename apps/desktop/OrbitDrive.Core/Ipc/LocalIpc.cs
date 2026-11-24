@@ -157,7 +157,7 @@ public sealed class LocalIpcClient : IAsyncDisposable
             }
         }
         catch (Exception e) when (e is IOException or InvalidDataException or OperationCanceledException or ObjectDisposedException or JsonException) { }
-        foreach (var pending in _pending.Values) pending.TrySetException(new IpcException("The OrbitDrive agent is not running."));
+        foreach (var pending in _pending.Values) pending.TrySetException(new IpcException("The MyOrbitDrive agent is not running."));
         Disconnected?.Invoke();
     }
 
@@ -190,7 +190,7 @@ public sealed class LocalIpcClient : IAsyncDisposable
     {
         await _gate.WaitAsync(cancellation).ConfigureAwait(false);
         try { await _pipe.WriteAsync(bytes, cancellation).ConfigureAwait(false); }   // no Flush: it only waits for the reader, and the bytes are already on the pipe
-        catch (IOException) { throw new IpcException("The OrbitDrive agent is not running."); }
+        catch (IOException) { throw new IpcException("The MyOrbitDrive agent is not running."); }
         finally { _gate.Release(); }
     }
 

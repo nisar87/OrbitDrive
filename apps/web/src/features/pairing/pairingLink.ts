@@ -28,7 +28,7 @@ export type ScanResult = { link: PairingLink; problem?: undefined } | { link: nu
  * The scanned URL is never opened or fetched: a QR pointing anywhere else is refused with an explanation.
  */
 export function parseScannedText(text: string, siteOrigin: string): ScanResult {
-  const notOurs = 'That QR code is not an OrbitDrive pairing code. Scan the one shown under “Pair a phone” on your PC.';
+  const notOurs = 'That QR code is not a MyOrbitDrive pairing code. Scan the one shown under “Pair a phone” on your PC.';
   const trimmed = text.trim();
   if (trimmed.length > 512) return { link: null, problem: notOurs };
   const manual = parseManualCode(trimmed);

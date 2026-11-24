@@ -56,7 +56,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 async function sha256Hex(data: ArrayBuffer): Promise<string> {
   const subtle = globalThis.crypto?.subtle;
-  if (!subtle) throw new Error('This browser cannot check files while sending. Open OrbitDrive over a secure (https) connection.');
+  if (!subtle) throw new Error('This browser cannot check files while sending. Open MyOrbitDrive over a secure (https) connection.');
   return [...new Uint8Array(await subtle.digest('SHA-256', data))].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 

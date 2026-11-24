@@ -12,11 +12,11 @@ internal sealed class TrayFlyoutViewModel : ObservableObject
         {
             "online" => ("Sharing is on", status.Roots.Count == 1 ? "1 folder is shared." : $"{status.Roots.Count} folders are shared."),
             "paused" => ("Sharing is paused", "Your devices can't see anything until you resume."),
-            "connecting" => ("Connecting…", "Trying to reach the OrbitDrive relay."),
-            "update_required" => ("Update needed", "Open OrbitDrive and go to Settings to update."),
-            "not_configured" => ("Not set up yet", "Open OrbitDrive to finish setting up."),
-            null => ("OrbitDrive isn't running sharing", "The sharing program isn't reachable. Open OrbitDrive for details."),
-            _ => ("OrbitDrive", ""),
+            "connecting" => ("Connecting…", "Trying to reach the MyOrbitDrive relay."),
+            "update_required" => ("Update needed", "Open MyOrbitDrive and go to Settings to update."),
+            "not_configured" => ("Not set up yet", "Open MyOrbitDrive to finish setting up."),
+            null => ("MyOrbitDrive isn't running sharing", "The sharing program isn't reachable. Open MyOrbitDrive for details."),
+            _ => ("MyOrbitDrive", ""),
         };
         CanTogglePause = status?.State is "online" or "paused";
         PauseText = status?.State == "paused" ? "Resume sharing" : "Pause sharing";

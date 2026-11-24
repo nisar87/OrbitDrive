@@ -113,7 +113,7 @@ function AttachWindow([System.Diagnostics.Process]$process) {
     # Say why: whether the console exited, and what it recorded if it crashed.
     $why = if ($process.HasExited) { "the console exited with code $($process.ExitCode)" } else { 'the console is still running but showed no window' }
     foreach ($log in Get-ChildItem -Path $script:state -Filter 'console-crash.log' -ErrorAction SilentlyContinue) { $why += "`n--- $($log.Name) ---`n" + (Get-Content -Raw $log.FullName) }
-    throw "UI Automation could not find the OrbitDrive window: $why"
+    throw "UI Automation could not find the MyOrbitDrive window: $why"
 }
 function Api([string]$method, [string]$path, $body = $null, $headers = @{}) {
     try {
@@ -290,7 +290,7 @@ try {
     $diagnostics = WaitText 'DiagnosticsText' 'PC id'
     Shot 'diagnostics'
     Check ((Exists 'PcNameBox') -and (Exists 'SavePcNameButton')) 'Settings lets the owner rename this PC'
-    $version = WaitText 'UpdateVersion' 'OrbitDrive \d'
+    $version = WaitText 'UpdateVersion' 'MyOrbitDrive \d'
     Check ((Exists 'CheckUpdateButton') -and (Exists 'UpdateHint')) 'the software-update card shows its version, a check button and its explanation'
 
     Nav 'Settings'
@@ -334,7 +334,7 @@ try {
     Check ((Agents).Count -eq 0) 'an agent stopped elsewhere is not silently relaunched by the console'
 
     Nav 'Home'
-    [void](WaitText 'StateText' '^OrbitDrive is stopped$')
+    [void](WaitText 'StateText' '^MyOrbitDrive is stopped$')
     Check $true 'the console says the agent was stopped (a deliberate stop is not treated as a crash)'
     Click 'StartAgentButton'
     [void](WaitText 'StateText' '^Sharing is on$' 60000)
@@ -351,7 +351,7 @@ try {
     }
     Check ((Agents).Count -eq 1) 'exactly one agent after three recoveries (no duplicates)'
     Stop-Process -Id (Agents)[0].Id -Force
-    [void](WaitText 'StateText' '^OrbitDrive keeps stopping$' 30000)
+    [void](WaitText 'StateText' '^MyOrbitDrive keeps stopping$' 30000)
     Start-Sleep -Seconds 6
     Check ((Agents).Count -eq 0) 'a fourth crash in a row is NOT restarted (no launch loop)'
     Shot 'home-agent-keeps-stopping'
@@ -363,7 +363,7 @@ try {
     $lockFile = Join-Path $state 'agent.lock'
     & $AgentExe ctl quit --state $state | Out-Null
     for ($i = 0; $i -lt 80 -and (Agents).Count -ne 0; $i++) { Start-Sleep -Milliseconds 250 }
-    [void](WaitText 'StateText' '^OrbitDrive is stopped$')
+    [void](WaitText 'StateText' '^MyOrbitDrive is stopped$')
     $stuck = Start-Process -FilePath $AgentExe -ArgumentList @('run', '--state', ('"' + $state + '"')) -PassThru -WindowStyle Hidden
     # Freeze it the moment it holds the lock, before it can answer: if the console attached to it while it still worked, this would not be the case under test.
     Add-Type -Namespace Native -Name Proc -MemberDefinition '[DllImport("ntdll.dll")] public static extern int NtSuspendProcess(System.IntPtr handle);'
@@ -402,7 +402,7 @@ try {
     # A different program holding the lock is NOT this installation's agent: it must never be killed.
     & $AgentExe ctl quit --state $state | Out-Null
     for ($i = 0; $i -lt 80 -and (Agents).Count -ne 0; $i++) { Start-Sleep -Milliseconds 250 }
-    [void](WaitText 'StateText' '^OrbitDrive is stopped$')
+    [void](WaitText 'StateText' '^MyOrbitDrive is stopped$')
     $holderScript = '$f = [IO.File]::Open(''' + $lockFile + ''', ''OpenOrCreate'', ''ReadWrite'', ''None''); Start-Sleep -Seconds 120'
     $holder = Start-Process -FilePath 'powershell.exe' -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile', '-EncodedCommand', [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($holderScript)))
     for ($i = 0; $i -lt 80; $i++) { try { $probe = [IO.File]::Open($lockFile, 'OpenOrCreate', 'ReadWrite', 'None'); $probe.Close(); Start-Sleep -Milliseconds 250 } catch [System.IO.IOException] { break } }
@@ -478,7 +478,7 @@ try {
     $visible = $AE::RootElement.FindFirst($Scope::Children, (New-Object System.Windows.Automation.PropertyCondition($AE::ProcessIdProperty, $console.Id)))
     Check ((Agents).Count -eq 1 -and -not $console.HasExited -and $null -eq $visible) 'a background (sign-in) start runs the agent without opening a window'
     $again = Start-Process -FilePath $Exe -ArgumentList '--state', "`"$state`"" -PassThru -Wait
-    Check ($again.ExitCode -eq 3) 'launching OrbitDrive again does not start a second copy'
+    Check ($again.ExitCode -eq 3) 'launching MyOrbitDrive again does not start a second copy'
     AttachWindow $console
     [void](WaitText 'StateText' '^Sharing is on$' 60000)
     Check ((Agents).Count -eq 1) '...and instead brings the running console''s window forward'

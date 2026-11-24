@@ -12,12 +12,12 @@ internal sealed class TrayService : IDisposable
     {
         _open = open;
         _icon.Icon = AppIcon.Tray;
-        _icon.Text = "OrbitDrive";
+        _icon.Text = "MyOrbitDrive";
         _icon.Visible = true;
         _icon.MouseClick += (_, e) => { if (e.Button == System.Windows.Forms.MouseButtons.Left) showFlyout(); };   // right-click keeps the menu
-        _menu.Items.Add("Open OrbitDrive", null, (_, _) => open());
+        _menu.Items.Add("Open MyOrbitDrive", null, (_, _) => open());
         _menu.Items.Add("Pause / resume remote access", null, (_, _) => togglePause());
-        _menu.Items.Add("Quit OrbitDrive (stops remote access)", null, (_, _) => quit());
+        _menu.Items.Add("Quit MyOrbitDrive (stops remote access)", null, (_, _) => quit());
         _icon.ContextMenuStrip = _menu;
         _icon.BalloonTipClicked += (_, _) => (_balloonClicked ?? _open)();
     }

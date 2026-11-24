@@ -120,7 +120,7 @@ public sealed class ArchiveService : IDisposable
             rootIds.Add(root.RootId);
             firstNames.Add(body.Segments[^1]);
         }
-        name = distinct.Length == 1 ? firstNames[0] : "OrbitDrive selection";
+        name = distinct.Length == 1 ? firstNames[0] : "MyOrbitDrive selection";
         lock (_gate)
         {
             if (_jobs.Count >= _options.MaxActive) throw new ProtocolException(ErrorCode.LimitExceeded, "Too many archives are waiting on this PC. Finish or cancel one first.");

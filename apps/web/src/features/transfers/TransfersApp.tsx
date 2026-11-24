@@ -19,7 +19,7 @@ function describe(item: Transfer, relay: DownloadSessionSummary | undefined): st
     case 'handed': {
       // The browser's own download manager has it. Only the relay's side is observable from here.
       if (!relay) return `Handed to your browser (${size}). Check your browser's downloads.`;
-      if (relay.state === 'sent_to_browser') return `All ${size} left the relay for your browser. OrbitDrive cannot see whether your browser finished saving it.`;
+      if (relay.state === 'sent_to_browser') return `All ${size} left the relay for your browser. MyOrbitDrive cannot see whether your browser finished saving it.`;
       if (relay.state === 'sending') return `Your browser is receiving it: ${formatBytes(relay.bytesCovered)} of ${size} has left the relay.`;
       if (relay.state === 'interrupted') return `Stopped after ${formatBytes(relay.bytesCovered)} of ${size} left the relay. Your browser may retry by itself; otherwise download it again.`;
       if (relay.state === 'cancelled') return 'Cancelled.';
@@ -50,8 +50,8 @@ export function TransfersApp({ session }: { session: Session }) {
       <p className="hint">
         This list covers downloads started on this page and is kept until the page is closed or reloaded.
         {transfers.canSaveToFile()
-          ? ' “Save to a file…” (right-click a file) lets OrbitDrive write the file itself, show real progress and resume after an interruption.'
-          : ' This browser saves files with its own download manager, so OrbitDrive can show what the relay sent but not whether the file was saved.'}
+          ? ' “Save to a file…” (right-click a file) lets MyOrbitDrive write the file itself, show real progress and resume after an interruption.'
+          : ' This browser saves files with its own download manager, so MyOrbitDrive can show what the relay sent but not whether the file was saved.'}
       </p>
       {items.length === 0 && <p className="empty">No downloads yet. Open File Explorer and choose a file.</p>}
       <ul className="transfer-list">
@@ -64,7 +64,7 @@ export function TransfersApp({ session }: { session: Session }) {
             <li key={item.id} data-state={item.state} data-testid="transfer">
               <div className="transfer-head">
                 <strong><bdi>{item.name}</bdi></strong>
-                <span className="badge">{item.mode === 'file' ? 'Written by OrbitDrive' : 'Browser download'}</span>
+                <span className="badge">{item.mode === 'file' ? 'Written by MyOrbitDrive' : 'Browser download'}</span>
               </div>
               <p role="status" className={item.state === 'failed' || item.state === 'changed' ? 'transfer-text problem' : 'transfer-text'}>{describe(item, observed)}{item.message ? ` ${item.message}` : ''}</p>
               {showBar && percent !== null && <progress max={100} value={percent} aria-label={`${item.name}: ${percent}%`} />}

@@ -216,7 +216,7 @@ export function Desktop({ apps, account, prefs, onPrefs, onSignOut, openRef }: P
 
       {menu === 'launcher' && (
         <Flyout label="Apps" className="launcher" onClose={closeMenu}>
-          <p className="flyout-title">OrbitDrive</p>
+          <p className="flyout-title">MyOrbitDrive</p>
           {apps.filter((app) => !app.transient).map((app) => (
             <button key={app.id} type="button" role="menuitem" onClick={() => { setMenu(null); focusWindow(app.id); }}>
               <span className="glyph" aria-hidden="true">{app.icon}</span>{app.title}
@@ -228,7 +228,7 @@ export function Desktop({ apps, account, prefs, onPrefs, onSignOut, openRef }: P
         <Flyout label="Account" className="account-menu" onClose={closeMenu}>
           <p className="flyout-title">Signed in as</p>
           <p className="flyout-account"><bdi>{account}</bdi></p>
-          <p className="flyout-note">Files travel over TLS through the OrbitDrive relay, which can process them in transit and stores nothing. This is not end-to-end encryption.</p>
+          <p className="flyout-note">Files travel over TLS through the MyOrbitDrive relay, which can process them in transit and stores nothing. This is not end-to-end encryption.</p>
           <button type="button" role="menuitem" onClick={() => { setMenu(null); onSignOut(); }}>Sign out</button>
         </Flyout>
       )}
@@ -251,7 +251,7 @@ export function Desktop({ apps, account, prefs, onPrefs, onSignOut, openRef }: P
           })}
         </nav>
         <span className="spacer" />
-        <span className="privacy" title="Files travel over TLS through the OrbitDrive relay, which can process them in transit. Nothing is stored there. This is not end-to-end encryption.">TLS via relay · not end-to-end encrypted</span>
+        <span className="privacy" title="Files travel over TLS through the MyOrbitDrive relay, which can process them in transit. Nothing is stored there. This is not end-to-end encryption.">TLS via relay · not end-to-end encrypted</span>
         <Clock />
         <button type="button" className="task account-button" aria-label="Account" aria-haspopup="menu" aria-expanded={menu === 'account'} onClick={() => setMenu(menu === 'account' ? null : 'account')}>
           <span className="avatar" aria-hidden="true">{(account.trim()[0] ?? '?').toUpperCase()}</span>

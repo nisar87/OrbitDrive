@@ -81,7 +81,7 @@ public static class Program
         if (AgentLock.IsHeld(stateDirectory) && !await AgentLock.WaitUntilFreeAsync(stateDirectory, TimeSpan.FromSeconds(5)))
         {
             var ended = EndOwnUnresponsiveAgents(exe);
-            StartNote = ended > 0 ? $"An agent from this installation was not answering and was stopped ({ended}); starting a fresh one." : "Another program is holding the agent's lock and could not be identified as OrbitDrive's own agent.";
+            StartNote = ended > 0 ? $"An agent from this installation was not answering and was stopped ({ended}); starting a fresh one." : "Another program is holding the agent's lock and could not be identified as MyOrbitDrive's own agent.";
             if (ended == 0 || !await AgentLock.WaitUntilFreeAsync(stateDirectory, TimeSpan.FromSeconds(5))) return false;
         }
         var start = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true };

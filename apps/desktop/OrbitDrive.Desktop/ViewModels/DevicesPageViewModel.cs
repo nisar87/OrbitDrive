@@ -82,7 +82,7 @@ internal sealed class DevicesPageViewModel : PageViewModel
     public string PairLink => _pairing?.Url ?? "";
     public BitmapSource? PairQr { get => _qr; private set => SetProperty(ref _qr, value); }
     public string Expiry { get => _expiry; private set => SetProperty(ref _expiry, value); }
-    public string PairHelp => "Scan the QR code, or open the link, in the OrbitDrive web app on your phone. The code works once. Only use a code you created yourself just now.";
+    public string PairHelp => "Scan the QR code, or open the link, in the MyOrbitDrive web app on your phone. The code works once. Only use a code you created yourself just now.";
 
     public bool ShowApproval => _approval is not null;
     public bool NoApproval => _approval is null;

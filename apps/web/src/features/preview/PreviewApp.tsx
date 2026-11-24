@@ -118,7 +118,7 @@ function MediaView({ session, pcId, item, kind, onDownload }: { session: Session
   useEffect(() => setUnplayable(false), [item.entryId]);
   if (source.state === 'failed') return <Failure message={source.message} onDownload={onDownload} />;
   if (source.state === 'loading') return <p className="hint" role="status">Loading…</p>;
-  if (unplayable) return <Failure message="This browser cannot play this file (the format or its codec is not supported here), or the file changed. OrbitDrive does not convert media. You can download it and play it elsewhere." onDownload={onDownload} />;
+  if (unplayable) return <Failure message="This browser cannot play this file (the format or its codec is not supported here), or the file changed. MyOrbitDrive does not convert media. You can download it and play it elsewhere." onDownload={onDownload} />;
   const common = { src: source.value.url, controls: true, preload: 'metadata' as const, onError: () => setUnplayable(true), 'aria-label': item.name, referrerPolicy: 'no-referrer' as const };
   return (
     <div className="preview-media">

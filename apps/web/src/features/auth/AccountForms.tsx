@@ -75,7 +75,7 @@ export function VerifyEmail({ email }: { email: string }) {
   return (
     <section className="card" aria-live="polite">
       <h2>Check your inbox</h2>
-      <p>We sent a verification link to <strong>{email}</strong>. OrbitDrive will not connect to any PC until the address is verified.</p>
+      <p>We sent a verification link to <strong>{email}</strong>. MyOrbitDrive will not connect to any PC until the address is verified.</p>
       <button type="button" disabled={busy} onClick={() => void run('check')}>I have verified my email</button>
       <button type="button" className="ghost" disabled={busy} onClick={() => void run('resend')}>Send the email again</button>
       {message && <p role="status" className="notice">{message}</p>}

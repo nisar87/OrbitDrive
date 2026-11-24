@@ -97,7 +97,7 @@ export function InboxApp({ session }: { session: Session }) {
       </div>
       {notice && <p role="status" className="hint">{notice}</p>}
       {problem && <p role="alert" className="notice error">{problem}</p>}
-      {items.length === 0 && !problem && <p className="empty">Nothing is waiting. On your PC, right-click a file and choose “Send to my phone via OrbitDrive”.</p>}
+      {items.length === 0 && !problem && <p className="empty">Nothing is waiting. On your PC, right-click a file and choose “Send to my phone via MyOrbitDrive”.</p>}
       {open.length > 0 && <ul className="transfer-list" aria-label="Waiting files">{open.map(card)}</ul>}
       {finished.length > 0 && <><h3 className="section-title">Earlier</h3><ul className="transfer-list" aria-label="Earlier files">{finished.map(card)}</ul></>}
     </div>

@@ -59,7 +59,7 @@ export function Pairing({ session, link, onLinkUsed, onPaired }: Props) {
     return (
       <section className="card" aria-live="polite">
         <h2>Confirm on your PC</h2>
-        <p>OrbitDrive on <strong>{claim.pcName}</strong> is showing a code. Approve there only if it matches:</p>
+        <p>MyOrbitDrive on <strong>{claim.pcName}</strong> is showing a code. Approve there only if it matches:</p>
         <p className="confirm-code" data-testid="confirmation-code" aria-label="Confirmation code">{claim.confirmationCode}</p>
         <p className="notice">Nothing is shared with this browser until you approve on the PC.</p>
       </section>
@@ -69,7 +69,7 @@ export function Pairing({ session, link, onLinkUsed, onPaired }: Props) {
   return (
     <form className="card" onSubmit={submit}>
       <h2>Pair with your PC</h2>
-      <p>On your PC, open OrbitDrive and choose <strong>Pair a phone</strong>. Scan its QR code, or type the code below.</p>
+      <p>On your PC, open MyOrbitDrive and choose <strong>Pair a phone</strong>. Scan its QR code, or type the code below.</p>
       {scanning
         ? <QrScanner onScan={(found) => { setScanning(false); void start(found); }} onClose={(problem) => { setScanning(false); if (problem) setError(problem); }} />
         : canScan() && <button type="button" className="secondary" disabled={busy} onClick={() => { setError(null); setScanning(true); }}>Scan QR code with camera</button>}

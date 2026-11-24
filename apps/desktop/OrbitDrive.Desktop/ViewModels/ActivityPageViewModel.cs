@@ -76,7 +76,7 @@ internal sealed class ActivityPageViewModel : PageViewModel
     private void CopyHistory()
     {
         try { _copy(ActivityPresenter.ToText(_feed.Entries)); Error = ""; }
-        catch (System.Runtime.InteropServices.ExternalException) { Error = "Windows would not let OrbitDrive use the clipboard just now."; }
+        catch (System.Runtime.InteropServices.ExternalException) { Error = "Windows would not let MyOrbitDrive use the clipboard just now."; }
     }
 
     private async Task ClearAsync()

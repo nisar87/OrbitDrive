@@ -4,7 +4,7 @@
         xmlns:local="clr-namespace:OrbitDrive.Desktop"
         xmlns:vm="clr-namespace:OrbitDrive.Desktop.ViewModels"
         xmlns:views="clr-namespace:OrbitDrive.Desktop.Views"
-        Title="OrbitDrive" Width="980" Height="680" MinWidth="680" MinHeight="460" WindowStartupLocation="CenterScreen"
+        Title="MyOrbitDrive" Width="980" Height="680" MinWidth="680" MinHeight="460" WindowStartupLocation="CenterScreen"
         FontFamily="{StaticResource Font.Text}" UseLayoutRounding="True"
         AutomationProperties.AutomationId="OrbitDriveMainWindow">
     <Window.Resources>
@@ -36,7 +36,7 @@
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="12,4,0,18">
                     <Image Source="{x:Static local:AppIcon.Image}" Width="24" Height="24" Margin="0,0,10,0"/>
-                    <TextBlock Text="OrbitDrive" FontSize="{StaticResource FontSize.Lead}" FontWeight="SemiBold" VerticalAlignment="Center"
+                    <TextBlock Text="MyOrbitDrive" FontSize="{StaticResource FontSize.Lead}" FontWeight="SemiBold" VerticalAlignment="Center"
                                Visibility="{Binding ShowLabels, Converter={StaticResource BoolToVisibility}}"/>
                 </StackPanel>
                 <ListBox x:Name="Nav" ItemsSource="{Binding NavItems}" SelectedItem="{Binding SelectedNav}"

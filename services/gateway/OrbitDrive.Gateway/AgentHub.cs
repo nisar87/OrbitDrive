@@ -101,7 +101,7 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
     }
 
     public AgentConnection Get(string pcId) =>
-        _connections.TryGetValue(pcId, out var connection) ? connection : throw new ProtocolException(ErrorCode.PcOffline, "The PC is offline. It must be on, awake and running OrbitDrive.");
+        _connections.TryGetValue(pcId, out var connection) ? connection : throw new ProtocolException(ErrorCode.PcOffline, "The PC is offline. It must be on, awake and running MyOrbitDrive.");
 
     /// <summary>Reads and checks the optional rotation statement: the NEW key signed "rotate" for this PC and this challenge.</summary>
     private static bool ReadRotation(AgentHello hello, string nonce, out byte[] newSpki)
@@ -181,7 +181,7 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
         if (agent.ProtocolVersion < ProtocolInfo.MinVersion || agent.ProtocolVersion > ProtocolInfo.Version)
             rejection = new ProtocolException(ErrorCode.UnsupportedVersion, $"Update required: this service speaks protocol {ProtocolInfo.MinVersion}-{ProtocolInfo.Version}.");
         else if (admin.IsBelowMinimum(agent.AgentVersion))
-            rejection = new ProtocolException(ErrorCode.UnsupportedVersion, $"Update required: OrbitDrive on this PC must be version {admin.MinAgentVersion} or newer.");
+            rejection = new ProtocolException(ErrorCode.UnsupportedVersion, $"Update required: MyOrbitDrive on this PC must be version {admin.MinAgentVersion} or newer.");
         else
         {
             try

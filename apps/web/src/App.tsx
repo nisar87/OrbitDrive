@@ -136,7 +136,7 @@ function FirebaseApp() {
   }, []);
 
   if (failure) return <Shell title="Setup needed"><p role="alert" className="notice error">{failure}</p></Shell>;
-  if (user === undefined) return <Shell title="OrbitDrive"><p className="empty" role="status">Loading…</p></Shell>;
+  if (user === undefined) return <Shell title="MyOrbitDrive"><p className="empty" role="status">Loading…</p></Shell>;
   if (user === null) return <Shell title="Sign in"><AccountForms /></Shell>;
   const signOut = async () => { saveDevice(user.uid, undefined); await (await firebaseAuth()).signOut(); };
   if (!user.emailVerified) return <Shell title="Verify your email" account={user.email} onSignOut={signOut}><VerifyEmail email={user.email} /></Shell>;
@@ -147,7 +147,7 @@ function FirebaseApp() {
 }
 
 export function App() {
-  useEffect(() => { document.title = 'OrbitDrive'; applyTheme(loadPrefs().theme); }, []);
+  useEffect(() => { document.title = 'MyOrbitDrive'; applyTheme(loadPrefs().theme); }, []);
   if (!GATEWAY_URL) return <Shell title="Setup needed"><p role="alert" className="notice error">This build has no relay address configured (VITE_GATEWAY_URL).</p></Shell>;
   return AUTH_MODE === 'dev' ? <DevApp /> : <FirebaseApp />;
 }

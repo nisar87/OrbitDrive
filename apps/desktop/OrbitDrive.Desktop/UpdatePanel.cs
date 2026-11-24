@@ -44,7 +44,7 @@ internal sealed class UpdatePanel : ObservableObject
     public bool CanInstall { get => _canInstall; private set => SetProperty(ref _canInstall, value); }
     public bool ShowInstall { get => _showInstall; private set => SetProperty(ref _showInstall, value); }
     public bool ShowBanner { get => _showBanner; private set => SetProperty(ref _showBanner, value); }
-    public string Hint => "Updating replaces the program files in place and restarts OrbitDrive. Your shared folders, paired devices and settings are kept. Nothing is installed until you press Update now.";
+    public string Hint => "Updating replaces the program files in place and restarts MyOrbitDrive. Your shared folders, paired devices and settings are kept. Nothing is installed until you press Update now.";
     public IRelayCommand CheckCommand { get; }
     public IRelayCommand InstallCommand { get; }
 
@@ -62,7 +62,7 @@ internal sealed class UpdatePanel : ObservableObject
         var verifier = new UpdateVerifier(keys, ["github.com"], Channel, "x64", ProtocolInfo.Version, TimeProvider.System);
         _client = new UpdateClient(http, verifier, _stager, Feed, keys.Count > 0);
 
-        VersionText = $"OrbitDrive {_running}";
+        VersionText = $"MyOrbitDrive {_running}";
         CheckCommand = new RelayCommand(() => _ = CheckAsync(silent: false));
         InstallCommand = new RelayCommand(() => _ = InstallAsync());
 
@@ -109,8 +109,8 @@ internal sealed class UpdatePanel : ObservableObject
     private async Task InstallAsync()
     {
         if (_busy || _available is not { } update) return;
-        var ok = MessageBox.Show($"Update OrbitDrive to {update.Version}?\n\nSharing is paused, files being sent are stopped, OrbitDrive restarts by itself, and your folders, paired devices and settings are kept.",
-            "Update OrbitDrive", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        var ok = MessageBox.Show($"Update MyOrbitDrive to {update.Version}?\n\nSharing is paused, files being sent are stopped, MyOrbitDrive restarts by itself, and your folders, paired devices and settings are kept.",
+            "Update MyOrbitDrive", MessageBoxButton.OKCancel, MessageBoxImage.Question);
         if (ok != MessageBoxResult.OK) return;
         _busy = true; CanCheck = false; CanInstall = false;
         try
@@ -120,7 +120,7 @@ internal sealed class UpdatePanel : ObservableObject
             Status = "Pausing sharing and updating…";
             var launcher = new PortableUpdateLauncher(_installDir, _stateDirectory, update.File.Sha256, update.Version, _resultFile);
             await _stager.ApplyAsync(_drain, launcher, TimeSpan.FromSeconds(60), CancellationToken.None);
-            Status = "Restarting OrbitDrive…";
+            Status = "Restarting MyOrbitDrive…";
             await _quitForUpdate();              // the update script waits for every OrbitDrive program to exit, then swaps the folder and starts the new version
         }
         catch (UpdateRejectedException e) { Status = e.Message; }

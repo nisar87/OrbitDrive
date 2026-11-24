@@ -10,7 +10,9 @@ namespace OrbitDrive.Core;
 public static class SendToShortcuts
 {
     private const string InvalidChars = "\\/:*?\"<>|";   // Windows rules on every platform, so the result is the same wherever it is computed
-    public const string Prefix = "OrbitDrive - ";
+    public const string Prefix = "MyOrbitDrive - ";
+    /// <summary>Shortcuts made before the product was renamed. They are cleaned up so the Send to menu never lists the same phone twice.</summary>
+    public const string LegacyPrefix = "OrbitDrive - ";
 
     public static string DefaultFolder => Environment.GetFolderPath(Environment.SpecialFolder.SendTo);
 
@@ -38,7 +40,7 @@ public static class SendToShortcuts
             while (wanted.ContainsKey(path)) path = Path.Join(folder, $"{Prefix}{SafeName(receiver.Name)} ({n++}).lnk");
             wanted[path] = receiver;
         }
-        foreach (var existing in Directory.EnumerateFiles(folder, Prefix + "*.lnk"))
+        foreach (var existing in Directory.EnumerateFiles(folder, Prefix + "*.lnk").Concat(Directory.EnumerateFiles(folder, LegacyPrefix + "*.lnk")).ToList())
             if (!wanted.ContainsKey(existing)) File.Delete(existing);
         var shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell") ?? throw new PlatformNotSupportedException("Shortcuts need Windows.")) ?? throw new PlatformNotSupportedException();
         try
@@ -51,7 +53,7 @@ public static class SendToShortcuts
                     link.TargetPath = executable;
                     link.Arguments = $"{leadingArguments} send_files {receiver.Id}".Trim();
                     link.WindowStyle = 7;                                       // minimised: the command has no window of its own
-                    link.Description = $"Send the selected files to {receiver.Name} through OrbitDrive";
+                    link.Description = $"Send the selected files to {receiver.Name} through MyOrbitDrive";
                     link.IconLocation = executable + ",0";
                     link.Save();
                 }
@@ -65,6 +67,6 @@ public static class SendToShortcuts
     public static void RemoveAll(string folder)
     {
         if (!Directory.Exists(folder)) return;
-        foreach (var existing in Directory.EnumerateFiles(folder, Prefix + "*.lnk")) File.Delete(existing);
+        foreach (var existing in Directory.EnumerateFiles(folder, Prefix + "*.lnk").Concat(Directory.EnumerateFiles(folder, LegacyPrefix + "*.lnk")).ToList()) File.Delete(existing);
     }
 }

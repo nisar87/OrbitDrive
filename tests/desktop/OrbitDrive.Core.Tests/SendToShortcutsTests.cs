@@ -20,13 +20,28 @@ public sealed class SendToShortcutsTests : IDisposable
     public void Very_long_names_are_shortened() => Assert.Equal(60, SendToShortcuts.SafeName(new string('x', 500)).Length);
 
     [Fact]
+    public void Shortcuts_made_before_the_rename_are_replaced_and_removed_not_duplicated()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var exe = Path.Join(Environment.SystemDirectory, "cmd.exe");
+        var legacy = Path.Join(_folder, SendToShortcuts.LegacyPrefix + "Phone.lnk");
+        File.WriteAllText(legacy, "old shortcut");
+        SendToShortcuts.Sync(_folder, [new("abc-123", "Phone")], exe, "ctl");
+        Assert.False(File.Exists(legacy));                                                  // the menu never lists the same phone twice
+        Assert.Single(Directory.GetFiles(_folder, SendToShortcuts.Prefix + "*.lnk"));
+        File.WriteAllText(legacy, "old shortcut again");
+        SendToShortcuts.RemoveAll(_folder);
+        Assert.Empty(Directory.GetFiles(_folder, "*.lnk"));
+    }
+
+    [Fact]
     public void Shortcuts_point_at_the_command_with_the_receiver_and_stale_ones_are_removed()
     {
         if (!OperatingSystem.IsWindows()) return;
         var exe = Path.Join(Environment.SystemDirectory, "cmd.exe");
         var made = SendToShortcuts.Sync(_folder, [new("abc-123", "Phone"), new("def_456", "Phone"), new("bad id; calc", "Evil")], exe, "ctl");
         Assert.Equal(2, made.Count);                                           // the id that is not an opaque token is not ours
-        Assert.Equal(2, Directory.GetFiles(_folder, "OrbitDrive - *.lnk").Length);
+        Assert.Equal(2, Directory.GetFiles(_folder, SendToShortcuts.Prefix + "*.lnk").Length);
         File.WriteAllText(Path.Join(_folder, "Somebody else's shortcut.lnk"), "not ours");
 
         var shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!)!;
@@ -41,10 +56,10 @@ public sealed class SendToShortcutsTests : IDisposable
         Assert.Contains("ctl send_files def_456", args);
 
         SendToShortcuts.Sync(_folder, [new("abc-123", "Phone")], exe, "ctl");     // one receiver left
-        Assert.Single(Directory.GetFiles(_folder, "OrbitDrive - *.lnk"));
+        Assert.Single(Directory.GetFiles(_folder, SendToShortcuts.Prefix + "*.lnk"));
         Assert.True(File.Exists(Path.Join(_folder, "Somebody else's shortcut.lnk")));   // never touches what is not ours
         SendToShortcuts.RemoveAll(_folder);
-        Assert.Empty(Directory.GetFiles(_folder, "OrbitDrive - *.lnk"));
+        Assert.Empty(Directory.GetFiles(_folder, SendToShortcuts.Prefix + "*.lnk"));
         Assert.True(File.Exists(Path.Join(_folder, "Somebody else's shortcut.lnk")));
     }
 }

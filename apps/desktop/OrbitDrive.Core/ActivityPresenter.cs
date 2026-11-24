@@ -14,9 +14,9 @@ public static class ActivityPresenter
 {
     private static readonly Dictionary<string, string> Titles = new(StringComparer.Ordinal)
     {
-        ["agent_started"] = "OrbitDrive started",
-        ["agent_stopping"] = "OrbitDrive is stopping",
-        ["agent_stopped"] = "OrbitDrive stopped",
+        ["agent_started"] = "MyOrbitDrive started",
+        ["agent_stopping"] = "MyOrbitDrive is stopping",
+        ["agent_stopped"] = "MyOrbitDrive stopped",
         ["connected"] = "Connected to the relay",
         ["disconnected"] = "Lost the connection to the relay",
         ["update_required"] = "This version is too old for the service",

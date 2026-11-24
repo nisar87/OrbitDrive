@@ -66,7 +66,7 @@ export default function AdminApp({ session, onSignOut }: Props) {
       )}
       <article className="panel" aria-labelledby="admin-version">
         <h2 id="admin-version">Oldest PC version allowed</h2>
-        <p className="hint">PCs running an older OrbitDrive are refused with an update message. Leave empty for no minimum.</p>
+        <p className="hint">PCs running an older MyOrbitDrive are refused with an update message. Leave empty for no minimum.</p>
         <label className="stack" htmlFor="min-version">Version, like 1.2.0</label>
         <input id="min-version" value={minVersion} inputMode="decimal" onChange={(e) => setMinVersion(e.target.value)} />
         <p className="actions"><button type="button" onClick={async () => { try { await api.setAdminSettings(session, minVersion.trim()); setNote('Minimum version saved.'); await load(); } catch (e) { fail(e); } }}>Save</button></p>

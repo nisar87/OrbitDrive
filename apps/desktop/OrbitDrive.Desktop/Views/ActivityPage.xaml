@@ -35,7 +35,7 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-                <TextBlock Text="OrbitDrive can see what it has sent to the relay. It cannot see whether a browser finished saving a file." Style="{StaticResource Style.Text.Muted}" Margin="0,6,0,0"
+                <TextBlock Text="MyOrbitDrive can see what it has sent to the relay. It cannot see whether a browser finished saving a file." Style="{StaticResource Style.Text.Muted}" Margin="0,6,0,0"
                            AutomationProperties.AutomationId="TransfersHint"/>
             </StackPanel>
         </Border>

@@ -19,9 +19,9 @@ export function Shell({ title, account, onSignOut, onPairAnother, children }: Pr
       </main>
       <footer className="taskbar" aria-label="Taskbar">
         <span className="app-icon active" aria-hidden="true" />
-        <span className="taskbar-label">OrbitDrive</span>
+        <span className="taskbar-label">MyOrbitDrive</span>
         <span className="spacer" />
-        <span className="privacy" title="Files travel over TLS through the OrbitDrive relay, which can process them in transit. Nothing is stored there. This is not end-to-end encryption.">TLS via relay · not end-to-end encrypted</span>
+        <span className="privacy" title="Files travel over TLS through the MyOrbitDrive relay, which can process them in transit. Nothing is stored there. This is not end-to-end encryption.">TLS via relay · not end-to-end encrypted</span>
       </footer>
     </div>
   );

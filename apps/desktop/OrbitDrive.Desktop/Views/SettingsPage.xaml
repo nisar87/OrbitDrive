@@ -9,10 +9,10 @@
         <TextBlock Text="General" Style="{StaticResource Style.Text.Group}"/>
         <Border Style="{StaticResource Style.Card}">
             <StackPanel>
-                <CheckBox Content="Start OrbitDrive when I sign in to Windows" IsChecked="{Binding StartAtSignIn, Mode=TwoWay}" AutomationProperties.AutomationId="StartAtSignIn"/>
+                <CheckBox Content="Start MyOrbitDrive when I sign in to Windows" IsChecked="{Binding StartAtSignIn, Mode=TwoWay}" AutomationProperties.AutomationId="StartAtSignIn"/>
                 <TextBlock Text="It starts quietly in the notification area, as you, without administrator rights. Off unless you turn it on." Style="{StaticResource Style.Text.Muted}" Margin="28,0,0,12"/>
                 <CheckBox Content="Pause remote access while this PC is locked" IsChecked="{Binding PauseWhenLocked, Mode=TwoWay}" AutomationProperties.AutomationId="PauseWhenLocked"/>
-                <TextBlock Text="Otherwise OrbitDrive keeps working while the PC is locked. When the PC sleeps, shuts down or you sign out, your phone cannot reach it. OrbitDrive never changes your sleep settings or keeps the PC awake."
+                <TextBlock Text="Otherwise MyOrbitDrive keeps working while the PC is locked. When the PC sleeps, shuts down or you sign out, your phone cannot reach it. MyOrbitDrive never changes your sleep settings or keeps the PC awake."
                            Style="{StaticResource Style.Text.Muted}" Margin="28,0,0,0"/>
             </StackPanel>
         </Border>
@@ -32,7 +32,7 @@
                 <TextBlock Text="{Binding LimitsError}" Style="{StaticResource Style.Text.Error}" TextWrapping="Wrap" AutomationProperties.AutomationId="LimitsError"/>
                 <CheckBox Content="Pause remote access while this PC is on a metered connection" IsChecked="{Binding PauseOnMetered, Mode=TwoWay}" Margin="0,14,0,0"
                           AutomationProperties.AutomationId="PauseOnMetered"/>
-                <TextBlock Text="Windows marks mobile hotspots and some other connections as metered. OrbitDrive shows a warning on such a connection; tick the box to stop sending until the connection is no longer metered."
+                <TextBlock Text="Windows marks mobile hotspots and some other connections as metered. MyOrbitDrive shows a warning on such a connection; tick the box to stop sending until the connection is no longer metered."
                            Style="{StaticResource Style.Text.Muted}" Margin="28,0,0,0"/>
             </StackPanel>
         </Border>
@@ -113,10 +113,10 @@
 
         <Border Style="{StaticResource Style.Card}">
             <StackPanel>
-                <TextBlock Text="Quit OrbitDrive" Style="{StaticResource Style.Text.Section}"/>
-                <TextBlock Text="Closing this window keeps OrbitDrive running in the notification area so your phone can still reach shared folders. Quit stops remote access."
+                <TextBlock Text="Quit MyOrbitDrive" Style="{StaticResource Style.Text.Section}"/>
+                <TextBlock Text="Closing this window keeps MyOrbitDrive running in the notification area so your phone can still reach shared folders. Quit stops remote access."
                            Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,10" AutomationProperties.AutomationId="CloseHint"/>
-                <Button Content="Quit OrbitDrive" Command="{Binding QuitCommand}" HorizontalAlignment="Left" Padding="{StaticResource Inset.Button}"
+                <Button Content="Quit MyOrbitDrive" Command="{Binding QuitCommand}" HorizontalAlignment="Left" Padding="{StaticResource Inset.Button}"
                         MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="QuitButton"/>
             </StackPanel>
         </Border>
