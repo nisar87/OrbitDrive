@@ -1,0 +1,9 @@
+/* MyOrbitDrive provisional tokens (see tokens.json). */
+:root{
+  --mod-pearl:#F7F8F5; --mod-surface:#FFFFFF; --mod-navy:#142C43; --mod-slate:#3A5169;
+  --mod-teal:#146F70; --mod-mint:#A4E2CE; --mod-line:#D9E3DD; --mod-danger:#9B2C2C;
+  --mod-font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mod-radius-card:16px; --mod-radius-button:12px;
+  --mod-fast:120ms; --mod-base:220ms; --mod-slow:420ms;
+}
+@media (prefers-reduced-motion:reduce){:root{--mod-fast:0ms;--mod-base:0ms;--mod-slow:0ms}}

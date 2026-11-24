@@ -1,0 +1,9 @@
+{
+  "name": "@orbitdrive/site",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "MyOrbitDrive marketing site (static, no third-party scripts). Preview only until the owner approves publication.",
+  "scripts": { "test": "playwright test", "serve": "python3 -m http.server 5180" },
+  "devDependencies": { "@axe-core/playwright": "^4.14.0", "@playwright/test": "^1.65.1" }
+}

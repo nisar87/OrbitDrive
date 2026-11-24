@@ -1,0 +1,296 @@
+{
+  "generatedBy": "apps/site/capture/capture.mjs",
+  "commit": "cc2b83e",
+  "webVersion": "0.1.0",
+  "account": "demo@example.test (dev auth, local only)",
+  "dataset": "synthetic images and documents from make-demo-files.py; no real data",
+  "captures": [
+    {
+      "file": "desktop-01-sign-in.png",
+      "id": "01-sign-in",
+      "what": "Sign-in screen",
+      "surface": "web app in desktop Chrome",
+      "viewport": "1440x900 @2x",
+      "theme": "light",
+      "web": "desktop-01-sign-in.webp",
+      "webSize": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "file": "desktop-02-pair-prompt.png",
+      "id": "02-pair-prompt",
+      "what": "Pairing prompt before a PC is paired",
+      "surface": "web app in desktop Chrome",
+      "viewport": "1440x900 @2x",
+      "theme": "light",
+      "web": "desktop-02-pair-prompt.webp",
+      "webSize": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "file": "desktop-03-confirm-on-pc.png",
+      "id": "03-confirm-on-pc",
+      "what": "Browser asks you to confirm the code on the PC",
+      "surface": "web app in desktop Chrome",
+      "viewport": "1440x900 @2x",
+      "theme": "light",
+      "web": "desktop-03-confirm-on-pc.webp",
+      "webSize": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "file": "desktop-04-pc-online.png",
+      "id": "04-pc-online",
+      "what": "The PC is online with its approved folder",
+      "surface": "web app in desktop Chrome",
+      "viewport": "1440x900 @2x",
+      "theme": "light",
+      "web": "desktop-04-pc-online.webp",
+      "webSize": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "file": "desktop-05-explorer.png",
+      "id": "05-explorer",
+      "what": "Browsing the approved folder",
+      "surface": "web app in desktop Chrome",
+      "viewport": "1440x900 @2x",
+      "theme": "light",
+      "web": "desktop-05-explorer.webp",
+      "webSize": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "file": "desktop-06-photos.png",
+      "id": "06-photos",
+      "what": "Pictures folder",
+      "surface": "web app in desktop Chrome",
+      "viewport": "1440x900 @2x",
+      "theme": "light",
+      "web": "desktop-06-photos.webp",
+      "webSize": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "file": "desktop-07-preview-image.png",
+      "id": "07-preview-image",
+      "what": "Picture preview, no download needed",
+      "surface": "web app in desktop Chrome",
+      "viewport": "1440x900 @2x",
+      "theme": "light",
+      "web": "desktop-07-preview-image.webp",
+      "webSize": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "file": "desktop-08-preview-pdf.png",
+      "id": "08-preview-pdf",
+      "what": "Document preview",
+      "surface": "web app in desktop Chrome",
+      "viewport": "1440x900 @2x",
+      "theme": "light",
+      "web": "desktop-08-preview-pdf.webp",
+      "webSize": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "file": "desktop-09-icons.png",
+      "id": "09-icons",
+      "what": "Icon view of a folder",
+      "surface": "web app in desktop Chrome",
+      "viewport": "1440x900 @2x",
+      "theme": "light",
+      "web": "desktop-09-icons.webp",
+      "webSize": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "file": "desktop-10-transfers.png",
+      "id": "10-transfers",
+      "what": "Transfers: a browser download is described honestly",
+      "surface": "web app in desktop Chrome",
+      "viewport": "1440x900 @2x",
+      "theme": "light",
+      "web": "desktop-10-transfers.webp",
+      "webSize": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "file": "desktop-11-dark.png",
+      "id": "11-dark",
+      "what": "Dark theme (real Settings toggle)",
+      "surface": "web app in desktop Chrome",
+      "viewport": "1440x900 @2x",
+      "theme": "dark",
+      "web": "desktop-11-dark.webp",
+      "webSize": [
+        1600,
+        1000
+      ]
+    },
+    {
+      "file": "phone-01-sign-in.png",
+      "id": "01-sign-in",
+      "what": "Sign-in screen",
+      "surface": "web app, phone-sized viewport (browser emulation, not a physical phone)",
+      "viewport": "390x844 @3x",
+      "theme": "light",
+      "web": "phone-01-sign-in.webp",
+      "webSize": [
+        600,
+        1298
+      ]
+    },
+    {
+      "file": "phone-02-pair-prompt.png",
+      "id": "02-pair-prompt",
+      "what": "Pairing prompt before a PC is paired",
+      "surface": "web app, phone-sized viewport (browser emulation, not a physical phone)",
+      "viewport": "390x844 @3x",
+      "theme": "light",
+      "web": "phone-02-pair-prompt.webp",
+      "webSize": [
+        600,
+        1298
+      ]
+    },
+    {
+      "file": "phone-03-confirm-on-pc.png",
+      "id": "03-confirm-on-pc",
+      "what": "Browser asks you to confirm the code on the PC",
+      "surface": "web app, phone-sized viewport (browser emulation, not a physical phone)",
+      "viewport": "390x844 @3x",
+      "theme": "light",
+      "web": "phone-03-confirm-on-pc.webp",
+      "webSize": [
+        600,
+        1298
+      ]
+    },
+    {
+      "file": "phone-04-pc-online.png",
+      "id": "04-pc-online",
+      "what": "The PC is online with its approved folder",
+      "surface": "web app, phone-sized viewport (browser emulation, not a physical phone)",
+      "viewport": "390x844 @3x",
+      "theme": "light",
+      "web": "phone-04-pc-online.webp",
+      "webSize": [
+        600,
+        1298
+      ]
+    },
+    {
+      "file": "phone-05-explorer.png",
+      "id": "05-explorer",
+      "what": "Browsing the approved folder",
+      "surface": "web app, phone-sized viewport (browser emulation, not a physical phone)",
+      "viewport": "390x844 @3x",
+      "theme": "light",
+      "web": "phone-05-explorer.webp",
+      "webSize": [
+        600,
+        1298
+      ]
+    },
+    {
+      "file": "phone-06-photos.png",
+      "id": "06-photos",
+      "what": "Pictures folder",
+      "surface": "web app, phone-sized viewport (browser emulation, not a physical phone)",
+      "viewport": "390x844 @3x",
+      "theme": "light",
+      "web": "phone-06-photos.webp",
+      "webSize": [
+        600,
+        1298
+      ]
+    },
+    {
+      "file": "phone-07-preview-image.png",
+      "id": "07-preview-image",
+      "what": "Picture preview, no download needed",
+      "surface": "web app, phone-sized viewport (browser emulation, not a physical phone)",
+      "viewport": "390x844 @3x",
+      "theme": "light",
+      "web": "phone-07-preview-image.webp",
+      "webSize": [
+        600,
+        1298
+      ]
+    },
+    {
+      "file": "phone-08-preview-pdf.png",
+      "id": "08-preview-pdf",
+      "what": "Document preview",
+      "surface": "web app, phone-sized viewport (browser emulation, not a physical phone)",
+      "viewport": "390x844 @3x",
+      "theme": "light",
+      "web": "phone-08-preview-pdf.webp",
+      "webSize": [
+        600,
+        1298
+      ]
+    },
+    {
+      "file": "phone-09-icons.png",
+      "id": "09-icons",
+      "what": "Icon view of a folder",
+      "surface": "web app, phone-sized viewport (browser emulation, not a physical phone)",
+      "viewport": "390x844 @3x",
+      "theme": "light",
+      "web": "phone-09-icons.webp",
+      "webSize": [
+        600,
+        1298
+      ]
+    },
+    {
+      "file": "phone-10-transfers.png",
+      "id": "10-transfers",
+      "what": "Transfers: a browser download is described honestly",
+      "surface": "web app, phone-sized viewport (browser emulation, not a physical phone)",
+      "viewport": "390x844 @3x",
+      "theme": "light",
+      "web": "phone-10-transfers.webp",
+      "webSize": [
+        600,
+        1298
+      ]
+    },
+    {
+      "file": "phone-11-dark.png",
+      "id": "11-dark",
+      "what": "Dark theme (real Settings toggle)",
+      "surface": "web app, phone-sized viewport (browser emulation, not a physical phone)",
+      "viewport": "390x844 @3x",
+      "theme": "dark",
+      "web": "phone-11-dark.webp",
+      "webSize": [
+        600,
+        1298
+      ]
+    }
+  ],
+  "failed": []
+}
