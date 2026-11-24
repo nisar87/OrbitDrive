@@ -23,7 +23,7 @@
 <p class="fine">Last updated: 24 November 2026</p>
 <p>MyOrbitDrive is operated by Nisar Ahmad (the "operator"), Fateh Jang, Attock, Punjab, Pakistan. This page explains what information the service handles and why.</p>
 <h2>Your files</h2>
-<p>Your files stay on your PC. MyOrbitDrive does not keep a permanent copy in a cloud drive. When you open or download a file from the web app, it travels from your PC to your browser through a relay server that passes it on. The relay does not store file contents or write them to logs. The relay can technically see traffic while it is in transit, because the service is not end-to-end encrypted.</p>
+<p>Your files stay on your PC. MyOrbitDrive does not keep a permanent copy in a cloud drive. When you open or download a file from the web app, it travels from your PC to your browser through a relay server that passes it on. Every connection uses HTTPS, so the data is encrypted on its way. The relay does not store file contents or write them to logs. Because the relay ends each HTTPS connection in order to pass the file along, the service is not end-to-end encrypted.</p>
 <h2>Information we handle</h2>
 <ul>
 <li><strong>Account sign-in:</strong> you sign in with an identity provider (Firebase Authentication). That provider holds your sign-in details such as your email address; we receive the identifier needed to recognise your account.</li>

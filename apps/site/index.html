@@ -90,7 +90,7 @@
       <rect x="660" y="50" width="220" height="90" rx="16" fill="#fff" stroke="#142C43" stroke-width="2.5"/><text x="770" y="92" text-anchor="middle">Your browser</text><text x="770" y="118" text-anchor="middle" font-size="15" font-weight="500" fill="#3A5169">phone or computer</text>
       <path d="M244 95h92M564 95h92" stroke="#146F70" stroke-width="4" stroke-linecap="round"/><path d="M330 87l10 8-10 8M650 87l10 8-10 8" fill="none" stroke="#146F70" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
       <text x="290" y="78" text-anchor="middle" font-size="15" fill="#146F70">HTTPS</text><text x="610" y="78" text-anchor="middle" font-size="15" fill="#146F70">HTTPS</text></g></svg>
-    <p class="note"><strong>Plain truth:</strong> traffic is encrypted with HTTPS on each leg, but the relay ends each encrypted connection, so it can process data in transit. This is not end-to-end encryption, and the app says so on screen. The relay is not a storage drive.</p>
+    <p class="note"><strong>In plain words:</strong> every leg is encrypted with HTTPS, and the relay passes your file along without keeping it. Because the relay ends each encrypted connection to do that, this is not end-to-end encryption, and the app says so on screen.</p>
   </div>
 </div></section>
 
@@ -105,10 +105,10 @@
 </div></section>
 
 <section id="security"><div class="wrap">
-  <p class="eyebrow">Security</p><h2>What it does, and what it does not</h2>
+  <p class="eyebrow">Security</p><h2>Built to keep you in control</h2>
   <div class="two">
-    <div class="card"><h3>What it does</h3><ul><li>Shares only folders you pick, read-only by default</li><li>Needs your approval on the PC for every new browser or phone</li><li>Lets you remove a browser or PC at any time</li><li>Uses HTTPS between your PC, the relay and your browser</li><li>Does not follow links out of a shared folder</li><li>Has no ads and, on this page, no tracking scripts</li></ul></div>
-    <div class="card panel no"><h3>What it does not do</h3><ul><li>It is not end-to-end encrypted</li><li>It does not keep a permanent cloud copy of your files</li><li>It cannot reach a PC that is off, asleep or offline</li><li>It does not control your PC or run programs on it</li><li>It has not had an independent security audit yet</li></ul></div>
+    <div class="card"><h3>How your files are protected</h3><ul><li>Shares only folders you pick, read-only by default</li><li>Needs your approval on the PC for every new browser or phone</li><li>Lets you remove a browser or PC at any time</li><li>Encrypts every connection with HTTPS between your PC, the relay and your browser</li><li>Keeps your files on your PC, not in a cloud drive</li><li>Does not follow links out of a shared folder</li><li>Has no ads and, on this page, no tracking scripts</li></ul></div>
+    <div class="card panel no"><h3>Good to know</h3><ul><li>Files pass through our relay, over HTTPS, without being stored; this is not end-to-end encryption</li><li>Your PC must be on, awake and online to be reachable</li><li>It only opens the folders you share and never runs programs on your PC</li><li>An independent security review is still a next step</li></ul></div>
   </div>
 </div></section>
 
@@ -124,7 +124,8 @@
   <p class="eyebrow">FAQ</p><h2>Questions</h2>
   <details><summary>Does my PC need to be on?</summary><p>Yes. It must be on, awake, online and running the app. When it is not, the web app shows it as offline.</p></details>
   <details><summary>Are my files stored in the cloud?</summary><p>No. Files are streamed from your PC through the relay to your browser. MyOrbitDrive is not a cloud drive and does not sync.</p></details>
-  <details><summary>Is it end-to-end encrypted?</summary><p>No. Each connection uses HTTPS, but the relay ends the encrypted connection, so it can process data in transit. We will not describe it as end-to-end encrypted.</p></details>
+  <details><summary>How is my data protected in transit?</summary><p>Every connection uses HTTPS, so what travels between your PC, the relay and your browser is encrypted on the way. The relay passes files through and does not store them or write their contents to logs.</p></details>
+  <details><summary>Is it end-to-end encrypted?</summary><p>Not today. The relay ends each HTTPS connection to pass your file along, so we do not describe MyOrbitDrive as end-to-end encrypted.</p></details>
   <details><summary>Can someone change or delete my files?</summary><p>Not by default. Shared folders are read-only unless you opt in to phone uploads for a folder.</p></details>
   <details><summary>What does Windows say when I run the app?</summary><p>The current build is an unsigned preview, so Windows may show a SmartScreen warning. Only run it if you downloaded it from the official release page.</p></details>
   <details><summary>Which devices work?</summary><p>The PC app is for Windows. The web app works in modern browsers on phones and computers.</p></details>
