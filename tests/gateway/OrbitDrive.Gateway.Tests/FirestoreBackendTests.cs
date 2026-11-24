@@ -307,4 +307,35 @@ public sealed class FirestoreBackendTests
         await old.FlushAsync(TimeSpan.FromSeconds(5));
         Assert.False((await db.Document("pcs/pc-after-loss").GetSnapshotAsync()).Exists, "a gateway that lost the lease must not write");
     }
+
+    [Fact]
+    public async Task A_restart_on_the_same_machine_takes_over_at_once_from_a_holder_whose_process_is_gone()
+    {
+        if (EmulatorMissing()) return;
+        var db = NewProject();
+        await using (var before = new FirestoreSnapshotBackend(db, TimeProvider.System)) { await PairedAsync(before); }
+        // A process that no longer exists: start one and let it finish, then record it as the holder with a lease that is still far from expiring.
+        using var child = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("dotnet", "--version") { RedirectStandardOutput = true })!;
+        var deadHolder = $"{Environment.MachineName}|{child.Id}|{child.StartTime.ToUniversalTime().Ticks}|deadbeef";
+        await child.WaitForExitAsync();
+        Assert.True(FirestoreSnapshotBackend.HolderIsGone(deadHolder));
+        await db.Document("meta/writer").SetAsync(new Dictionary<string, object> { ["holder"] = deadHolder, ["expiresUnixMs"] = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeMilliseconds(), ["epoch"] = 3L });
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        await using var next = Leased(db, TimeSpan.FromSeconds(60));
+        var snapshot = next.Load();
+        Assert.True(started.Elapsed < TimeSpan.FromSeconds(10), "a dead holder on this machine must not make the restart wait for its lease");
+        Assert.Single(snapshot!.Pcs);
+    }
+
+    [Fact]
+    public void A_holder_that_is_alive_unknown_or_on_another_machine_is_never_declared_gone()
+    {
+        var me = System.Diagnostics.Process.GetCurrentProcess();
+        Assert.False(FirestoreSnapshotBackend.HolderIsGone($"{Environment.MachineName}|{me.Id}|{me.StartTime.ToUniversalTime().Ticks}|x"), "this very process is alive");
+        Assert.False(FirestoreSnapshotBackend.HolderIsGone($"some-other-machine|999999|1|x"), "another machine: only the lease can tell");
+        Assert.False(FirestoreSnapshotBackend.HolderIsGone("dead-instance"), "an unrecognised format is treated as alive");
+        Assert.False(FirestoreSnapshotBackend.HolderIsGone($"{Environment.MachineName}|abc|1|x"));
+        // The same process id with a different start time is a reused id, i.e. the old process is gone.
+        Assert.True(FirestoreSnapshotBackend.HolderIsGone($"{Environment.MachineName}|{me.Id}|{me.StartTime.ToUniversalTime().Ticks + 1}|x"));
+    }
 }

@@ -30,7 +30,30 @@ public sealed class FirestoreSnapshotBackend : ISnapshotBackend, IHostedService,
     private bool _closed;                      // set once shutdown starts: later saves are refused (logged), never queued for a worker that is going away
     private readonly TimeSpan? _leaseDuration;          // null: no single-writer lease (tests that deliberately overlap two backends)
     private readonly Action? _onLeaseLost;
-    private readonly string _instanceId = Guid.NewGuid().ToString("N");
+    /// <summary>"machine|process id|process start ticks|random": enough for a restarted gateway on the SAME machine to see that the previous holder's process is gone.</summary>
+    private readonly string _instanceId = OwnId();
+    private static string OwnId()
+    {
+        var process = System.Diagnostics.Process.GetCurrentProcess();
+        return $"{Environment.MachineName}|{process.Id}|{process.StartTime.ToUniversalTime().Ticks}|{Guid.NewGuid():N}";
+    }
+
+    /// <summary>
+    /// True only when the holder is recorded as a process on THIS machine and that process (same id AND same start time, so a reused id does not count) no longer exists.
+    /// Anything else - another machine, an unrecognised format - is treated as alive until its lease runs out.
+    /// </summary>
+    public static bool HolderIsGone(string holder)
+    {
+        var parts = holder.Split('|');
+        if (parts.Length != 4 || parts[0] != Environment.MachineName || !int.TryParse(parts[1], out var pid) || !long.TryParse(parts[2], out var ticks)) return false;
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            return process.HasExited || process.StartTime.ToUniversalTime().Ticks != ticks;
+        }
+        catch (ArgumentException) { return true; }      // no such process
+        catch (Exception) { return false; }              // cannot tell: wait for the lease instead of risking two writers
+    }
     private long _leaseEpoch;
     private bool _leaseLost;
     private Task? _renewer;
@@ -124,7 +147,7 @@ public sealed class FirestoreSnapshotBackend : ISnapshotBackend, IHostedService,
                 var holder = held.Exists && held.ContainsField("holder") ? held.GetValue<string>("holder") : "";
                 var expires = held.Exists && held.ContainsField("expiresUnixMs") ? held.GetValue<long>("expiresUnixMs") : 0;
                 var epoch = held.Exists && held.ContainsField("epoch") ? held.GetValue<long>("epoch") : 0;
-                if (holder.Length > 0 && holder != _instanceId && expires > now) return expires - now;
+                if (holder.Length > 0 && holder != _instanceId && expires > now && !HolderIsGone(holder)) return expires - now;
                 _leaseEpoch = holder == _instanceId ? epoch : epoch + 1;
                 transaction.Set(LeaseDocument, new Dictionary<string, object> { ["holder"] = _instanceId, ["expiresUnixMs"] = now + (long)duration.TotalMilliseconds, ["epoch"] = _leaseEpoch });
                 return 0L;
