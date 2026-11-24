@@ -25,3 +25,6 @@ All work is on branch `feature/branding`. Nothing is published, no DNS or hostin
 
 ## Not done, and why
 Full 16-item storyboard, real-device captures, Lighthouse and cross-browser checks, trademark search: see `RUBRIC.md`.
+
+## CI evidence for the branch head (db1eda8)
+contracts, security, desktop, gateway, integration, site: green on first attempt. `desktop-ui`: one failure in the UI-automation step "an agent stopped elsewhere is not silently relaunched by the console" (timing-sensitive; this branch changes no desktop or gateway code), green on rerun. `web`: first attempt stalled 27+ minutes in the Ubuntu browser-install step (known mirror stall), cancelled and rerun, green on the second attempt. All seven gating workflows plus `site` are therefore green for this exact SHA; the two reruns are recorded here rather than hidden.
