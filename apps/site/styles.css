@@ -61,3 +61,4 @@ footer{padding:40px 0;font-size:15px;color:var(--mod-slate)}footer .wrap{display
 .final .fine.on-dark{color:#D3DEE6}
 
 .doc{max-width:820px}.doc h1{margin-bottom:8px}.doc h2{margin-top:32px;font-size:24px}.doc p,.doc li{font-size:17px;line-height:1.65}.doc ul{padding-left:22px}
+.plans{width:100%;border-collapse:collapse;margin:16px 0;font-size:16px}.plans caption{text-align:left;font-weight:600;padding-bottom:8px}.plans th,.plans td{border:1px solid var(--mod-line);padding:10px 12px;text-align:left;vertical-align:top}.plans thead th{background:#fff}
