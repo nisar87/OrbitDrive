@@ -1,6 +1,6 @@
 {
   "generatedBy": "apps/site/capture/capture.mjs",
-  "commit": "cc2b83e",
+  "commit": "aa8eb36",
   "webVersion": "0.1.0",
   "account": "demo@example.test (dev auth, local only)",
   "dataset": "synthetic images and documents from make-demo-files.py; no real data",

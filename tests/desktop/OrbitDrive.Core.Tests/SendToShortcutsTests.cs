@@ -25,6 +25,7 @@ public sealed class SendToShortcutsTests : IDisposable
         if (!OperatingSystem.IsWindows()) return;
         var exe = Path.Join(Environment.SystemDirectory, "cmd.exe");
         var legacy = Path.Join(_folder, SendToShortcuts.LegacyPrefix + "Phone.lnk");
+        Directory.CreateDirectory(_folder);
         File.WriteAllText(legacy, "old shortcut");
         SendToShortcuts.Sync(_folder, [new("abc-123", "Phone")], exe, "ctl");
         Assert.False(File.Exists(legacy));                                                  // the menu never lists the same phone twice

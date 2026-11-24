@@ -185,7 +185,7 @@ public sealed class ArchiveTests : IDisposable
         var reference = archives.Start(new ArchiveRequest { EntryIds = [Entry(files, "r1", "Album"), Entry(files, "r1", "loose.txt")], Strict = false });
         var status = await Finish(archives, reference);
         Assert.Equal(0, status.OmittedCount);
-        Assert.Equal("OrbitDrive selection.zip", status.Name);
+        Assert.Equal("MyOrbitDrive selection.zip", status.Name);
         Assert.True(status.Resumable);
         var extracted = await Extract(files, archives, status, reference);
         AssertSame(root, extracted);
