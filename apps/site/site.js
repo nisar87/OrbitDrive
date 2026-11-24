@@ -1,7 +1,7 @@
 // MyOrbitDrive marketing site behaviour. No third-party scripts, no tracking, no storage.
 const CONFIG = {
   // Preview values; the owner sets the real addresses when the site is approved.
-  appUrl: '../',
+  appUrl: 'https://app.myorbitdrive.app/',
   downloadUrl: 'https://github.com/nisar87/OrbitDrive/releases/tag/desktop-dev',
 };
 document.querySelectorAll('[data-app]').forEach((a) => { a.href = CONFIG.appUrl; });

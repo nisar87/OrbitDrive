@@ -44,13 +44,20 @@ run('npm', ['run', 'build'], { cwd: web, env });
 rmSync(staging, { recursive: true, force: true });                 // only our own staging folder
 mkdirSync(staging);
 cpSync(join(web, 'dist'), join(staging, 'dist'), { recursive: true });
-// The marketing site (apps/site, static, no build) is served at /welcome/ from the same hosting site. Only the public files are copied.
-const welcome = join(staging, 'dist', 'welcome');
-mkdirSync(welcome);
-for (const f of ['index.html', 'styles.css', 'site.js']) cpSync(join(root, 'apps', 'site', f), join(welcome, f));
-cpSync(join(root, 'apps', 'site', 'assets'), join(welcome, 'assets'), { recursive: true });
+// The marketing site (apps/site, static, no build) is its own Firebase Hosting site in the same project (myorbitdrive-site, served at the
+// apex domain myorbitdrive.app). Only the public files are copied; tests, capture tools and node_modules never leave the repo.
+const siteDir = join(staging, 'site');
+mkdirSync(siteDir);
+for (const f of ['index.html', 'styles.css', 'site.js', 'robots.txt', 'sitemap.xml']) cpSync(join(root, 'apps', 'site', f), join(siteDir, f));
+cpSync(join(root, 'apps', 'site', 'assets'), join(siteDir, 'assets'), { recursive: true });
+const siteHeaders = JSON.parse(readFileSync(join(root, 'apps', 'site', 'headers.hosting.json'), 'utf8')).headers;
+const appSite = process.env.APP_HOSTING_SITE || project;            // the web app keeps its existing site (orbitdrive-dev)
+const marketingSite = process.env.MARKETING_HOSTING_SITE || 'myorbitdrive-site';
+const app = { ...config.hosting, site: appSite, redirects: [{ source: '/welcome{,/**}', destination: 'https://myorbitdrive.app/', type: 302 }] };
+const marketing = { site: marketingSite, public: 'site', ignore: ['firebase.json', '**/.*', '**/node_modules/**'], cleanUrls: true, headers: siteHeaders };
+config.hosting = [app, marketing];
 writeFileSync(join(staging, 'firebase.json'), JSON.stringify(config, null, 2) + '\n');
 writeFileSync(join(staging, '.firebaserc'), JSON.stringify({ projects: { default: project } }) + '\n');
 
 run('npx', ['--yes', 'firebase-tools', 'deploy', '--only', 'hosting', '--project', project], { cwd: staging });
-console.log(`\nDeployed: https://${project}.web.app`);
+console.log(`\nDeployed: https://${appSite}.web.app (app) and https://${marketingSite}.web.app (marketing site)`);
