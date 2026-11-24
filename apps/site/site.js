@@ -58,7 +58,7 @@ const SHOTS = [
   ['phone-10-transfers', 'phone', 'Transfers on a phone-sized screen', 'Phone-sized'],
   ['phone-11-dark', 'phone', 'Dark theme on a phone-sized screen', 'Phone-sized'],
 ];
-const WIN = [['win-home', 'The Windows app home'], ['win-folders', 'Choosing shared folders'], ['win-approve', 'Approving a new browser']];
+const WIN = [['win-home', 'The Windows app home'], ['win-devices', 'Paired devices, removable at any time'], ['win-pair', 'Pairing with a QR code'], ['win-dark', 'The Windows app in dark theme']];
 const gal = document.getElementById('gal');
 const entries = [
   ...SHOTS.map(([f, k, c, l]) => ({ src: `assets/shots/${f}.webp`, kind: k, cap: c, label: l })),

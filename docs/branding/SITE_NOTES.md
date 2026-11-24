@@ -10,7 +10,7 @@ Header with mobile menu; hero (headline, two actions, real screen); three-step f
 
 Honest limits:
 - Phone shots are a **phone-sized desktop-Chrome viewport, not a physical phone**, and the page says so.
-- Windows app shots (3) are existing real captures from the CI Windows runner (`docs/evidence/screenshots/owner-console`), 980x680 at 1x, with test data. Higher-resolution, curated Windows captures need the Windows UI-automation run extended or the owner's PC.
+- Windows app shots (4) are real captures of the renamed console from the CI Windows runner (commit 6b98c4a, `desktop-ui` run; extracted from the job log), 980x680 at 1x, with test data. Several other CI frames show a leftover "Share an entire drive" test dialog, so only dialog-free frames were used. Higher-resolution, curated Windows captures need the Windows UI-automation run extended or the owner's PC.
 - Picture thumbnails are not shown in icon view because the Linux capture agent has no Windows Shell thumbnailer; a Windows capture would show them.
 - Not captured: the Inbox with a waiting file, the Explorer "Send to my phone" context menu (needs real Windows 11 Explorer), the QR code screen, real devices. Storyboard items still open: 16-item list items for Inbox, Devices, Properties, QR and Windows-side flows.
 

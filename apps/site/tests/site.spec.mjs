@@ -44,9 +44,9 @@ test('tabs work by keyboard and show one panel', async ({ page }) => {
 
 test('gallery filter and lightbox (Escape closes, focus returns)', async ({ page }) => {
   await page.goto('/');
-  const all = await page.locator('#gal button').count(); expect(all).toBe(15);
+  const all = await page.locator('#gal button').count(); expect(all).toBe(16);
   await page.getByRole('button', { name: 'Windows app', exact: true }).click();
-  expect(await page.locator('#gal button:not([hidden])').count()).toBe(3);
+  expect(await page.locator('#gal button:not([hidden])').count()).toBe(4);
   const b = page.locator('#gal button:not([hidden])').first(); await b.click();
   await expect(page.locator('#lb')).toBeVisible(); await page.keyboard.press('Escape');
   await expect(page.locator('#lb')).toBeHidden(); await expect(b).toBeFocused();
