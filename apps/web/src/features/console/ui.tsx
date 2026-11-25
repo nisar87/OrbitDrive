@@ -133,7 +133,7 @@ export function Drawer({ title, subtitle, onClose, children, testId }: { title: 
   const box = useModal(true, onClose);
   const titleId = useId();
   return (
-    <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={box} data-testid={testId}>
         <header className="drawer-head">
           <div><h2 id={titleId}>{title}</h2>{subtitle && <p className="hint">{subtitle}</p>}</div>
@@ -156,7 +156,7 @@ export function ReasonDialog({ title, effect, confirmLabel, danger, onConfirm, o
   const box = useModal(true, onCancel);
   const titleId = useId(); const fieldId = useId();
   return (
-    <div className="scrim top" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+    <div className="overlay top" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
       <form className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid="admin-confirm" onSubmit={(e) => { e.preventDefault(); if (reason.trim().length >= 3) onConfirm(reason.trim()); }}
         ref={box as unknown as React.RefObject<HTMLFormElement>}>
         <h2 id={titleId}>{title}</h2>
@@ -178,7 +178,7 @@ export function ConfirmDialog({ title, effect, confirmLabel, danger, onConfirm, 
   const box = useModal(true, onCancel);
   const titleId = useId();
   return (
-    <div className="scrim top" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+    <div className="overlay top" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
       <form className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} onSubmit={(e) => { e.preventDefault(); onConfirm(); }} ref={box as unknown as React.RefObject<HTMLFormElement>}>
         <h2 id={titleId}>{title}</h2>
         <p>{effect}</p>

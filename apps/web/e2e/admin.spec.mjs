@@ -54,9 +54,8 @@ test('an operator sees the administration area, with measured numbers, and can s
   await signInAndPair(page, OPERATOR, agentOp);
   const admin = await openApp(page, 'Administration');
   await expect(admin.getByTestId('admin-metrics')).toBeVisible();
-  await expect(admin.getByTestId('m-pcs')).toContainText('(');
   await expect(admin.getByTestId('m-users')).not.toHaveText('');
-  await expect(admin.getByTestId('m-pcs')).toContainText('of');
+  await expect(admin.getByTestId('m-pcs')).toHaveText(/^\d+ of \d+$/);
   await admin.getByRole('button', { name: 'Accounts', exact: true }).click();
   const row = admin.getByTestId('admin-users').getByRole('row').filter({ hasText: uidOf(TARGET) });
   await expect(row).toBeVisible();
