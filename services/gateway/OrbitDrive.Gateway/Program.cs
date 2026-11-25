@@ -933,7 +933,7 @@ static async Task<T> ReadBilling<T>(HttpContext context)
 {
     if (context.Request.ContentType?.StartsWith("application/json", StringComparison.OrdinalIgnoreCase) != true)
         throw new ProtocolException(ErrorCode.InvalidRequest, "Content-Type must be application/json.");
-    try { return await JsonSerializer.DeserializeAsync<T>(context.Request.Body, BillingJson.Options, context.RequestAborted) ?? throw new JsonException(); }
+    try { return await JsonSerializer.DeserializeAsync<T>(context.Request.Body, BillingJson.Request, context.RequestAborted) ?? throw new JsonException(); }
     catch (JsonException) { throw new ProtocolException(ErrorCode.InvalidRequest, "Malformed request body."); }
 }
 

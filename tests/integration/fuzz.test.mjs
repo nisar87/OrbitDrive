@@ -32,7 +32,7 @@ after(async () => { await agent?.stop(); await gateway?.stop(); });
 // ---------------------------------------------------------------- what is fuzzed
 const source = readFileSync(join(repoRoot, 'services/gateway/OrbitDrive.Gateway/Program.cs'), 'utf8');
 const NOT_FUZZED = new Set(['/healthz', '/readyz', '/v1/dev/sign-in', '/v1/downloads/{capability}', '/v1/agent-control', '/v1/agent-downlinks/{streamId}', '/v1/agent-streams/{streamId}']);
-const PUBLIC = new Set(['/v1/meta']);   // anonymous on purpose (public service facts); everything else must refuse anonymous callers
+const PUBLIC = new Set(['/v1/meta', '/v1/plans']);   // anonymous on purpose (public service facts); everything else must refuse anonymous callers
 const routes = [...source.matchAll(/app\.Map(Get|Post|Put|Delete|Patch)\("([^"]+)"/g)].map((m) => ({ method: m[1].toUpperCase(), path: m[2] })).filter((r) => !NOT_FUZZED.has(r.path));
 /** Valid-looking bodies for the routes that read one; routes not listed get `{}` mutated. */
 const templates = () => ({

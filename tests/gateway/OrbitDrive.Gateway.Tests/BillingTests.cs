@@ -540,6 +540,20 @@ public class BillingTests
         Assert.False(billing.SetOrgSuspended("missing", true));
     }
 
+    [Fact]
+    public void Missing_or_junk_text_in_organisation_requests_is_refused_cleanly()
+    {
+        var billing = Store(new MemoryBillingPersistence(), new FakeTime());
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.CreateOrg("u1", null!)).Code);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.Join("u1", null!, null!)).Code);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.Join("u1", "NOPE", "")).Code);
+        billing.AddPass("acct:boss", "office", 1, "manual");
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.CreateOrg("boss", null!)).Code);
+        var org = billing.CreateOrg("boss", "Acme");
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.SetRole(org.Id, "boss", "boss", null!)).Code);
+        Assert.Equal(org.Id, billing.OrgOf("boss")!.Value.Org.Id);
+    }
+
     private sealed class FlakyPersistence(MemoryBillingPersistence inner) : IBillingPersistence
     {
         public bool FailNext { get; set; }

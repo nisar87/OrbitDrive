@@ -6,6 +6,8 @@ namespace OrbitDrive.Gateway;
 public static class BillingJson
 {
     public static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web) { UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow };
+    /// <summary>For request bodies only: a missing or null value for text that must be present is refused as a malformed body, so no handler ever sees a null string.</summary>
+    public static readonly JsonSerializerOptions Request = new(Options) { RespectNullableAnnotations = true };
 }
 
 public sealed record PriceView(int Months, decimal Usd, int Pkr, bool PkrApprox);
