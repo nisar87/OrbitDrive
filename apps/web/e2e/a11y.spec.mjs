@@ -180,6 +180,21 @@ test('Upload (confirmation and finished) and Administration have no automaticall
   const admin = page.getByRole('dialog', { name: 'Administration' });
   await expect(admin.getByTestId('admin-metrics')).toBeVisible();
   for (const theme of ['light', 'dark']) { await setTheme(page, theme); await expectAccessible(page, `Administration, ${theme}`); }
+  for (const section of ['Accounts', 'Organisations', 'Billing', 'Audit log', 'Settings']) {
+    await admin.getByRole('button', { name: new RegExp(`^${section}`) }).click();
+    for (const theme of ['light', 'dark']) { await setTheme(page, theme); await expectAccessible(page, `Administration ${section}, ${theme}`); }
+  }
+  await admin.getByRole('button', { name: 'Accounts', exact: true }).click();
+  await admin.getByTestId('admin-users').getByRole('button', { name: /^Open account/ }).first().click();
+  await expect(page.getByTestId('admin-account-detail')).toBeVisible();
+  for (const theme of ['light', 'dark']) { await setTheme(page, theme); await expectAccessible(page, `Administration account details, ${theme}`); }
+  await page.getByTestId('admin-account-detail').getByRole('tab', { name: 'Actions' }).click();
+  await page.getByTestId('admin-account-detail').getByRole('button', { name: 'Sign out all browsers' }).click();
+  await expect(page.getByTestId('admin-confirm')).toBeVisible();
+  for (const theme of ['light', 'dark']) { await setTheme(page, theme); await expectAccessible(page, `Administration reason dialog, ${theme}`); }
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('admin-confirm')).toHaveCount(0);
+  await expect(page.getByTestId('admin-account-detail')).toBeVisible();   // Escape closed only the dialog on top
 });
 
 // R33: tablets and landscape phones. Emulated viewports in a real browser; physical devices remain a manual check.

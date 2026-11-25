@@ -1,118 +1,93 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, ApiError, type Session } from '../../api';
-import type { AdminOverview, AdminUser, AuditEntry } from '../../protocol';
-import { formatBytes, formatTime } from '../../format';
-import { BillingAdmin } from '../billing/BillingAdmin';
-import { AccountDetail, OrgAdmin } from '../billing/AdminDetails';
+import type { AdminOverview, AuditEntry } from '../../protocol';
+import { adminApi, billingApi, type AdminAccountRow, type AdminOrgRow, type Order } from '../../billing';
+import { Accounts } from '../console/Accounts';
+import { Audit } from '../console/Audit';
+import { Billing } from '../console/Billing';
+import { Orgs } from '../console/Orgs';
+import { Overview } from '../console/Overview';
+import { ServiceSettings } from '../console/Settings';
+import { ReasonDialog } from '../console/ui';
+import type { AskSpec, Ctx, PageId } from '../console/shared';
+import '../console/console.css';
 
 interface Props { session: Session; onSignOut: () => void }
 
-type Action = 'suspend' | 'unsuspend' | 'revoke-all' | 'reset-relay-allowance';
-const LABEL: Record<Action, string> = { suspend: 'Suspend', unsuspend: 'Lift suspension', 'revoke-all': 'Sign out all browsers', 'reset-relay-allowance': 'Restore today\'s allowance' };
+const PAGES: { id: PageId; label: string }[] = [
+  { id: 'overview', label: 'Overview' }, { id: 'accounts', label: 'Accounts' }, { id: 'orgs', label: 'Organisations' },
+  { id: 'billing', label: 'Billing' }, { id: 'audit', label: 'Audit log' }, { id: 'settings', label: 'Settings' },
+];
 
 /**
- * Operator area. It is only offered to accounts the service itself says are operators, and the service checks again on every request, so
- * reaching this page by any other route shows nothing. Every number is measured by the relay since it last started; there is no file,
- * folder, path or user-impersonation view anywhere in it.
+ * Operator console. It is only offered to accounts the service itself says are operators, and the service checks again on every request, so
+ * reaching this page by any other route shows nothing. Every number is measured by the relay; there is no file, folder, path or
+ * user-impersonation view anywhere in it, and every change asks for a reason that goes in the audit log.
  */
 export default function AdminApp({ session, onSignOut }: Props) {
+  const [page, setPage] = useState<PageId>('overview');
   const [overview, setOverview] = useState<AdminOverview | null>(null);
-  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [accounts, setAccounts] = useState<AdminAccountRow[]>([]);
+  const [orgs, setOrgs] = useState<AdminOrgRow[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [minVersion, setMinVersion] = useState('');
   const [error, setError] = useState<{ text: string; signInAgain: boolean } | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [pending, setPending] = useState<{ uid: string; action: Action } | null>(null);
-  const [reason, setReason] = useState('');
-  const [detailUid, setDetailUid] = useState<string | null>(null);
+  const [asking, setAsking] = useState<AskSpec | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const fail = useCallback((e: unknown) => setError({ text: e instanceof ApiError ? e.message : 'Something went wrong.', signInAgain: e instanceof ApiError && e.code === 'unauthenticated' }), []);
   const load = useCallback(async () => {
-    try {
-      const [o, u, a, s] = await Promise.all([api.adminOverview(session), api.adminUsers(session), api.adminAudit(session), api.adminSettings(session)]);
-      setOverview(o); setUsers([...u.users]); setAudit([...a.entries]); setMinVersion(s.minAgentVersion); setError(null);
-    } catch (e) { fail(e); }
+    const [o, users, rich, a, s, org, queue] = await Promise.allSettled([
+      api.adminOverview(session), api.adminUsers(session), adminApi.accounts(session), api.adminAudit(session), api.adminSettings(session), adminApi.orgs(session), billingApi.orders(session, null),
+    ]);
+    const problems = [o, users, a, s].filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+    if (o.status === 'fulfilled') setOverview(o.value);
+    if (rich.status === 'fulfilled') setAccounts(rich.value);
+    else if (users.status === 'fulfilled') setAccounts(users.value.users.map((u) => ({ uid: u.uid, suspended: u.suspended, planId: '', planName: 'Unknown', state: 'free' as const, endsAt: null, orgName: null, pcs: u.pcs, devices: u.devices, filesToday: 0, bytesToday: 0 })));
+    if (a.status === 'fulfilled') setAudit([...a.value.entries]);
+    if (s.status === 'fulfilled') setMinVersion(s.value.minAgentVersion);
+    if (org.status === 'fulfilled') setOrgs(org.value);
+    if (queue.status === 'fulfilled') setOrders(queue.value);
+    const first = problems[0]?.reason ?? (rich.status === 'rejected' && users.status === 'rejected' ? rich.reason : undefined);
+    if (first) fail(first); else setError(null);
   }, [session, fail]);
   useEffect(() => { void load(); }, [load]);
 
-  const run = async () => {
-    if (!pending) return;
-    try { await api.adminUserAction(session, pending.uid, pending.action, reason.trim()); setNote(`${LABEL[pending.action]}: done.`); setPending(null); setReason(''); await load(); } catch (e) { fail(e); }
+  const confirm = async (reason: string) => {
+    if (!asking) return;
+    setBusy(true);
+    try { await asking.run(reason); setNote(`${asking.done}. It is recorded in the audit log.`); setError(null); setAsking(null); await load(); }
+    catch (e) { setAsking(null); fail(e); }
+    finally { setBusy(false); }
   };
+  const ctx: Ctx = useMemo(() => ({ session, ask: setAsking, report: (kind, text) => { if (kind === 'ok') { setNote(text); setError(null); } else setError({ text, signInAgain: false }); }, fail, reload: load, go: setPage }), [session, fail, load]);
 
+  const waiting = orders.filter((o) => o.status === 'proof_submitted').length;
+  const unpaid = orders.filter((o) => o.status === 'requested').length;
+  const badge = (id: PageId): number => (id === 'billing' ? waiting : 0);
   return (
-    <div className="app-page admin" data-testid="admin-app">
-      <div className="commandbar"><button type="button" className="ghost" onClick={() => void load()}>Refresh</button></div>
-      {error && (
-        <p role="alert" className="notice error" data-testid="admin-error">{error.text} {error.signInAgain && <button type="button" onClick={onSignOut}>Sign out and sign in again</button>}</p>
-      )}
-      {note && <p role="status" className="hint">{note}</p>}
-      {overview && (
-        <article className="panel" aria-labelledby="admin-overview">
-          <h2 id="admin-overview">Service health</h2>
-          <p className="hint">Measured by the relay since it started {formatTime(overview.startedUnixMs)} (version {overview.gatewayVersion}). Counts restart when the service restarts.</p>
-          <dl className="metrics" data-testid="admin-metrics">
-            <dt>Accounts</dt><dd data-testid="m-users">{overview.users}</dd>
-            <dt>Suspended</dt><dd>{overview.suspendedUsers}</dd>
-            <dt>Approved browsers</dt><dd>{overview.browserDevices}</dd>
-            <dt>PCs (online)</dt><dd data-testid="m-pcs">{overview.pcs} ({overview.pcsOnline})</dd>
-            <dt>Transfers running now</dt><dd>{overview.activeStreams}</dd>
-            <dt>Sent to browsers</dt><dd data-testid="m-down">{formatBytes(overview.relayBytesDown)}</dd>
-            <dt>Received from browsers</dt><dd>{formatBytes(overview.relayBytesUp)}</dd>
-            <dt>Downloads completed / failed</dt><dd>{overview.downloadsCompleted} / {overview.downloadsFailed}</dd>
-            <dt>Upload pieces stored / refused</dt><dd>{overview.uploadPiecesRelayed} / {overview.uploadPiecesFailed}</dd>
-            <dt>Refused for daily allowance</dt><dd>{overview.quotaRefusals}</dd>
-            <dt>Relayed today, all accounts</dt><dd data-testid="m-today">{formatBytes(overview.relayBytesToday)}{overview.costAlert && <strong role="alert"> Over the daily cost alert ({formatBytes(overview.relayBytesDailyAlert)})</strong>}</dd>
-            <dt>Daily allowance per account</dt><dd>{overview.relayBytesPerOwnerPerDay === '0' ? 'No limit' : formatBytes(overview.relayBytesPerOwnerPerDay)}</dd>
-          </dl>
-        </article>
-      )}
-      <BillingAdmin session={session} onFail={fail} />
-      <article className="panel" aria-labelledby="admin-version">
-        <h2 id="admin-version">Oldest PC version allowed</h2>
-        <p className="hint">PCs running an older MyOrbitDrive are refused with an update message. Leave empty for no minimum.</p>
-        <label className="stack" htmlFor="min-version">Version, like 1.2.0</label>
-        <input id="min-version" value={minVersion} inputMode="decimal" onChange={(e) => setMinVersion(e.target.value)} />
-        <p className="actions"><button type="button" onClick={async () => { try { await api.setAdminSettings(session, minVersion.trim()); setNote('Minimum version saved.'); await load(); } catch (e) { fail(e); } }}>Save</button></p>
-      </article>
-      <article className="panel" aria-labelledby="admin-users">
-        <h2 id="admin-users">Accounts</h2>
-        <p className="hint">Account ids and counts only. Email addresses, names, folders and files are not shown.</p>
-        <ul className="device-list" data-testid="admin-users">
-          {users.map((user) => (
-            <li key={user.uid}>
-              <span><strong><bdi>{user.uid}</bdi></strong>{user.suspended && <span className="notice error"> suspended</span>}
-                <small>{user.devices} browser{user.devices === 1 ? '' : 's'} · {user.pcs} PC{user.pcs === 1 ? '' : 's'} · {formatBytes(user.relayBytesToday)} today</small></span>
-              <span className="actions">
-                <button type="button" className="ghost" onClick={() => setDetailUid(user.uid)}>Details</button>
-                {(['suspend', 'unsuspend', 'revoke-all', 'reset-relay-allowance'] as Action[]).filter((a) => a !== (user.suspended ? 'suspend' : 'unsuspend')).map((action) => (
-                  <button key={action} type="button" className="ghost" onClick={() => { setPending({ uid: user.uid, action }); setReason(''); }}>{LABEL[action]}</button>
-                ))}
-              </span>
-            </li>
-          ))}
-        </ul>
-        {users.length === 0 && <p className="empty">No accounts yet.</p>}
-        {pending && (
-          <form className="panel" onSubmit={(e) => { e.preventDefault(); void run(); }} aria-label="Confirm action" data-testid="admin-confirm">
-            <p><strong>{LABEL[pending.action]}</strong> for <bdi>{pending.uid}</bdi>. This is recorded in the audit log with your account id.</p>
-            <label className="stack" htmlFor="admin-reason">Reason (required)</label>
-            <input id="admin-reason" value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} />
-            <p className="actions"><button type="submit" disabled={reason.trim().length < 3}>Confirm</button><button type="button" className="ghost" onClick={() => setPending(null)}>Cancel</button></p>
-          </form>
-        )}
-      </article>
-      {detailUid && <AccountDetail session={session} uid={detailUid} onClose={() => setDetailUid(null)} />}
-      <OrgAdmin session={session} />
-      <article className="panel" aria-labelledby="admin-audit">
-        <h2 id="admin-audit">Audit log</h2>
-        <ul className="device-list" data-testid="admin-audit">
-          {audit.map((entry, i) => (
-            <li key={i}><span><strong>{entry.action}</strong> <bdi>{entry.target}</bdi><small>{formatTime(entry.atUnixMs)} · by <bdi>{entry.operator}</bdi>{entry.detail ? ` · ${entry.detail}` : ''}</small></span></li>
-          ))}
-        </ul>
-        {audit.length === 0 && <p className="empty">Nothing has been done yet.</p>}
-      </article>
-    </div>
+    <div className="con-box" data-testid="admin-app"><div className="con kit admin">
+      <nav className="con-nav" aria-label="Console sections">
+        <h1>Console</h1>
+        {PAGES.map((p) => (
+          <button key={p.id} type="button" aria-current={page === p.id ? 'page' : undefined} onClick={() => { setPage(p.id); setNote(null); }}>
+            {p.label}{badge(p.id) > 0 && <span className="count" aria-label={`${badge(p.id)} waiting`}>{badge(p.id)}</span>}
+          </button>
+        ))}
+      </nav>
+      <main className="con-main" aria-label={PAGES.find((p) => p.id === page)?.label}>
+        {error && <p role="alert" className="notice error toast" data-testid="admin-error">{error.text} {error.signInAgain && <button type="button" onClick={onSignOut}>Sign out and sign in again</button>}</p>}
+        {note && <p role="status" className="notice toast" data-testid="admin-note">{note}</p>}
+        {page === 'overview' && <Overview overview={overview} waiting={waiting} unpaid={unpaid} go={setPage} refresh={() => void load()} />}
+        {page === 'accounts' && <Accounts ctx={ctx} rows={accounts} />}
+        {page === 'orgs' && <Orgs ctx={ctx} rows={orgs} />}
+        {page === 'billing' && <Billing ctx={ctx} orders={orders} waiting={waiting} />}
+        {page === 'audit' && <Audit entries={audit} />}
+        {page === 'settings' && <ServiceSettings key={minVersion} ctx={ctx} initial={minVersion} />}
+      </main>
+      {asking && <ReasonDialog title={asking.title} effect={asking.effect} confirmLabel={asking.confirmLabel} danger={asking.danger} busy={busy} onConfirm={(r) => void confirm(r)} onCancel={() => setAsking(null)} />}
+    </div></div>
   );
 }

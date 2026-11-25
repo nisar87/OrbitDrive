@@ -63,6 +63,8 @@ public sealed record AdminPcView(string Name, string AgentVersion, DateTimeOffse
 public sealed record AdminDeviceView(string Name, DateTimeOffset CreatedAt, DateTimeOffset LastUsedAt);
 /// <summary>What the operator sees of one account: plan, 30 days of counts, and which PCs and browsers belong to it. No file or folder names exist in this view.</summary>
 public sealed record AdminUserDetail(string Uid, bool Suspended, AccountPlanView Plan, string? OrgName, string? OrgRole, IReadOnlyList<BillingStore.UsageDayView> History, IReadOnlyList<AdminPcView> Pcs, IReadOnlyList<AdminDeviceView> Devices);
+/// <summary>One line of the operator's accounts table: plan and today's counts. Counts only; no names of anything the account holds.</summary>
+public sealed record AdminAccountRow(string Uid, bool Suspended, string PlanId, string PlanName, string State, DateTimeOffset? EndsAt, string? OrgName, int Pcs, int Devices, int FilesToday, long BytesToday);
 public sealed record AdminOrgRow(string Id, string Name, string OwnerUid, int Members, string PlanId, int FilesToday, long BytesToday, bool Suspended, DateTimeOffset CreatedAt);
 public sealed record AdminOrgDetail(AdminOrgRow Org, IReadOnlyList<OrgMemberView> Members, IReadOnlyList<BillingStore.UsageDayView> History, IReadOnlyList<OrgEventView> Events);
 public sealed record MemberHistoryView(string Label, IReadOnlyList<BillingStore.UsageDayView> History);

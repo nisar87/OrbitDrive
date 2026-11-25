@@ -56,27 +56,55 @@ test('an operator sees the administration area, with measured numbers, and can s
   await expect(admin.getByTestId('admin-metrics')).toBeVisible();
   await expect(admin.getByTestId('m-pcs')).toContainText('(');
   await expect(admin.getByTestId('m-users')).not.toHaveText('');
-  const row = admin.getByTestId('admin-users').locator('li').filter({ hasText: uidOf(TARGET) });
+  await expect(admin.getByTestId('m-pcs')).toContainText('of');
+  await admin.getByRole('button', { name: 'Accounts', exact: true }).click();
+  const row = admin.getByTestId('admin-users').getByRole('row').filter({ hasText: uidOf(TARGET) });
   await expect(row).toBeVisible();
   const text = await admin.innerText();
   for (const secret of [TARGET, 'Target phone', 'Target PC', 'Target files', 'Operator files']) expect(text).not.toContain(secret);
   await page.screenshot({ path: join(shots, `admin-overview-${info.project.name}.png`) });
 
-  await row.getByRole('button', { name: 'Suspend', exact: true }).click();
-  const confirm = admin.getByTestId('admin-confirm');
-  await expect(confirm.getByRole('button', { name: 'Confirm' })).toBeDisabled();             // a reason is required
+  // Search finds the account, and a search that matches nothing says so.
+  await admin.getByRole('searchbox').fill('no-such-account-zzz');
+  await expect(admin.getByText('Nothing matches.')).toBeVisible();
+  await admin.getByRole('searchbox').fill(uidOf(TARGET).slice(0, 8));
+  await expect(row).toBeVisible();
+
+  const openActions = async () => {
+    await row.getByRole('button', { name: /^Open account/ }).click();
+    const drawer = page.getByTestId('admin-account-detail');
+    await drawer.getByRole('tab', { name: 'Actions' }).click();
+    return drawer;
+  };
+  let drawer = await openActions();
+  await drawer.getByRole('button', { name: 'Suspend', exact: true }).click();
+  const confirm = page.getByTestId('admin-confirm');
+  await expect(confirm.getByRole('button', { name: 'Suspend account' })).toBeDisabled();       // a reason is required
+  await confirm.getByRole('button', { name: 'Cancel' }).click();
+  await expect(confirm).toHaveCount(0);
+  await expect(drawer).toBeVisible();                                                           // Escape or Cancel in the dialog leaves the drawer open
+  await drawer.getByRole('button', { name: 'Suspend', exact: true }).click();
   await confirm.getByLabel('Reason (required)').fill('abuse report 7');
-  await confirm.getByRole('button', { name: 'Confirm' }).click();
-  await expect(row).toContainText('suspended');
-  await expect(admin.getByTestId('admin-audit').locator('li').first()).toContainText('suspend');
-  await expect(admin.getByTestId('admin-audit').locator('li').first()).toContainText('abuse report 7');
+  await confirm.getByRole('button', { name: 'Suspend account' }).click();
+  await expect(drawer.getByRole('button', { name: 'Lift suspension' })).toBeVisible();
+  await drawer.getByRole('button', { name: 'Close' }).click();
+  await expect(row).toContainText('Suspended');
+  await admin.getByRole('button', { name: 'Audit log', exact: true }).click();
+  const newest = admin.getByTestId('admin-audit').getByRole('row').nth(1);
+  await expect(newest).toContainText('suspend');
+  await expect(newest).toContainText('abuse report 7');
   expect((await target.get('/v1/pcs')).status).toBe(403);
   await page.screenshot({ path: join(shots, `admin-suspended-${info.project.name}.png`) });
 
-  await row.getByRole('button', { name: 'Lift suspension' }).click();
-  await admin.getByTestId('admin-confirm').getByLabel('Reason (required)').fill('resolved');
-  await admin.getByTestId('admin-confirm').getByRole('button', { name: 'Confirm' }).click();
-  await expect(row).not.toContainText('suspended');
+  await admin.getByRole('button', { name: 'Accounts', exact: true }).click();
+  await admin.getByRole('searchbox').fill(uidOf(TARGET).slice(0, 8));
+  drawer = await openActions();
+  await drawer.getByRole('button', { name: 'Lift suspension' }).click();
+  await page.getByTestId('admin-confirm').getByLabel('Reason (required)').fill('resolved');
+  await page.getByTestId('admin-confirm').getByRole('button', { name: 'Lift suspension' }).click();
+  await expect(drawer.getByRole('button', { name: 'Suspend', exact: true })).toBeVisible();
+  await drawer.getByRole('button', { name: 'Close' }).click();
+  await expect(row).not.toContainText('Suspended');
   expect((await target.get('/v1/pcs')).status).toBe(200);
 });
 

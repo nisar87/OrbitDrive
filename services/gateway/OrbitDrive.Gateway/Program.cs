@@ -1090,6 +1090,17 @@ AdminOrgRow OrgRow(Organisation o)
     return new AdminOrgRow(o.Id, o.Name, o.OwnerUid, billing.MembersUnchecked(o.Id).Count, billing.EntitlementFor(BillingStore.AccountSubject(o.OwnerUid)).PlanId, files, bytes, o.Suspended, o.CreatedAt);
 }
 
+app.MapGet("/v1/admin/accounts", (HttpContext context) =>
+{
+    AuthorizeOperator(context);
+    var rows = store.Owners().Take(500).Select(o =>
+    {
+        var plan = AccountPlan(BillingStore.AccountSubject(o.Uid));
+        return new AdminAccountRow(o.Uid, o.Suspended, plan.PlanId, plan.PlanName, plan.State, plan.EndsAt, billing.OrgOf(o.Uid)?.Org.Name, o.Pcs, o.Devices, plan.FilesToday, plan.BytesToday);
+    }).ToList();
+    return WriteBilling(context, rows);
+});
+
 app.MapGet("/v1/admin/users/{uid}/detail", (HttpContext context, string uid) =>
 {
     AuthorizeOperator(context);
