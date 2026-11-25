@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, type Session } from '../../api';
 import { formatSize, orgApi, type OrgEvent, type OrgView, type UsageDay } from '../../billing';
-import { UsageTable } from './AdminDetails';
+import { UsageTable } from './UsageTable';
 
 interface Props { session: Session; onAuthLost: (error: unknown) => void }
 

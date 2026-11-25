@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { ApiError, type Session } from '../../api';
 import {
   billingApi, formatPkr, formatUsd, limitText, monthsLabel, percentUsed, PAYMENT_METHODS, priceLabel,
-  type AccountPlan, type Order, type PlansView, type Quote,
+  type AccountPlan, type Order, type PlansView, type Quote, type UsageDay,
 } from '../../billing';
+import { UsageTable } from './UsageTable';
 
 interface Props { session: Session; onAuthLost: (error: unknown) => void }
 
@@ -25,6 +26,7 @@ export function MyPlan({ session, onAuthLost }: Props) {
   const [plan, setPlan] = useState<AccountPlan | null>(null);
   const [plans, setPlans] = useState<PlansView | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [history, setHistory] = useState<UsageDay[]>([]);
   const [choice, setChoice] = useState({ planId: 'plus', months: 1, coupon: '' });
   const [quote, setQuote] = useState<Quote | null>(null);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -35,6 +37,7 @@ export function MyPlan({ session, onAuthLost }: Props) {
     try {
       const [p, o, list] = await Promise.all([billingApi.myPlan(session), billingApi.myOrders(session), billingApi.plans()]);
       setPlan(p); setOrders(o); setPlans(list);
+      try { setHistory(await billingApi.myUsage(session)); } catch { setHistory([]); }   // the history is a convenience: the plan still shows without it
     } catch (e) { fail(e); }
   }, [session, fail]);
   useEffect(() => { void load(); }, [load]);
@@ -75,6 +78,29 @@ export function MyPlan({ session, onAuthLost }: Props) {
       </dl>
       <p className="hint">The day resets at midnight Pakistan time ({new Date(plan.resetsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} your time). A file counts when it has finished.</p>
       {message && <p role={message.kind === 'error' ? 'alert' : 'status'} className={message.kind === 'error' ? 'notice error' : 'hint'}>{message.text}</p>}
+
+
+      <h3>Your last 30 days</h3>
+      <UsageTable history={history} caption="Your transfers" />
+
+      {plans && plans.plans.length > 1 && (
+        <>
+          <h3>What each plan allows</h3>
+          <table data-testid="plan-compare">
+            <caption className="sr-only">Plan limits</caption>
+            <thead><tr><th scope="col">Plan</th><th scope="col">PCs</th><th scope="col">Phones and browsers</th><th scope="col">Files a day</th><th scope="col">Largest file</th><th scope="col">Data a day</th></tr></thead>
+            <tbody>
+              {plans.plans.map((p) => (
+                <tr key={p.id}>
+                  <th scope="row">{p.name}{p.id === plan.planId ? ' (yours)' : ''}</th>
+                  <td>{limitText(p.limits.pcs, 'count')}</td><td>{limitText(p.limits.devices, 'count')}</td><td>{limitText(p.limits.filesPerDay, 'count')}</td>
+                  <td>{limitText(p.limits.bytesPerFile, 'bytes')}</td><td>{limitText(p.limits.bytesPerDay, 'bytes')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
 
       {selectable.length > 0 && (
         <>

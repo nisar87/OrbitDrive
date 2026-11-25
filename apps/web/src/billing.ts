@@ -77,6 +77,7 @@ export const orgApi = {
 export const billingApi = {
   plans: () => callJson<PlansView>(null, 'GET', '/v1/plans'),
   myPlan: (s: Session) => callJson<AccountPlan>(s, 'GET', '/v1/account/plan'),
+  myUsage: (s: Session) => callJson<UsageDay[]>(s, 'GET', '/v1/account/usage'),
   myOrders: (s: Session) => callJson<Order[]>(s, 'GET', '/v1/account/orders'),
   quote: (s: Session, planId: string, months: number, coupon: string | null) => callJson<Quote>(s, 'POST', '/v1/account/quote', { planId, months, coupon }),
   order: (s: Session, planId: string, months: number, coupon: string | null, method: string | null) => callJson<Order>(s, 'POST', '/v1/account/orders', { planId, months, coupon, method }),

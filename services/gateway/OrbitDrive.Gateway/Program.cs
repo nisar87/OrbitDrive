@@ -960,6 +960,8 @@ app.MapGet("/v1/plans", (HttpContext context) =>
 
 app.MapGet("/v1/account/plan", (HttpContext context) => WriteBilling(context, AccountPlan(SignedInSubject(context))));
 
+app.MapGet("/v1/account/usage", (HttpContext context) => WriteBilling(context, billing.UsageHistory(SignedInSubject(context), 30)));
+
 app.MapGet("/v1/account/orders", (HttpContext context) => WriteBilling(context, billing.OrdersFor(SignedInSubject(context))));
 
 app.MapPost("/v1/account/quote", async (HttpContext context) =>
