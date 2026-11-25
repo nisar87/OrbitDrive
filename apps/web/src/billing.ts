@@ -20,6 +20,10 @@ export interface AdminBilling { plans: PlansView; editable: EditablePlan[]; coup
 export interface Licence { id: string; subject: string; planId: string; startsAt: string; endsAt: string; source: string; note: string | null }
 export interface UserBilling { uid: string; plan: AccountPlan; passes: Licence[]; orders: Order[] }
 
+export interface OrgMember { uid: string; label: string; role: 'owner' | 'admin' | 'member'; joinedAt: string; pcs: number; devices: number; filesToday: number; bytesToday: number }
+export interface OrgView { org: { id: string; name: string; role: 'owner' | 'admin' | 'member' } | null; planId: string | null; members: OrgMember[]; filesToday: number; bytesToday: number }
+export interface OrgEvent { at: string; action: string; detail: string; by: string }
+
 export const MIB = 1024 * 1024;
 export const GIB = 1024 * MIB;
 
@@ -40,6 +44,18 @@ export function formatSize(bytes: number): string {
 export function limitText(value: number | null, kind: 'count' | 'bytes'): string { return value === null ? 'No limit' : kind === 'bytes' ? formatSize(value) : String(value); }
 /** How full a limit is, 0 to 100, or null when there is no limit. */
 export function percentUsed(used: number, limit: number | null): number | null { return limit === null || limit <= 0 ? null : Math.min(100, Math.round((used / limit) * 100)); }
+
+export const orgApi = {
+  get: (s: Session) => callJson<OrgView>(s, 'GET', '/v1/account/org'),
+  create: (s: Session, name: string) => callJson<OrgView>(s, 'POST', '/v1/account/org', { name }),
+  invite: (s: Session) => callJson<{ code: string; expiresAt: string }>(s, 'POST', '/v1/account/org/invite', {}),
+  join: (s: Session, code: string, label: string) => callJson<OrgView>(s, 'POST', '/v1/account/org/join', { code, label }),
+  remove: (s: Session, uid: string) => callJson<OrgView>(s, 'POST', `/v1/account/org/members/${encodeURIComponent(uid)}/remove`, {}),
+  role: (s: Session, uid: string, role: 'admin' | 'member') => callJson<OrgView>(s, 'POST', `/v1/account/org/members/${encodeURIComponent(uid)}/role`, { role }),
+  leave: (s: Session) => callJson<OrgView>(s, 'POST', '/v1/account/org/leave', {}),
+  destroy: (s: Session) => callJson<OrgView>(s, 'DELETE', '/v1/account/org'),
+  audit: (s: Session) => callJson<OrgEvent[]>(s, 'GET', '/v1/account/org/audit'),
+};
 
 export const billingApi = {
   plans: () => callJson<PlansView>(null, 'GET', '/v1/plans'),

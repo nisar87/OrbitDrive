@@ -297,11 +297,12 @@ app.MapPost("/v1/pairing-requests/{id}/claim", async (HttpContext context, strin
     var (pairing, device, deviceSecret, pc) = store.ClaimPairing(id.ToUpperInvariant(), request.Secret.ToUpperInvariant(), identity, DeviceNames.Clean(request.BrowserName), existing);
     if (billing.LimitsEnabled)
     {
-        var limits = billing.EntitlementFor(BillingStore.AccountSubject(identity.Uid)).Limits;
+        var limits = billing.EntitlementFor(billing.SubjectFor(identity.Uid)).Limits;
+        var pool = billing.PoolOf(identity.Uid);
         string? refusal = null;
-        if (limits.Pcs is { } maxPcs && pc.OwnerUid != identity.Uid && store.PcsOwnedBy(identity.Uid).Count >= maxPcs)
+        if (limits.Pcs is { } maxPcs && !pool.Contains(pc.OwnerUid) && pool.Sum(u => store.PcsOwnedBy(u).Count) >= maxPcs)
             refusal = $"Your plan allows {maxPcs} PC{(maxPcs == 1 ? "" : "s")} and you already have that many. Remove one or choose a bigger plan, then create a new code on the PC.";
-        else if (limits.Devices is { } maxDevices && !(existing is not null && existing.Id == device.Id) && store.DevicesForOwner(identity.Uid).Count(d => d.Id != device.Id) >= maxDevices)
+        else if (limits.Devices is { } maxDevices && !(existing is not null && existing.Id == device.Id) && pool.Sum(u => store.DevicesForOwner(u).Count(d => d.Id != device.Id)) >= maxDevices)
             refusal = $"Your plan allows {maxDevices} paired device{(maxDevices == 1 ? "" : "s")} and you already have that many. Remove one or choose a bigger plan, then create a new code on the PC.";
         if (refusal is not null) { store.AbandonClaim(pairing.Id); throw new ProtocolException(ErrorCode.LimitExceeded, refusal); }
     }
@@ -404,7 +405,7 @@ app.MapPost("/v1/pcs/{pcId}/uploads", async (HttpContext context, string pcId) =
     var device = AuthorizeBrowser(context, pcId);
     Throttle(context, "upload-start:" + device.Id, options.UploadStartsPerMinute, "Too many uploads were started. Wait a moment.");
     var request = await ReadJson<StartUploadRequest>(context);
-    if (billing.LimitsEnabled) billing.RequireTransfer(BillingStore.AccountSubject(device.OwnerUid), request.Size);
+    if (billing.LimitsEnabled) billing.RequireTransferFor(device.OwnerUid, request.Size);
     await WriteJson(context, await hub.Get(pcId).RequestAsync<UploadStarted>(Actions.StartUpload, request with { DeviceId = device.Id }, agentTimeout, context.RequestAborted), 201);
 });
 app.MapPost("/v1/pcs/{pcId}/upload-status", async (HttpContext context, string pcId) =>
@@ -422,7 +423,7 @@ app.MapPost("/v1/pcs/{pcId}/upload-finish", async (HttpContext context, string p
     var finished = await hub.Get(pcId).RequestAsync<UploadStatus>(Actions.FinishUpload, request with { DeviceId = device.Id }, TimeSpan.FromSeconds(options.PrepareTimeoutSeconds), context.RequestAborted);
     if (finished.State == "committed" && countedUploads.TryAdd(finished.UploadId, DateTimeOffset.UtcNow))
     {
-        billing.RecordTransfer(BillingStore.AccountSubject(device.OwnerUid), 0, fileCompleted: true);    // a file counts once, when it is saved on the PC
+        billing.RecordTransferFor(device.OwnerUid, 0, fileCompleted: true);    // a file counts once, when it is saved on the PC
         if (countedUploads.Count > 10_000) foreach (var old in countedUploads.Where(e => DateTimeOffset.UtcNow - e.Value > TimeSpan.FromDays(1)).Select(e => e.Key).ToList()) countedUploads.TryRemove(old, out _);
     }
     await WriteJson(context, finished);
@@ -489,7 +490,7 @@ app.MapPut("/v1/pcs/{pcId}/uploads/{uploadId}/chunk", async (HttpContext context
     finally
     {
         metrics.PieceRelayed(device.OwnerUid, length, stored);
-        if (stored) billing.RecordTransfer(BillingStore.AccountSubject(device.OwnerUid), length, fileCompleted: false);
+        if (stored) billing.RecordTransferFor(device.OwnerUid, length, fileCompleted: false);
         streams.Remove(stream, success);
         if (!success && agentTask is not null)
         {
@@ -661,7 +662,7 @@ app.MapMethods("/v1/downloads/{capability}", ["GET", "HEAD"], async (HttpContext
         throw new ProtocolException(ErrorCode.LimitExceeded, "This download link already has the most transfers it allows running. Wait for one to finish.");
     }
     metrics.RequireRelayAllowance(session.OwnerUid);
-    if (billing.LimitsEnabled && !session.IsPreview) billing.RequireTransfer(BillingStore.AccountSubject(session.OwnerUid), session.Size);
+    if (billing.LimitsEnabled && !session.IsPreview) billing.RequireTransferFor(session.OwnerUid, session.Size);
     var (stream, uplinkToken) = streams.Create(session.OwnerUid, session.IsPreview);
     using var cancel = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, session.Revoked.Token);
     var success = false;
@@ -695,7 +696,7 @@ app.MapMethods("/v1/downloads/{capability}", ["GET", "HEAD"], async (HttpContext
         if (!session.IsPreview)
         {
             metrics.Downloaded(session.OwnerUid, relayed, success);
-            billing.RecordTransfer(BillingStore.AccountSubject(session.OwnerUid), relayed, session.TryCountAsFile());
+            billing.RecordTransferFor(session.OwnerUid, relayed, session.TryCountAsFile());
         }
         streams.Remove(stream, success);
         if (!success && hub.IsOnline(session.PcId))
@@ -990,6 +991,93 @@ app.MapPost("/v1/account/orders/{id}/cancel", async (HttpContext context, string
 {
     var subject = SignedInSubject(context);
     await WriteBilling(context, billing.CancelOrder(subject, id));
+});
+
+// ---- Organisations: an Office owner invites people; they share the Office plan and its limits. Admins see members, counts and who-did-what, never file or folder names.
+
+OrgView OrgViewFor(string uid)
+{
+    if (billing.OrgOf(uid) is not { } mine) return new OrgView(null, null, [], 0, 0);
+    var (org, me) = mine;
+    var admin = me.Role is "owner" or "admin";
+    var members = billing.MembersOf(org.Id, uid).Select(m =>
+    {
+        var (files, bytes) = admin ? billing.UsageToday("acct:" + m.Uid) : (0, 0L);
+        return new OrgMemberView(m.Uid == uid || admin ? m.Uid : "", m.Label, m.Role, m.JoinedAt, admin ? store.PcsOwnedBy(m.Uid).Count : 0, admin ? store.DevicesForOwner(m.Uid).Count : 0, files, bytes);
+    }).ToList();
+    var (poolFiles, poolBytes) = billing.UsageToday("org:" + org.Id);
+    return new OrgView(new OrgInfo(org.Id, org.Name, me.Role), billing.EntitlementFor("org:" + org.Id).PlanId, members, poolFiles, poolBytes);
+}
+
+string OrgIdOf(string uid) => billing.OrgOf(uid)?.Org.Id ?? throw new ProtocolException(ErrorCode.NotFound, "You are not in an organisation.");
+
+app.MapGet("/v1/account/org", (HttpContext context) =>
+{
+    var uid = SignedInSubject(context)["acct:".Length..];
+    return WriteBilling(context, OrgViewFor(uid));
+});
+
+app.MapPost("/v1/account/org", async (HttpContext context) =>
+{
+    var uid = SignedInSubject(context)["acct:".Length..];
+    Throttle(context, "org:" + uid, 10, "Too many requests. Wait a moment.");
+    var request = await ReadBilling<OrgCreateRequest>(context);
+    billing.CreateOrg(uid, request.Name);
+    await WriteBilling(context, OrgViewFor(uid), 201);
+});
+
+app.MapPost("/v1/account/org/invite", async (HttpContext context) =>
+{
+    var uid = SignedInSubject(context)["acct:".Length..];
+    Throttle(context, "orginvite:" + uid, 20, "Too many invitations. Wait a moment.");
+    var invite = billing.Invite(OrgIdOf(uid), uid);
+    await WriteBilling(context, new OrgInviteView(invite.Code, invite.ExpiresAt), 201);
+});
+
+app.MapPost("/v1/account/org/join", async (HttpContext context) =>
+{
+    var uid = SignedInSubject(context)["acct:".Length..];
+    Throttle(context, "orgjoin:" + uid, 10, "Too many attempts. Wait a moment.");
+    var request = await ReadBilling<OrgJoinRequest>(context);
+    billing.Join(uid, request.Code, request.Label);
+    await WriteBilling(context, OrgViewFor(uid));
+});
+
+app.MapPost("/v1/account/org/members/{target}/remove", async (HttpContext context, string target) =>
+{
+    var uid = SignedInSubject(context)["acct:".Length..];
+    billing.RemoveMember(OrgIdOf(uid), uid, CleanUid(target));
+    await WriteBilling(context, OrgViewFor(uid));
+});
+
+app.MapPost("/v1/account/org/members/{target}/role", async (HttpContext context, string target) =>
+{
+    var uid = SignedInSubject(context)["acct:".Length..];
+    var request = await ReadBilling<OrgRoleRequest>(context);
+    billing.SetRole(OrgIdOf(uid), uid, CleanUid(target), request.Role);
+    await WriteBilling(context, OrgViewFor(uid));
+});
+
+app.MapPost("/v1/account/org/leave", async (HttpContext context) =>
+{
+    var uid = SignedInSubject(context)["acct:".Length..];
+    billing.Leave(uid);
+    await WriteBilling(context, OrgViewFor(uid));
+});
+
+app.MapDelete("/v1/account/org", async (HttpContext context) =>
+{
+    var identity = Authenticate(context);
+    RequireRecentSignIn(identity, "Sign out and sign in again before deleting the organisation.");
+    billing.DeleteOrg(OrgIdOf(identity.Uid), identity.Uid);
+    await WriteBilling(context, OrgViewFor(identity.Uid));
+});
+
+app.MapGet("/v1/account/org/audit", (HttpContext context) =>
+{
+    var uid = SignedInSubject(context)["acct:".Length..];
+    var events = billing.OrgAudit(OrgIdOf(uid), uid).Select(e => new OrgEventView(e.At, e.Action, e.Detail, e.By == uid ? "you" : billing.OrgOf(uid) is { } o && billing.MembersOf(o.Org.Id, uid).FirstOrDefault(m => m.Uid == e.By)?.Label is { } l ? l : "someone")).ToList();
+    return WriteBilling(context, events);
 });
 
 app.MapGet("/v1/admin/billing", (HttpContext context) =>

@@ -3,6 +3,7 @@ import { api, ApiError, type Session } from '../../api';
 import type { AccountSummary } from '../../protocol';
 import { ConfirmButton } from '../explorer/Explorer';
 import { MyPlan } from '../billing/MyPlan';
+import { OrgPanel } from '../billing/OrgPanel';
 
 const RETENTION = [[0, 'Only while it is running'], [1, '1 day'], [7, '7 days'], [30, '30 days']] as const;
 export const DELETE_PHRASE = 'delete my account';
@@ -29,6 +30,7 @@ export function AccountPanel({ session, onSummary, onAuthLost, onSignedOut }: Pr
   return (
     <>
     <MyPlan session={session} onAuthLost={onAuthLost} />
+    <OrgPanel session={session} onAuthLost={onAuthLost} />
     <article className="panel" aria-labelledby="owner-title" data-testid="account-panel">
       <h2 id="owner-title">Your account on the service</h2>
       <p className="hint">The relay keeps only the links between your browsers and your PCs. It never keeps your files, folder names or file names.</p>

@@ -68,6 +68,14 @@ public sealed record Order(string Id, string Subject, string PlanId, int Months,
 
 public sealed record Quote(string PlanId, string PlanName, int Months, decimal ListUsd, decimal DueUsd, int ListPkr, int DuePkr, string? CouponCode, decimal DiscountUsd);
 
+/// <summary>An organisation (a company or office) sharing the owner's Office pass. Members keep their own sign-in; the owner and admins manage who belongs.</summary>
+public sealed record Organisation(string Id, string Name, string OwnerUid, DateTimeOffset CreatedAt);
+/// <summary>Role is owner, admin or member. Label is how the organisation refers to the person (a name they type when joining), never read from their files.</summary>
+public sealed record OrgMember(string OrgId, string Uid, string Role, DateTimeOffset JoinedAt, string Label);
+public sealed record OrgInvite(string Code, string OrgId, DateTimeOffset ExpiresAt);
+/// <summary>What an organisation's admins did: who, what, when. Never file or folder names.</summary>
+public sealed record OrgEvent(string Id, string OrgId, DateTimeOffset At, string By, string Action, string Detail);
+
 /// <summary>What the gateway tells a caller about today's allowance (counts only, never names).</summary>
 public sealed record Allowance(string PlanId, string PlanName, EntitlementState State, DateTimeOffset? EndsAt, PlanLimits Limits, int FilesToday, long BytesToday, DateTimeOffset ResetsAt);
 
@@ -88,6 +96,10 @@ public sealed class BillingStore : IDisposable
     private readonly Dictionary<string, (int Files, long Bytes)> _usage = [];     // key: subject|day
     private readonly Dictionary<string, Coupon> _coupons = [];
     private readonly Dictionary<string, Order> _orders = [];
+    private readonly Dictionary<string, Organisation> _orgs = [];
+    private readonly Dictionary<string, OrgMember> _members = [];                 // key: orgId|uid
+    private readonly Dictionary<string, OrgInvite> _invites = [];
+    private readonly Dictionary<string, List<OrgEvent>> _orgEvents = [];
     private readonly Dictionary<string, string?> _dirty = [];
     private IReadOnlyList<Plan> _plans = PlanCatalog.Defaults();
     private ExchangeRate _rate = PlanCatalog.DefaultRate;
@@ -114,6 +126,10 @@ public sealed class BillingStore : IDisposable
             case "licence" when JsonSerializer.Deserialize<Licence>(json) is { } licence: _licences[licence.Id] = licence; break;
             case "config" when parts.Length == 2 && parts[1] == "instructions" && JsonSerializer.Deserialize<string>(json) is { } text: _instructions = text; break;
             case "config" when parts.Length == 2 && parts[1] == "limits" && JsonSerializer.Deserialize<bool>(json) is var enabled: _limitsEnabled = enabled; break;
+            case "org" when JsonSerializer.Deserialize<Organisation>(json) is { } org: _orgs[org.Id] = org; break;
+            case "orgmember" when JsonSerializer.Deserialize<OrgMember>(json) is { } member: _members[member.OrgId + "|" + member.Uid] = member; break;
+            case "orginvite" when JsonSerializer.Deserialize<OrgInvite>(json) is { } invite: _invites[invite.Code] = invite; break;
+            case "orgevent" when JsonSerializer.Deserialize<OrgEvent>(json) is { } evt: (_orgEvents.TryGetValue(evt.OrgId, out var list) ? list : _orgEvents[evt.OrgId] = []).Add(evt); break;
             case "coupon" when JsonSerializer.Deserialize<Coupon>(json) is { } coupon: _coupons[coupon.Code] = coupon; break;
             case "order" when JsonSerializer.Deserialize<Order>(json) is { } order: _orders[order.Id] = order; break;
             case "usage" when parts.Length == 3 && JsonSerializer.Deserialize<UsageDay>(json) is { } day: _usage[parts[1] + "|" + parts[2]] = (day.Files, day.Bytes); break;
@@ -179,7 +195,11 @@ public sealed class BillingStore : IDisposable
 
     public Entitlement EntitlementFor(string subject)
     {
-        lock (_gate) return Entitlements.Resolve(_licences.Values.Where(l => l.Subject == subject), _plans, _time.GetUtcNow());
+        lock (_gate)
+        {
+            if (subject.StartsWith("org:", StringComparison.Ordinal) && _orgs.TryGetValue(subject[4..], out var org)) subject = AccountSubject(org.OwnerUid);   // an organisation has its owner's pass
+            return Entitlements.Resolve(_licences.Values.Where(l => l.Subject == subject), _plans, _time.GetUtcNow());
+        }
     }
 
     public IReadOnlyList<Licence> LicencesFor(string subject)
@@ -284,6 +304,10 @@ public sealed class BillingStore : IDisposable
     {
         lock (_gate)
         {
+            if (subject.StartsWith("acct:", StringComparison.Ordinal) && MembershipLocked(subject[5..]) is { } mine)
+            {
+                if (mine.Role == "owner") RemoveOrgLocked(mine.OrgId); else DropMember(mine);
+            }
             foreach (var id in _licences.Where(l => l.Value.Subject == subject).Select(l => l.Key).ToList()) { _licences.Remove(id); Mark("licence/" + id, null); }
             foreach (var id in _orders.Where(o => o.Value.Subject == subject).Select(o => o.Key).ToList()) { _orders.Remove(id); Mark("order/" + id, null); }
             foreach (var key in _usage.Keys.Where(k => k.StartsWith(subject + "|", StringComparison.Ordinal)).ToList())
@@ -438,6 +462,205 @@ public sealed class BillingStore : IDisposable
         Mark("order/" + order.Id, JsonSerializer.Serialize(closed));
         return closed;
     }
+
+    // ---- organisations -------------------------------------------------------------------------------------------------------------------------
+
+    private const int MaxMembers = 100, MaxInvites = 20, MaxEvents = 200;
+    private static readonly TimeSpan InviteLife = TimeSpan.FromDays(7);
+
+    private OrgMember? MembershipLocked(string uid) => _members.Values.FirstOrDefault(m => m.Uid == uid);
+    private static ProtocolException Deny(string text) => new(ErrorCode.Forbidden, text);
+
+    public (Organisation Org, OrgMember Me)? OrgOf(string uid)
+    {
+        lock (_gate) return MembershipLocked(uid) is { } me && _orgs.TryGetValue(me.OrgId, out var org) ? (org, me) : null;
+    }
+
+    /// <summary>The billing subject for a person: their organisation when they belong to one whose owner still has an Office pass (or its grace), otherwise themselves.</summary>
+    public string SubjectFor(string uid)
+    {
+        lock (_gate)
+        {
+            if (MembershipLocked(uid) is { } me && _orgs.TryGetValue(me.OrgId, out var org))
+            {
+                var e = EntitlementFor(AccountSubject(org.OwnerUid));
+                if (e.PlanId == "office" && e.State != EntitlementState.Free) return "org:" + org.Id;
+            }
+            return AccountSubject(uid);
+        }
+    }
+
+    /// <summary>Everyone whose PCs and devices count together with this person's: the members of their organisation, or just them.</summary>
+    public IReadOnlyList<string> PoolOf(string uid)
+    {
+        lock (_gate)
+        {
+            if (SubjectFor(uid) is { } s && s.StartsWith("org:", StringComparison.Ordinal)) return [.. _members.Values.Where(m => m.OrgId == s[4..]).Select(m => m.Uid)];
+            return [uid];
+        }
+    }
+
+    public Organisation CreateOrg(string ownerUid, string name)
+    {
+        name = name.Trim();
+        if (name.Length is < 2 or > 60 || name.Any(char.IsControl)) throw new ProtocolException(ErrorCode.InvalidRequest, "Give the organisation a name of 2 to 60 characters.");
+        lock (_gate)
+        {
+            if (MembershipLocked(ownerUid) is not null) throw new ProtocolException(ErrorCode.Conflict, "You already belong to an organisation.");
+            var plan = EntitlementFor(AccountSubject(ownerUid));
+            if (plan.PlanId != "office" || plan.State == EntitlementState.Free) throw new ProtocolException(ErrorCode.Forbidden, "Organisations come with the Office plan.");
+            var org = new Organisation(Guid.NewGuid().ToString("N")[..12], name, ownerUid, _time.GetUtcNow());
+            _orgs[org.Id] = org; Mark("org/" + org.Id, JsonSerializer.Serialize(org));
+            AddMember(org.Id, ownerUid, "owner", "Owner");
+            Audit(org.Id, ownerUid, "organisation-created", name);
+            return org;
+        }
+    }
+
+    private void AddMember(string orgId, string uid, string role, string label)
+    {
+        var member = new OrgMember(orgId, uid, role, _time.GetUtcNow(), label);
+        _members[orgId + "|" + uid] = member;
+        Mark($"orgmember/{orgId}/{uid}", JsonSerializer.Serialize(member));
+    }
+
+    private void Audit(string orgId, string by, string action, string detail)
+    {
+        var evt = new OrgEvent(Guid.NewGuid().ToString("N")[..12], orgId, _time.GetUtcNow(), by, action, detail.Length > 200 ? detail[..200] : detail);
+        if (!_orgEvents.TryGetValue(orgId, out var list)) _orgEvents[orgId] = list = [];
+        list.Add(evt);
+        Mark($"orgevent/{orgId}/{evt.Id}", JsonSerializer.Serialize(evt));
+        while (list.Count > MaxEvents) { var old = list[0]; list.RemoveAt(0); Mark($"orgevent/{orgId}/{old.Id}", null); }
+    }
+
+    public IReadOnlyList<OrgEvent> OrgAudit(string orgId, string byUid)
+    {
+        lock (_gate)
+        {
+            RequireAdmin(orgId, byUid);
+            return [.. (_orgEvents.GetValueOrDefault(orgId) ?? []).OrderByDescending(e => e.At).Take(100)];
+        }
+    }
+
+    private OrgMember RequireAdmin(string orgId, string uid) =>
+        _members.TryGetValue(orgId + "|" + uid, out var m) && m.Role is ("owner" or "admin") ? m : throw Deny("Only an organisation owner or admin can do that.");
+
+    public IReadOnlyList<OrgMember> MembersOf(string orgId, string byUid)
+    {
+        lock (_gate)
+        {
+            if (!_members.ContainsKey(orgId + "|" + byUid)) throw Deny("You are not in that organisation.");
+            return [.. _members.Values.Where(m => m.OrgId == orgId).OrderBy(m => m.JoinedAt)];
+        }
+    }
+
+    public OrgInvite Invite(string orgId, string byUid)
+    {
+        lock (_gate)
+        {
+            RequireAdmin(orgId, byUid);
+            var now = _time.GetUtcNow();
+            foreach (var old in _invites.Values.Where(i => i.ExpiresAt <= now).Select(i => i.Code).ToList()) { _invites.Remove(old); Mark("orginvite/" + old, null); }
+            if (_invites.Values.Count(i => i.OrgId == orgId) >= MaxInvites) throw new ProtocolException(ErrorCode.LimitExceeded, "There are already many unused invitations. Wait for them to expire.");
+            if (_members.Values.Count(m => m.OrgId == orgId) >= MaxMembers) throw new ProtocolException(ErrorCode.LimitExceeded, "The organisation has the most members it can have.");
+            var invite = new OrgInvite(Secrets.Code(10), orgId, now + InviteLife);
+            _invites[invite.Code] = invite; Mark("orginvite/" + invite.Code, JsonSerializer.Serialize(invite));
+            Audit(orgId, byUid, "invitation-created", "single-use code, 7 days");
+            return invite;
+        }
+    }
+
+    /// <summary>Joins with a single-use code. A person can be in one organisation at a time.</summary>
+    public Organisation Join(string uid, string code, string label)
+    {
+        code = (code ?? "").Trim().ToUpperInvariant();
+        label = label.Trim();
+        if (label.Length is < 1 or > 40 || label.Any(char.IsControl)) throw new ProtocolException(ErrorCode.InvalidRequest, "Enter the name your organisation knows you by (up to 40 characters).");
+        lock (_gate)
+        {
+            if (MembershipLocked(uid) is not null) throw new ProtocolException(ErrorCode.Conflict, "You already belong to an organisation. Leave it first.");
+            if (!_invites.TryGetValue(code, out var invite) || invite.ExpiresAt <= _time.GetUtcNow() || !_orgs.TryGetValue(invite.OrgId, out var org))
+                throw new ProtocolException(ErrorCode.InvalidRequest, "That invitation is not valid or has expired.");
+            if (_members.Values.Count(m => m.OrgId == org.Id) >= MaxMembers) throw new ProtocolException(ErrorCode.LimitExceeded, "The organisation has the most members it can have.");
+            _invites.Remove(code); Mark("orginvite/" + code, null);
+            AddMember(org.Id, uid, "member", label);
+            Audit(org.Id, uid, "member-joined", label);
+            return org;
+        }
+    }
+
+    public void RemoveMember(string orgId, string byUid, string targetUid)
+    {
+        lock (_gate)
+        {
+            var by = RequireAdmin(orgId, byUid);
+            if (!_members.TryGetValue(orgId + "|" + targetUid, out var target)) throw new ProtocolException(ErrorCode.NotFound, "That person is not in the organisation.");
+            if (target.Role == "owner") throw Deny("The owner cannot be removed.");
+            if (target.Role == "admin" && by.Role != "owner") throw Deny("Only the owner can remove an admin.");
+            DropMember(target);
+            Audit(orgId, byUid, "member-removed", target.Label);
+        }
+    }
+
+    public void Leave(string uid)
+    {
+        lock (_gate)
+        {
+            var me = MembershipLocked(uid) ?? throw new ProtocolException(ErrorCode.NotFound, "You are not in an organisation.");
+            if (me.Role == "owner") throw Deny("The owner cannot leave. Delete the organisation instead.");
+            DropMember(me);
+            Audit(me.OrgId, uid, "member-left", me.Label);
+        }
+    }
+
+    public void SetRole(string orgId, string byUid, string targetUid, string role)
+    {
+        lock (_gate)
+        {
+            var by = RequireAdmin(orgId, byUid);
+            if (by.Role != "owner") throw Deny("Only the owner can change roles.");
+            if (role is not ("admin" or "member")) throw new ProtocolException(ErrorCode.InvalidRequest, "A role is admin or member.");
+            if (!_members.TryGetValue(orgId + "|" + targetUid, out var target) || target.Role == "owner") throw new ProtocolException(ErrorCode.NotFound, "That person is not in the organisation.");
+            var changed = target with { Role = role };
+            _members[orgId + "|" + targetUid] = changed;
+            Mark($"orgmember/{orgId}/{targetUid}", JsonSerializer.Serialize(changed));
+            Audit(orgId, byUid, "role-changed", $"{target.Label} is now {role}");
+        }
+    }
+
+    private void DropMember(OrgMember member)
+    {
+        _members.Remove(member.OrgId + "|" + member.Uid);
+        Mark($"orgmember/{member.OrgId}/{member.Uid}", null);
+    }
+
+    /// <summary>Deletes an organisation and everything kept about it (the owner chose to, or the owner's account was deleted).</summary>
+    public void DeleteOrg(string orgId, string byUid)
+    {
+        lock (_gate)
+        {
+            if (!_orgs.TryGetValue(orgId, out var org) || org.OwnerUid != byUid) throw Deny("Only the owner can delete the organisation.");
+            RemoveOrgLocked(orgId);
+        }
+    }
+
+    private void RemoveOrgLocked(string orgId)
+    {
+        foreach (var m in _members.Values.Where(m => m.OrgId == orgId).ToList()) DropMember(m);
+        foreach (var i in _invites.Values.Where(i => i.OrgId == orgId).Select(i => i.Code).ToList()) { _invites.Remove(i); Mark("orginvite/" + i, null); }
+        if (_orgEvents.Remove(orgId, out var events)) foreach (var e in events) Mark($"orgevent/{orgId}/{e.Id}", null);
+        if (_orgs.Remove(orgId)) Mark("org/" + orgId, null);
+    }
+
+    /// <summary>Records usage for the pool a person belongs to and, always, for the person (so admins can see each member's own counts).</summary>
+    public void RecordTransferFor(string uid, long bytes, bool fileCompleted)
+    {
+        var subject = SubjectFor(uid);
+        RecordTransfer(subject, bytes, fileCompleted);
+        if (subject != AccountSubject(uid)) RecordTransfer(AccountSubject(uid), bytes, fileCompleted);
+    }
+
+    public void RequireTransferFor(string uid, long size) => RequireTransfer(SubjectFor(uid), size);
 
     // ---- persistence ---------------------------------------------------------------------------------------------------------------------------
 

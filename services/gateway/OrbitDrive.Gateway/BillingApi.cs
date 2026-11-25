@@ -46,3 +46,13 @@ public static class BillingViews
         return new AccountPlanView(a.PlanId, a.PlanName, a.State.ToString().ToLowerInvariant(), e.EndsAt, e.GraceEndsAt, Entitlements.DaysLeft(e, now), a.Limits, a.FilesToday, a.BytesToday, a.ResetsAt, pcs, devices, billing.LimitsEnabled, billing.PaymentInstructions);
     }
 }
+
+public sealed record OrgInfo(string Id, string Name, string Role);
+public sealed record OrgMemberView(string Uid, string Label, string Role, DateTimeOffset JoinedAt, int Pcs, int Devices, int FilesToday, long BytesToday);
+/// <summary>What a signed-in person sees of their organisation. Counts for individual members are shown to owners and admins only.</summary>
+public sealed record OrgView(OrgInfo? Org, string? PlanId, IReadOnlyList<OrgMemberView> Members, int FilesToday, long BytesToday);
+public sealed record OrgInviteView(string Code, DateTimeOffset ExpiresAt);
+public sealed record OrgEventView(DateTimeOffset At, string Action, string Detail, string By);
+public sealed record OrgCreateRequest(string Name);
+public sealed record OrgJoinRequest(string Code, string Label);
+public sealed record OrgRoleRequest(string Role);

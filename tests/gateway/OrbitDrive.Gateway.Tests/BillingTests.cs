@@ -369,6 +369,115 @@ public class BillingTests
         Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.SetPaymentInstructions("bell\a")).Code);
     }
 
+    private static BillingStore OfficeOwner(IBillingPersistence p, FakeTime time, out Organisation org)
+    {
+        var billing = Store(p, time);
+        billing.AddPass("acct:boss", "office", 1, "manual");
+        org = billing.CreateOrg("boss", "Acme Traders");
+        return billing;
+    }
+
+    [Fact]
+    public void Only_an_Office_account_can_create_an_organisation_and_only_one()
+    {
+        var billing = Store(new MemoryBillingPersistence(), new FakeTime());
+        Assert.Equal(ErrorCode.Forbidden, Refusal(() => billing.CreateOrg("free-user", "Acme")).Code);
+        billing.AddPass("acct:plusser", "plus", 1, "manual");
+        Assert.Equal(ErrorCode.Forbidden, Refusal(() => billing.CreateOrg("plusser", "Acme")).Code);
+        billing.AddPass("acct:boss", "office", 1, "manual");
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.CreateOrg("boss", "x")).Code);
+        billing.CreateOrg("boss", "Acme Traders");
+        Assert.Equal(ErrorCode.Conflict, Refusal(() => billing.CreateOrg("boss", "Second")).Code);
+    }
+
+    [Fact]
+    public void Members_join_with_a_single_use_code_and_share_the_organisations_office_plan()
+    {
+        var time = new FakeTime();
+        var billing = OfficeOwner(new MemoryBillingPersistence(), time, out var org);
+        Assert.Equal("acct:ali", billing.SubjectFor("ali"));                                            // not a member yet: their own (free) account
+        var invite = billing.Invite(org.Id, "boss");
+        billing.Join("ali", invite.Code.ToLowerInvariant(), "Ali, accounts");
+        Assert.Equal("org:" + org.Id, billing.SubjectFor("ali"));
+        Assert.Equal("office", billing.EntitlementFor(billing.SubjectFor("ali")).PlanId);
+        Assert.Equal(["boss", "ali"], billing.PoolOf("ali").OrderByDescending(x => x == "boss").ToArray());
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.Join("bo", invite.Code, "Bo")).Code);   // codes work once
+        Assert.Equal(ErrorCode.Conflict, Refusal(() => billing.Join("ali", billing.Invite(org.Id, "boss").Code, "Ali again")).Code);
+    }
+
+    [Fact]
+    public void Usage_is_pooled_for_the_organisation_and_each_member_keeps_their_own_count()
+    {
+        var billing = OfficeOwner(new MemoryBillingPersistence(), new FakeTime(), out var org);
+        billing.Join("ali", billing.Invite(org.Id, "boss").Code, "Ali");
+        billing.Join("sana", billing.Invite(org.Id, "boss").Code, "Sana");
+        billing.RecordTransferFor("ali", 1000, true);
+        billing.RecordTransferFor("sana", 500, true);
+        Assert.Equal((2, 1500L), billing.UsageToday("org:" + org.Id));
+        Assert.Equal((1, 1000L), billing.UsageToday("acct:ali"));
+        Assert.Equal((1, 500L), billing.UsageToday("acct:sana"));
+        billing.RequireTransferFor("ali", 2 * PlanCatalog.GiB);                                         // Office limits apply to members
+        Assert.Equal(ErrorCode.LimitExceeded, Refusal(() => billing.RequireTransferFor("ali", 2 * PlanCatalog.GiB + 1)).Code);
+    }
+
+    [Fact]
+    public void Admins_manage_members_but_members_and_outsiders_cannot_and_the_owner_stays()
+    {
+        var billing = OfficeOwner(new MemoryBillingPersistence(), new FakeTime(), out var org);
+        billing.Join("ali", billing.Invite(org.Id, "boss").Code, "Ali");
+        billing.Join("sana", billing.Invite(org.Id, "boss").Code, "Sana");
+        Assert.Equal(ErrorCode.Forbidden, Refusal(() => billing.Invite(org.Id, "ali")).Code);
+        Assert.Equal(ErrorCode.Forbidden, Refusal(() => billing.Invite(org.Id, "stranger")).Code);
+        Assert.Equal(ErrorCode.Forbidden, Refusal(() => billing.MembersOf(org.Id, "stranger")).Code);
+        Assert.Equal(ErrorCode.Forbidden, Refusal(() => billing.RemoveMember(org.Id, "ali", "sana")).Code);
+        Assert.Equal(ErrorCode.Forbidden, Refusal(() => billing.SetRole(org.Id, "ali", "sana", "admin")).Code);
+        billing.SetRole(org.Id, "boss", "ali", "admin");
+        billing.RemoveMember(org.Id, "ali", "sana");                                                    // an admin can remove a member
+        Assert.Equal("acct:sana", billing.SubjectFor("sana"));
+        Assert.Equal(ErrorCode.Forbidden, Refusal(() => billing.RemoveMember(org.Id, "ali", "boss")).Code);   // never the owner
+        Assert.Equal(ErrorCode.Forbidden, Refusal(() => billing.Leave("boss")).Code);
+        billing.Leave("ali");
+        Assert.Equal(["boss"], billing.MembersOf(org.Id, "boss").Select(m => m.Uid));
+        var actions = billing.OrgAudit(org.Id, "boss").Select(e => e.Action).ToList();
+        Assert.True(actions.Contains("member-removed") && actions.Contains("role-changed") && actions.Contains("member-left"));
+        Assert.Equal(ErrorCode.Forbidden, Refusal(() => billing.OrgAudit(org.Id, "ali")).Code);
+    }
+
+    [Fact]
+    public void When_the_owners_office_pass_ends_members_fall_back_to_their_own_free_accounts()
+    {
+        var time = new FakeTime();
+        var billing = OfficeOwner(new MemoryBillingPersistence(), time, out var org);
+        billing.Join("ali", billing.Invite(org.Id, "boss").Code, "Ali");
+        time.Now = time.Now.AddMonths(1).AddDays(2);                                                    // inside the grace days: still Office
+        Assert.Equal("org:" + org.Id, billing.SubjectFor("ali"));
+        time.Now = time.Now.AddDays(2);
+        Assert.Equal("acct:ali", billing.SubjectFor("ali"));
+        Assert.Equal("free", billing.EntitlementFor(billing.SubjectFor("ali")).PlanId);
+        Assert.Equal(["ali"], billing.PoolOf("ali"));
+    }
+
+    [Fact]
+    public void Invitations_expire_and_organisations_survive_a_restart_and_vanish_with_their_owner()
+    {
+        var persistence = new MemoryBillingPersistence();
+        var time = new FakeTime();
+        var first = OfficeOwner(persistence, time, out var org);
+        var stale = first.Invite(org.Id, "boss");
+        first.Join("ali", first.Invite(org.Id, "boss").Code, "Ali");
+        first.Flush();
+        var second = Store(persistence, time);
+        Assert.Equal("org:" + org.Id, second.SubjectFor("ali"));
+        Assert.Equal(2, second.MembersOf(org.Id, "boss").Count);
+        time.Now = time.Now.AddDays(8);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => second.Join("bo", stale.Code, "Bo")).Code);
+        second.Forget("acct:boss");
+        Assert.Null(second.OrgOf("ali"));
+        Assert.Equal("acct:ali", second.SubjectFor("ali"));
+        second.Flush();
+        Assert.Empty(persistence.LoadAll().Where(e => e.Key.StartsWith("org", StringComparison.Ordinal)));
+    }
+
     private sealed class FlakyPersistence(MemoryBillingPersistence inner) : IBillingPersistence
     {
         public bool FailNext { get; set; }
