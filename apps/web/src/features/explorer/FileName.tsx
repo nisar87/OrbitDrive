@@ -1,16 +1,16 @@
-/** Splits a file name into the part before the last dot and the extension (with its dot). A leading dot or a trailing dot is not an extension. */
-export function splitName(name: string): { stem: string; extension: string } {
-  const dot = name.lastIndexOf('.');
-  if (dot <= 0 || dot === name.length - 1) return { stem: name, extension: '' };
-  return { stem: name.slice(0, dot), extension: name.slice(dot) };
+/** Characters that change the drawing order of text around them: embeddings, overrides and isolates. A name that contains them can be drawn back to front. */
+const BIDI_CONTROLS = /[‪-‮⁦-⁩]/g;
+
+/** The name as it is drawn: the same characters, without the controls that could make "photo‮gpj.exe" read as "photoexe.jpg". The real name is unchanged elsewhere. */
+export function displayName(name: string): string {
+  return name.replace(BIDI_CONTROLS, '');
 }
 
 /**
- * A file name that cannot be made to look like another type. The name is isolated from the text around it (bdi), and the extension is isolated from the name
- * and always drawn on the right in its own left-to-right run, so a right-to-left name such as "اردو فائل.txt" is not shown as "txt.اردو فائل" (F-025).
+ * A file name drawn the way Windows Explorer draws it: isolated from the text around it and laid out left to right as a whole, so the extension is always the
+ * last thing on the right. Without this, a right-to-left name such as "اردو فائل.txt" is drawn as "txt.اردو فائل" because its first letter sets the direction (F-025).
+ * The letters of an Arabic or Urdu word still run right to left inside their own run, as they should.
  */
 export function FileName({ name }: { name: string }) {
-  const { stem, extension } = splitName(name);
-  if (!extension) return <bdi>{name}</bdi>;
-  return <bdi className="file-name"><bdi>{stem}</bdi><bdi dir="ltr" className="file-ext">{extension}</bdi></bdi>;
+  return <bdi dir="ltr" className="file-name">{displayName(name)}</bdi>;
 }

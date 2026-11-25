@@ -1,25 +1,15 @@
 import { describe, expect, test } from 'vitest';
-import { splitName } from './features/explorer/FileName';
+import { displayName } from './features/explorer/FileName';
 import { needsFreshSignIn, DELETE_PHRASE } from './features/account/DataControls';
 import { ApiError } from './api';
 
 describe('file names (F-025)', () => {
-  test('the extension is split from the stem, also for right-to-left names', () => {
-    expect(splitName('report.pdf')).toEqual({ stem: 'report', extension: '.pdf' });
-    expect(splitName('اردو فائل.txt')).toEqual({ stem: 'اردو فائل', extension: '.txt' });
-    expect(splitName('archive.tar.gz')).toEqual({ stem: 'archive.tar', extension: '.gz' });
+  test('ordinary names are drawn unchanged, right-to-left names too', () => {
+    for (const name of ['report.pdf', 'اردو فائل.txt', 'archive.tar.gz', '.gitignore', 'a b.c d', '文件.docx', '']) expect(displayName(name)).toBe(name);
   });
-  test('a leading dot, a trailing dot and no dot are not extensions', () => {
-    expect(splitName('.gitignore')).toEqual({ stem: '.gitignore', extension: '' });
-    expect(splitName('notes.')).toEqual({ stem: 'notes.', extension: '' });
-    expect(splitName('README')).toEqual({ stem: 'README', extension: '' });
-    expect(splitName('')).toEqual({ stem: '', extension: '' });
-  });
-  test('nothing is lost or reordered: stem plus extension is always the original name', () => {
-    for (const name of ['a.b.c', '.x.y', 'x..', 'مستند.pdf', 'a b.c d', '...']) {
-      const { stem, extension } = splitName(name);
-      expect(stem + extension).toBe(name);
-    }
+  test('characters that reorder text are not drawn, so a name cannot be made to look like another type', () => {
+    expect(displayName('photo\u202Egpj.exe')).toBe('photogpj.exe');
+    expect(displayName('a\u2066b\u2069c\u202Ad\u202Ce')).toBe('abcde');
   });
 });
 

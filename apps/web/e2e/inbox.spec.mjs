@@ -105,11 +105,15 @@ test('declining removes the offer from the waiting list; a PC that is away is sh
   await expect(away).toContainText('nothing has been copied', { timeout: 15_000 });
   ipc.close();
   await agent.stop();
-  await expect(away).toContainText(/off, asleep or offline/, { timeout: 30_000 });
+  // The relay keeps no file names (the PC seals them and opens them when asked), so while the PC is away the offer is found by its size and shows no name.
+  const awayNow = inboxWindow(page).getByTestId('invitation').filter({ hasText: '15 bytes' });
+  await expect(awayNow).toContainText(/off, asleep or offline/, { timeout: 30_000 });
+  await expect(awayNow).not.toContainText('while-away.txt');
+  await expect(awayNow.getByTestId('no-name')).toBeVisible();
   await page.screenshot({ path: join(shots, `inbox-pc-away-${info.project.name}.png`) });
-  await away.getByRole('button', { name: 'Accept and download' }).click();
-  await expect(away.getByRole('alert')).toContainText(/offline|off/i);
-  await expect(away).toHaveAttribute('data-state', 'pending');
+  await awayNow.getByRole('button', { name: 'Accept and download' }).click();
+  await expect(awayNow.getByRole('alert')).toContainText(/offline|off/i);
+  await expect(awayNow).toHaveAttribute('data-state', 'pending');
 
   agent = await startAgent(gateway, state, 'Tower PC');
   ipc = await connectIpc(agent.ready.pipe);
