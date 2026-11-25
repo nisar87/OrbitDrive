@@ -8,6 +8,7 @@ document.querySelectorAll('[data-app]').forEach((a) => { a.href = CONFIG.appUrl;
 document.querySelectorAll('[data-dl]').forEach((a) => { a.href = CONFIG.downloadUrl; });
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+
 // Mobile menu
 const mb = document.querySelector('.menu-btn'), nav = document.getElementById('nav');
 mb.addEventListener('click', () => { const o = nav.classList.toggle('open'); mb.setAttribute('aria-expanded', String(o)); });
@@ -81,3 +82,4 @@ const lb = document.getElementById('lb');
 document.getElementById('lbx').addEventListener('click', () => lb.close());
 lb.addEventListener('close', () => document.getElementById('lbbox').replaceChildren());
 lb.addEventListener('click', (e) => { if (e.target === lb) lb.close(); });
+

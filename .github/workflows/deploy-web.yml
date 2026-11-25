@@ -8,7 +8,7 @@ name: deploy-web
 on:
   push:
     branches: [main]
-    paths: ['apps/web/**', 'apps/site/*.html', 'apps/site/styles.css', 'apps/site/site.js', 'apps/site/robots.txt', 'apps/site/sitemap.xml', 'apps/site/headers.hosting.json', 'apps/site/assets/**', 'infra/firebase/**', 'scripts/web-security-headers.mjs', 'scripts/deploy-web.mjs', '.github/workflows/deploy-web.yml']
+    paths: ['apps/web/**', 'apps/site/*.html', 'apps/site/styles.css', 'apps/site/site.js', 'apps/site/prices.js', 'apps/site/robots.txt', 'apps/site/sitemap.xml', 'apps/site/headers.hosting.json', 'apps/site/assets/**', 'infra/firebase/**', 'scripts/web-security-headers.mjs', 'scripts/deploy-web.mjs', '.github/workflows/deploy-web.yml']
   workflow_dispatch:
 concurrency:
   group: deploy-web

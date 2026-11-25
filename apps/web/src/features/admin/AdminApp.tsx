@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError, type Session } from '../../api';
 import type { AdminOverview, AdminUser, AuditEntry } from '../../protocol';
 import { formatBytes, formatTime } from '../../format';
+import { BillingAdmin } from '../billing/BillingAdmin';
 
 interface Props { session: Session; onSignOut: () => void }
 
@@ -64,6 +65,7 @@ export default function AdminApp({ session, onSignOut }: Props) {
           </dl>
         </article>
       )}
+      <BillingAdmin session={session} onFail={fail} />
       <article className="panel" aria-labelledby="admin-version">
         <h2 id="admin-version">Oldest PC version allowed</h2>
         <p className="hint">PCs running an older MyOrbitDrive are refused with an update message. Leave empty for no minimum.</p>

@@ -366,3 +366,10 @@ dl.metrics dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right
 .entries[data-view="icons"] .icon.file[data-kind="slides"]::after { content: "PPT"; }
 .entries[data-view="icons"] .icon.file[data-kind="app"]::after { content: "APP"; }
 .icon.file[data-kind].has-thumb { box-shadow: inset 0 0 0 1px var(--k); }
+
+/* Plans and billing */
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.75rem; align-items: end; }
+.grid2 label { display: grid; gap: 0.25rem; }
+.pre-wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+.meter { margin: 0.5rem 0; }
+.meter progress { display: block; width: 100%; height: 0.6rem; margin-top: 0.25rem; }

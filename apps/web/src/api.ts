@@ -111,6 +111,26 @@ async function sendChunk(s: Session, pcId: string, uploadId: string, offset: num
   return validate('WriteChunkResult', json);
 }
 
+/**
+ * For the plan, order and billing endpoints, which are outside the generated protocol: the same sign-in, no schema check, so each caller reads only
+ * the fields it uses. Errors arrive in the same shape as everywhere else.
+ */
+export async function callJson<T>(session: Session | null, method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = {};
+  const token = session ? (tokenProvider ? await tokenProvider() : session.idToken) : null;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  let response: Response;
+  try { response = await fetch(GATEWAY_URL + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', referrerPolicy: 'no-referrer' }); }
+  catch { throw new ApiError('network', 'Cannot reach the MyOrbitDrive service. Check your connection.', 0); }
+  const json: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    try { const failure = validate('ErrorResponse', json); throw new ApiError(failure.error.code, failure.error.message, response.status); }
+    catch (e) { if (e instanceof ApiError) throw e; throw new ApiError('internal', `The service answered ${response.status}.`, response.status); }
+  }
+  return json as T;
+}
+
 export const INVITATION_PREFIX = 'invitation:';
 /** A finished archive on a PC is downloaded through the same path as a file, written "archive:<id>". */
 export const ARCHIVE_PREFIX = 'archive:';

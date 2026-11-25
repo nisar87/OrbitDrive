@@ -1,9 +1,51 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
+// The only request a page may make outside this site: the public price list. It is mocked here so the tests never depend on the live service.
+const PLANS_URL = 'https://relay.myorbitdrive.app/v1/plans';
+const LIVE = {
+  currency: 'USD', pkrPerUsd: 300, rateUpdatedAt: '2026-12-01T00:00:00+00:00', limitsEnabled: false,
+  plans: [
+    { id: 'free', name: 'Free', purchasable: false, limits: {}, prices: [] },
+    { id: 'plus', name: 'Plus', purchasable: true, limits: {}, prices: [{ months: 1, usd: 4, pkr: 1200, pkrApprox: true }, { months: 3, usd: 10, pkr: 2500, pkrApprox: false }, { months: 12, usd: 29.5, pkr: 8850, pkrApprox: true }] },
+    { id: 'office', name: 'Office', purchasable: true, limits: {}, prices: [{ months: 1, usd: 12, pkr: 3600, pkrApprox: true }, { months: 3, usd: 27, pkr: 7500, pkrApprox: false }, { months: 12, usd: 86, pkr: 24000, pkrApprox: false }] },
+  ],
+};
+test.beforeEach(async ({ page }) => {
+  await page.route(PLANS_URL, (route) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(LIVE) }));
+});
+
+test('live prices replace the printed ones: dollars first, rupees beside them, approximate marked', async ({ page }) => {
+  await page.goto('/services.html');
+  const cell = (plan, months) => page.locator(`[data-plan="${plan}"][data-months="${months}"]`).first();
+  await expect(cell('plus', 1)).toHaveText('$4 (\u2248 PKR 1,200)');
+  await expect(cell('plus', 3)).toHaveText('$10 (PKR 2,500)');
+  await expect(cell('plus', 12)).toHaveText('$29.50 (\u2248 PKR 8,850)');
+  await expect(cell('office', 12)).toHaveText('$86 (PKR 24,000)');
+});
+
+test('if the price list cannot be reached or is malformed, the printed prices stay', async ({ page }) => {
+  await page.unroute(PLANS_URL);
+  await page.route(PLANS_URL, (route) => route.abort());
+  await page.goto('/services.html');
+  await page.waitForTimeout(500);
+  await expect(page.locator('[data-plan="plus"][data-months="1"]').first()).toHaveText('$3.50 (PKR 1,000)');
+  await page.unroute(PLANS_URL);
+  await page.route(PLANS_URL, (route) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ plans: [{ id: 'plus', prices: [{ months: 1, usd: -5, pkr: 'free' }, { months: 3, usd: 0, pkr: 0 }] }] }) }));
+  await page.goto('/services.html');
+  await page.waitForTimeout(500);
+  await expect(page.locator('[data-plan="plus"][data-months="1"]').first()).toHaveText('$3.50 (PKR 1,000)');
+  await expect(page.locator('[data-plan="plus"][data-months="3"]').first()).toHaveText('$9 (PKR 2,500)');
+});
+
+test('the home page plan cards show dollars with rupees', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#plans')).toContainText('$4 (\u2248 PKR 1,200)');
+});
+
 test('no third-party requests, no console errors, no sideways scroll, all images load', async ({ page }, info) => {
   const external = [], errors = [];
-  page.on('request', (r) => { const u = new URL(r.url()); if (!['127.0.0.1', 'localhost'].includes(u.hostname) && u.protocol.startsWith('http')) external.push(r.url()); });
+  page.on('request', (r) => { const u = new URL(r.url()); if (!['127.0.0.1', 'localhost'].includes(u.hostname) && u.protocol.startsWith('http') && r.url() !== PLANS_URL) external.push(r.url()); });
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto('/');
