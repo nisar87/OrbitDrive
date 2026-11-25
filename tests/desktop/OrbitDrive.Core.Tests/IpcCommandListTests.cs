@@ -15,7 +15,7 @@ public sealed class IpcCommandListTests
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null && !File.Exists(Path.Join(dir.FullName, "OrbitDrive.slnx"))) dir = dir.Parent;
         Assert.NotNull(dir);
-        return Path.Join([dir!.FullName, .. parts]);
+        return Path.Join(new[] { dir!.FullName }.Concat(parts).ToArray());
     }
 
     private static string[] HandlerCases()

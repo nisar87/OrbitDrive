@@ -15,7 +15,7 @@ internal sealed class SettingsPageViewModel : PageViewModel
 {
     private readonly ConsoleHost _host;
     private readonly Action<string> _copy;
-    private bool _start, _lock, _metered, _thumbsEnabled, _thumbsAvailable, _canClearThumbs, _applyingThumbs, _limitsDirty, _gatewayDirty, _pcNameDirty;
+    private bool _start, _lock, _metered, _thumbsEnabled, _thumbsAvailable, _canClearThumbs, _applyingThumbs, _limitsDirty, _pcNameDirty;
     private string _pcName = "", _pcNameError = "";
     private string _maxSpeed = "0", _maxFiles = "4", _limitsShown = "", _gateway = "", _webOrigin = "";
     private string _settingsError = "", _limitsError = "", _thumbsStatus = "", _thumbsError = "", _sendToStatus = "", _sendToError = "", _diagnostics = "";
@@ -123,7 +123,7 @@ internal sealed class SettingsPageViewModel : PageViewModel
     public string PcNameError { get => _pcNameError; private set => SetProperty(ref _pcNameError, value); }
     /// <summary>The relay address the agent reports. Shown read-only under Diagnostics; it is no longer edited here, and saving the web app address sends it back unchanged.</summary>
     public string Gateway { get => _gateway; private set => SetProperty(ref _gateway, value); }
-    public string WebOrigin { get => _webOrigin; set { if (SetProperty(ref _webOrigin, value)) _gatewayDirty = true; } }
+    public string WebOrigin { get => _webOrigin; set => SetProperty(ref _webOrigin, value); }
     public string SettingsError { get => _settingsError; private set => SetProperty(ref _settingsError, value); }
     public string Diagnostics { get => _diagnostics; private set => SetProperty(ref _diagnostics, value); }
 
@@ -167,7 +167,6 @@ internal sealed class SettingsPageViewModel : PageViewModel
         SettingsError = await _host.RunAsync(async client =>
         {
             await client.SendAsync("set_gateway", new JsonObject { ["gateway"] = Gateway.Trim(), ["webOrigin"] = web.Length == 0 ? null : web });
-            _gatewayDirty = false;
         }) ?? "";
     }
 

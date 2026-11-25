@@ -1,12 +1,12 @@
 namespace OrbitDrive.Gateway;
 
 /// <summary>
-/// Billing state in Cloud Firestore: one small document per entry in the "billing" collection (the key's slashes become "~"). Written in batches by
+/// Billing state in Cloud Firestore: one small document per entry in the "billing" collection (or another named one) (the key's slashes become "~"). Written in batches by
 /// <see cref="BillingStore"/>; the gateway is the only reader and writer (server credentials bypass the security rules, which deny everything else).
 /// </summary>
-public sealed class FirestoreBillingPersistence(Google.Cloud.Firestore.FirestoreDb db) : IBillingPersistence
+public sealed class FirestoreBillingPersistence(Google.Cloud.Firestore.FirestoreDb db, string collection = "billing") : IBillingPersistence
 {
-    private const string Collection = "billing";
+    private readonly string Collection = collection;   // "billing" by default; the audit log and "send to phone" offers use their own collections
 
     public IReadOnlyList<KeyValuePair<string, string>> LoadAll()
     {
