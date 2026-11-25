@@ -108,11 +108,10 @@
                 <Border Style="{StaticResource Style.Card}">
                     <StackPanel>
                         <TextBlock Text="Connection" Style="{StaticResource Style.Text.Section}"/>
-                        <TextBlock Text="Relay address (https://…)" Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,4"/>
-                        <TextBox Text="{Binding Gateway, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="GatewayBox" AutomationProperties.Name="Relay address" Margin="0,0,0,12"/>
+                        <TextBlock Text="The relay address is fixed by the build and is not changed here. You can read it under Diagnostics." Style="{StaticResource Style.Text.Muted}" TextWrapping="Wrap" Margin="0,0,0,12" AutomationProperties.AutomationId="RelayFixedNote"/>
                         <TextBlock Text="Web app address shown in pairing links (optional)" Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,4"/>
                         <TextBox Text="{Binding WebOrigin, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="WebOriginBox" AutomationProperties.Name="Web app address" Margin="0,0,0,12"/>
-                        <Button Content="Save and connect" Command="{Binding SaveGatewayCommand}" Style="{DynamicResource AccentButtonStyle}" HorizontalAlignment="Left"
+                        <Button Content="Save web app address" Command="{Binding SaveGatewayCommand}" Style="{DynamicResource AccentButtonStyle}" HorizontalAlignment="Left"
                                 Padding="{StaticResource Inset.Button}" MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="SaveGatewayButton"/>
                         <TextBlock Text="{Binding SettingsError}" Style="{StaticResource Style.Text.Error}" TextWrapping="Wrap" AutomationProperties.AutomationId="SettingsError"/>
                     </StackPanel>
@@ -130,6 +129,8 @@
                 <Border Style="{StaticResource Style.Card}">
                     <StackPanel>
                         <TextBlock Text="Diagnostics" Style="{StaticResource Style.Text.Section}"/>
+                        <TextBlock Text="Relay address (read-only)" Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,2"/>
+                        <TextBlock Text="{Binding Gateway, Mode=OneWay}" Style="{StaticResource Style.Text.Base}" TextWrapping="Wrap" Margin="0,0,0,10" AutomationProperties.AutomationId="RelayAddressText" AutomationProperties.Name="Relay address, read-only"/>
                         <TextBlock Text="{Binding Diagnostics}" Style="{StaticResource Style.Text.Base}" TextWrapping="Wrap" AutomationProperties.AutomationId="DiagnosticsText"/>
                         <Button Content="Copy diagnostics" Command="{Binding CopyDiagnosticsCommand}" HorizontalAlignment="Left" Margin="0,10,0,0" Padding="{StaticResource Inset.Button}"
                                 MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="CopyDiagnosticsButton"/>

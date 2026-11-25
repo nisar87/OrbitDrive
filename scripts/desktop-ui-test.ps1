@@ -188,10 +188,12 @@ try {
     Shot 'shared-folders'
 
     Nav 'Settings'
-    SetText 'GatewayBox' 'http://relay.example.com'; Click 'SaveGatewayButton'
-    [void](WaitText 'SettingsError' 'HTTPS')
-    Check $true 'a non-HTTPS relay address is refused'
-    SetText 'GatewayBox' $relay; SetText 'WebOriginBox' 'http://localhost:5173'; Click 'SaveGatewayButton'
+    Check (-not (Exists 'GatewayBox')) 'Settings has no relay address field: the relay is fixed by the build or the command line'
+    # The relay for this test is set through the agent's own command line (the same channel the app uses), not through a Settings field.
+    $refused = (& $AgentExe ctl set_gateway 'http://relay.example.com' --state $state 2>&1 | Out-String)
+    Check ($refused -match 'HTTPS') 'a non-HTTPS relay address is refused'
+    [void](& $AgentExe ctl set_gateway $relay 'http://localhost:5173' --state $state)
+    SetText 'WebOriginBox' 'http://localhost:5173'; Click 'SaveGatewayButton'
     Shot 'settings'
     # Picture previews: on by default; the switch (also when it is off) and the status line follow what the agent really stored.
     $thumbs = WaitText 'ThumbnailStatus' 'previews|Previews'
@@ -459,13 +461,13 @@ try {
     Nav 'Settings'
     Check (@($SettingsTabs | Where-Object { SelectSettingsTab $_ }).Count -eq 6) 'Settings has six tabs: General, Sending, Privacy, Connection, Updates and Diagnostics'
     [void](SelectSettingsTab 'Sending')
-    Check ([bool]((FindHere 'MaxSpeedBox') -and (FindHere 'ThumbnailsToggle') -and (FindHere 'SendToOnButton') -and -not (FindHere 'GatewayBox'))) 'the Sending tab holds the sending controls and none of the connection controls'
+    Check ([bool]((FindHere 'MaxSpeedBox') -and (FindHere 'ThumbnailsToggle') -and (FindHere 'SendToOnButton') -and -not (FindHere 'WebOriginBox'))) 'the Sending tab holds the sending controls and none of the connection controls'
     [void](SelectSettingsTab 'Connection')
-    Check ([bool]((FindHere 'GatewayBox') -and (FindHere 'SaveGatewayButton') -and -not (FindHere 'MaxSpeedBox'))) 'the Connection tab holds the relay address and none of the sending controls'
+    Check ([bool]((FindHere 'WebOriginBox') -and (FindHere 'SaveGatewayButton') -and -not (FindHere 'GatewayBox') -and -not (FindHere 'MaxSpeedBox'))) 'the Connection tab holds the web app address, no relay address field, and none of the sending controls'
     [void](SelectSettingsTab 'General')
     Check ([bool]((FindHere 'StartAtSignIn') -and (FindHere 'PauseWhenLocked') -and (FindHere 'PcNameBox') -and (FindHere 'QuitButton'))) 'the General tab holds start-up, the lock setting, the PC name and Quit'
     [void](SelectSettingsTab 'Diagnostics')
-    Check ([bool]((FindHere 'DiagnosticsText') -and (FindHere 'CopyDiagnosticsButton'))) 'the Diagnostics tab holds the diagnostics text and its copy button'
+    Check ([bool]((FindHere 'DiagnosticsText') -and (FindHere 'CopyDiagnosticsButton') -and (FindHere 'RelayAddressText'))) 'the Diagnostics tab holds the diagnostics text, its copy button and the read-only relay address'
     [void](SelectSettingsTab 'Privacy')
     Check ([bool](FindHere 'PrivacyNote')) 'the Privacy tab holds the privacy note'
     [void](SelectSettingsTab 'Updates')

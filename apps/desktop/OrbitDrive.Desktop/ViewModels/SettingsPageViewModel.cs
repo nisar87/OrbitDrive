@@ -9,7 +9,7 @@ namespace OrbitDrive.Desktop.ViewModels;
 
 /// <summary>
 /// Settings: General, Sending (limits, metered connections, picture previews, Explorer "Send to"), Privacy (plain words about what the relay can see) and
-/// Advanced (relay address, software updates, diagnostics, Quit). Every value shown is what the agent or Windows actually reports or stored.
+/// Advanced (the read-only relay address, software updates, diagnostics, Quit). Every value shown is what the agent or Windows actually reports or stored.
 /// </summary>
 internal sealed class SettingsPageViewModel : PageViewModel
 {
@@ -121,7 +121,8 @@ internal sealed class SettingsPageViewModel : PageViewModel
     /// <summary>The name paired devices see for this PC. Empty goes back to the Windows computer name.</summary>
     public string PcName { get => _pcName; set { if (SetProperty(ref _pcName, value)) _pcNameDirty = true; } }
     public string PcNameError { get => _pcNameError; private set => SetProperty(ref _pcNameError, value); }
-    public string Gateway { get => _gateway; set { if (SetProperty(ref _gateway, value)) _gatewayDirty = true; } }
+    /// <summary>The relay address the agent reports. Shown read-only under Diagnostics; it is no longer edited here, and saving the web app address sends it back unchanged.</summary>
+    public string Gateway { get => _gateway; private set => SetProperty(ref _gateway, value); }
     public string WebOrigin { get => _webOrigin; set { if (SetProperty(ref _webOrigin, value)) _gatewayDirty = true; } }
     public string SettingsError { get => _settingsError; private set => SetProperty(ref _settingsError, value); }
     public string Diagnostics { get => _diagnostics; private set => SetProperty(ref _diagnostics, value); }
@@ -230,7 +231,7 @@ internal sealed class SettingsPageViewModel : PageViewModel
             SetProperty(ref _maxFiles, status.MaxConcurrentTransfers.ToString(), nameof(MaxFiles));
         }
         if (!_pcNameDirty) SetProperty(ref _pcName, status.PcName, nameof(PcName));
-        if (!_gatewayDirty && _gateway.Length == 0) SetProperty(ref _gateway, status.Gateway ?? "", nameof(Gateway));
+        if (_gateway != (status.Gateway ?? "")) Gateway = status.Gateway ?? "";
         Diagnostics = $"PC id: {status.PcId}\nAgent version: {status.AgentVersion}\nRelay: {status.Gateway ?? "(not set)"}\nState folder: {_host.StateDirectory}\n" +
                       $"{RuntimeInformation.OSDescription} · {RuntimeInformation.ProcessArchitecture} · {RuntimeInformation.FrameworkDescription}\nRunning elevated: {Environment.IsPrivilegedProcess}\n" +
                       $"Network cost: {ConnectionCost.Describe(_host.Policies.CostFlags)}{(_host.Policies.CostFlags is { } raw ? $" (0x{raw:X})" : "")}\n" +
