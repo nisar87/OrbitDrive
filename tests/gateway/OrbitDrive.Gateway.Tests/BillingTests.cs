@@ -356,6 +356,19 @@ public class BillingTests
         Assert.True(new BillingStore(persistence, time, null, null, limitsEnabled: false).LimitsEnabled);
     }
 
+    [Fact]
+    public void Payment_instructions_are_kept_and_unusual_characters_refused()
+    {
+        var persistence = new MemoryBillingPersistence();
+        var time = new FakeTime();
+        var billing = Store(persistence, time);
+        billing.SetPaymentInstructions("  Bank Al Habib, title X\nIBAN ...  ");
+        billing.Flush();
+        Assert.Equal("Bank Al Habib, title X\nIBAN ...", Store(persistence, time).PaymentInstructions);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.SetPaymentInstructions(new string('x', 1501))).Code);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.SetPaymentInstructions("bell\a")).Code);
+    }
+
     private sealed class FlakyPersistence(MemoryBillingPersistence inner) : IBillingPersistence
     {
         public bool FailNext { get; set; }

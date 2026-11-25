@@ -93,6 +93,7 @@ public sealed class BillingStore : IDisposable
     private ExchangeRate _rate = PlanCatalog.DefaultRate;
     private readonly Timer? _timer;
     private bool _limitsEnabled;
+    private string _instructions = "";
 
     public BillingStore(IBillingPersistence persistence, TimeProvider time, ILogger? log = null, TimeSpan? flushEvery = null, bool limitsEnabled = false)
     {
@@ -111,6 +112,7 @@ public sealed class BillingStore : IDisposable
         switch (parts[0])
         {
             case "licence" when JsonSerializer.Deserialize<Licence>(json) is { } licence: _licences[licence.Id] = licence; break;
+            case "config" when parts.Length == 2 && parts[1] == "instructions" && JsonSerializer.Deserialize<string>(json) is { } text: _instructions = text; break;
             case "config" when parts.Length == 2 && parts[1] == "limits" && JsonSerializer.Deserialize<bool>(json) is var enabled: _limitsEnabled = enabled; break;
             case "coupon" when JsonSerializer.Deserialize<Coupon>(json) is { } coupon: _coupons[coupon.Code] = coupon; break;
             case "order" when JsonSerializer.Deserialize<Order>(json) is { } order: _orders[order.Id] = order; break;
@@ -126,6 +128,16 @@ public sealed class BillingStore : IDisposable
 
     /// <summary>Whether the plan limits are enforced. Counting always happens; this is the owner's "start date" switch (set in the panel, kept across restarts).</summary>
     public bool LimitsEnabled { get { lock (_gate) return _limitsEnabled; } }
+
+    /// <summary>How to pay (account title, number, steps), written by the owner and shown only to signed-in customers placing an order.</summary>
+    public string PaymentInstructions { get { lock (_gate) return _instructions; } }
+
+    public void SetPaymentInstructions(string text)
+    {
+        text = text.Trim();
+        if (text.Length > 1500 || text.Any(c => char.IsControl(c) && c is not ('\n' or '\r' or '\t'))) throw new ProtocolException(ErrorCode.InvalidRequest, "The payment instructions are too long or contain unusual characters.");
+        lock (_gate) { _instructions = text; Mark("config/instructions", JsonSerializer.Serialize(text)); }
+    }
 
     public void SetLimitsEnabled(bool enabled) { lock (_gate) { _limitsEnabled = enabled; Mark("config/limits", JsonSerializer.Serialize(enabled)); } }
 

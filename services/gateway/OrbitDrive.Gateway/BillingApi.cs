@@ -14,7 +14,7 @@ public sealed record PlanView(string Id, string Name, bool Purchasable, PlanLimi
 public sealed record PlansView(string Currency, decimal PkrPerUsd, DateTimeOffset RateUpdatedAt, bool LimitsEnabled, IReadOnlyList<PlanView> Plans);
 
 public sealed record AccountPlanView(string PlanId, string PlanName, string State, DateTimeOffset? EndsAt, DateTimeOffset? GraceEndsAt, int DaysLeft, PlanLimits Limits,
-    int FilesToday, long BytesToday, DateTimeOffset ResetsAt, int Pcs, int Devices, bool LimitsEnabled);
+    int FilesToday, long BytesToday, DateTimeOffset ResetsAt, int Pcs, int Devices, bool LimitsEnabled, string PaymentInstructions);
 
 public sealed record QuoteRequest(string PlanId, int Months, string? Coupon);
 public sealed record OrderRequest(string PlanId, int Months, string? Coupon, string? Method);
@@ -22,11 +22,12 @@ public sealed record ProofRequest(string Method, string Reference);
 public sealed record PlansUpdate(IReadOnlyList<Plan> Plans, string Reason);
 public sealed record RateUpdate(decimal PkrPerUsd, string Reason);
 public sealed record LimitsUpdate(bool Enabled, string Reason);
+public sealed record InstructionsUpdate(string Text, string Reason);
 public sealed record CouponUpdate(string Kind, decimal Value, IReadOnlyList<string>? PlanIds, DateTimeOffset? ExpiresAt, int? MaxRedemptions, bool Active, string? Note, string Reason);
 public sealed record PassRequest(string PlanId, int Months, string Reason, string? Source);
 public sealed record EndPassRequest(bool SkipGrace, string Reason);
 public sealed record DecisionRequest(string Reason);
-public sealed record AdminBillingView(PlansView Plans, IReadOnlyList<Plan> Editable, IReadOnlyList<Coupon> Coupons, int OpenOrders);
+public sealed record AdminBillingView(PlansView Plans, IReadOnlyList<Plan> Editable, IReadOnlyList<Coupon> Coupons, int OpenOrders, string PaymentInstructions);
 public sealed record UserBillingView(string Uid, AccountPlanView Plan, IReadOnlyList<Licence> Passes, IReadOnlyList<Order> Orders);
 
 public static class BillingViews
@@ -42,6 +43,6 @@ public static class BillingViews
     {
         var a = billing.AllowanceFor(subject);
         var e = billing.EntitlementFor(subject);
-        return new AccountPlanView(a.PlanId, a.PlanName, a.State.ToString().ToLowerInvariant(), e.EndsAt, e.GraceEndsAt, Entitlements.DaysLeft(e, now), a.Limits, a.FilesToday, a.BytesToday, a.ResetsAt, pcs, devices, billing.LimitsEnabled);
+        return new AccountPlanView(a.PlanId, a.PlanName, a.State.ToString().ToLowerInvariant(), e.EndsAt, e.GraceEndsAt, Entitlements.DaysLeft(e, now), a.Limits, a.FilesToday, a.BytesToday, a.ResetsAt, pcs, devices, billing.LimitsEnabled, billing.PaymentInstructions);
     }
 }

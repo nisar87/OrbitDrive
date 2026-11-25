@@ -995,7 +995,7 @@ app.MapPost("/v1/account/orders/{id}/cancel", async (HttpContext context, string
 app.MapGet("/v1/admin/billing", (HttpContext context) =>
 {
     AuthorizeOperator(context);
-    return WriteBilling(context, new AdminBillingView(BillingViews.Public(billing), billing.Plans, billing.Coupons(), billing.AllOrders(null).Count(o => o.Status is "requested" or "proof_submitted")));
+    return WriteBilling(context, new AdminBillingView(BillingViews.Public(billing), billing.Plans, billing.Coupons(), billing.AllOrders(null).Count(o => o.Status is "requested" or "proof_submitted"), billing.PaymentInstructions));
 });
 
 app.MapPut("/v1/admin/billing/plans", async (HttpContext context) =>
@@ -1022,6 +1022,15 @@ app.MapPut("/v1/admin/billing/limits", async (HttpContext context) =>
     var request = await ReadBilling<LimitsUpdate>(context);
     billing.SetLimitsEnabled(request.Enabled);
     adminLog.Record(operatorIdentity.Uid, request.Enabled ? "limits-on" : "limits-off", "service", request.Reason);
+    await WriteJson(context, new Ack { Ok = true });
+});
+
+app.MapPut("/v1/admin/billing/instructions", async (HttpContext context) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    var request = await ReadBilling<InstructionsUpdate>(context);
+    billing.SetPaymentInstructions(request.Text);
+    adminLog.Record(operatorIdentity.Uid, "set-payment-instructions", "service", request.Reason);
     await WriteJson(context, new Ack { Ok = true });
 });
 
