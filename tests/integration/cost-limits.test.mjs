@@ -36,7 +36,10 @@ test('the operator overview raises a cost alert once the day passes the configur
   const entry = page.body.entries.find((e) => e.name === 'data.bin');
   const session = await browser.post('/v1/download-sessions', { pcId, entryId: entry.entryId });
   await (await fetch(gateway.url + session.body.urlPath)).arrayBuffer();
-  const after = (await ops.get('/v1/admin/overview')).body;
+  // The gateway counts a download's bytes when the request handler finishes, which can be a moment after the client has read the last byte.
+  // Wait (up to 10 s) for that count to show instead of reading it once; the assertions below are unchanged.
+  let after = (await ops.get('/v1/admin/overview')).body;
+  for (let i = 0; i < 100 && BigInt(after.relayBytesToday) < 1n; i++) { await new Promise((r) => setTimeout(r, 100)); after = (await ops.get('/v1/admin/overview')).body; }
   assert.ok(BigInt(after.relayBytesToday) >= 1n);
   assert.equal(after.costAlert, true);
 });
