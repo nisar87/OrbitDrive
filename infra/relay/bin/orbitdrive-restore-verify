@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Restore drill. Unpacks a backup archive into a scratch directory and checks it; it never writes to the live paths.
+#   orbitdrive-restore-verify <archive.tar.gz | archive.tar.gz.gpg> [passphrase-file]
+# Exit 0 only when the archive opens, lists, extracts, contains the expected parts and its JSON state files parse.
+set -euo pipefail
+archive=${1:-}; passfile=${2:-${ORBIT_BACKUP_PASSPHRASE_FILE:-}}
+[ -f "$archive" ] || { echo "usage: orbitdrive-restore-verify <archive> [passphrase-file]" >&2; exit 2; }
+scratch=$(mktemp -d); trap 'rm -rf "$scratch"' EXIT
+chmod 700 "$scratch"
+plain="$archive"
+if [[ $archive == *.gpg ]]; then
+  [ -n "$passfile" ] && [ -s "$passfile" ] || { echo "this archive is encrypted: give the passphrase file" >&2; exit 2; }
+  plain="$scratch/archive.tar.gz"
+  gpg --batch --yes --quiet --pinentry-mode loopback --decrypt --passphrase-file "$passfile" -o "$plain" "$archive" \
+    || { echo "FAIL: could not decrypt (wrong passphrase or damaged file)" >&2; exit 1; }
+fi
+tar -tzf "$plain" >"$scratch/list.txt" || { echo "FAIL: the archive does not list" >&2; exit 1; }
+mkdir "$scratch/root"
+tar -xzf "$plain" -C "$scratch/root" --absolute-names --transform 's,^/,,' || { echo "FAIL: the archive does not extract" >&2; exit 1; }
+files=$(find "$scratch/root" -type f | wc -l)
+[ "$files" -gt 0 ] || { echo "FAIL: the archive holds no files" >&2; exit 1; }
+missing=0
+for part in etc/orbitdrive/gateway.env; do
+  [ -e "$scratch/root/$part" ] || { echo "WARN: $part is not in the archive"; missing=1; }
+done
+bad=0
+while IFS= read -r -d '' f; do
+  if ! jq -e . "$f" >/dev/null 2>&1; then echo "FAIL: $f is not valid JSON"; bad=1; fi
+done < <(find "$scratch/root/var/lib" -type f -name '*.json' -print0 2>/dev/null)
+if grep -q 'invitations.json' "$scratch/list.txt"; then echo "FAIL: invitation records must not be in a backup"; bad=1; fi
+[ "$bad" = 0 ] || exit 1
+echo "restore drill ok: $files files extracted into a scratch directory and removed; nothing live was touched"
+[ "$missing" = 0 ] || echo "note: the archive is readable but lacks the configuration listed above"

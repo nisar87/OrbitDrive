@@ -11,6 +11,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
+import { generateKeys, signFile, verifyFile } from '../../scripts/relay-sign.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const bin = (name) => join(repo, 'infra/relay/bin', name);
@@ -25,13 +26,19 @@ function build(version) {
   execFileSync('dotnet', ['publish', join(repo, 'services/gateway/OrbitDrive.Gateway'), '-c', 'Release', '-o', out, `-p:Version=${version}`, '-v', 'q', '--nologo'], { stdio: 'pipe' });
   return out;
 }
-function publish(version, dir, { channel = 'dev', badChecksum = false, tag } = {}) {
+function publish(version, dir, { channel = 'dev', badChecksum = false, tag, signWith, badSignature = false } = {}) {
   const name = `gateway-${version}.tar.gz`;
   execFileSync('tar', ['-czf', join(assets, name), '-C', dir, '.']);
   const sum = createHash('sha256').update(readFileSync(join(assets, name))).digest('hex');
   writeFileSync(join(assets, `${name}.sha256`), `${badChecksum ? '0'.repeat(64) : sum}  ${name}\n`);
   const url = (n) => `http://127.0.0.1:${api.address().port}/assets/${n}`;
-  releases.unshift({ tag_name: tag ?? `relay-${channel}-${version}`, draft: false, assets: [{ name, browser_download_url: url(name) }, { name: `${name}.sha256`, browser_download_url: url(`${name}.sha256`) }] });
+  const files = [{ name, browser_download_url: url(name) }, { name: `${name}.sha256`, browser_download_url: url(`${name}.sha256`) }];
+  if (signWith) {
+    signFile(join(assets, name), signWith, join(assets, `${name}.sig`));
+    if (badSignature) { const bytes = readFileSync(join(assets, `${name}.sig`)); bytes[bytes.length - 1] ^= 0xff; writeFileSync(join(assets, `${name}.sig`), bytes); }
+    files.push({ name: `${name}.sig`, browser_download_url: url(`${name}.sig`) });
+  }
+  releases.unshift({ tag_name: tag ?? `relay-${channel}-${version}`, draft: false, assets: files });
 }
 const env = (extra = {}) => ({ ...process.env, ORBIT_ROOT: root, ORBIT_API: `http://127.0.0.1:${api.address().port}`, ORBIT_HEALTH_URL: `http://127.0.0.1:${port}`,
   ORBIT_RESTART_CMD: join(work, 'restart.sh'), ORBIT_DEPLOY_LOG: log, ORBIT_HEALTH_TRIES: '10', ...extra });
@@ -212,4 +219,103 @@ test('backup archives configuration, proves it restores, and keeps seven copies'
   const restored = join(work, 'restore'); mkdirSync(restored);
   execFileSync('tar', ['-xzf', join(dest, files.sort().at(-1)), '-C', restored, '--absolute-names', '--transform', 's,^/,,']);
   assert.equal(readFileSync(join(restored, config.slice(1), 'gateway.env'), 'utf8'), 'ASPNETCORE_ENVIRONMENT=Production\n');
+});
+
+// ---- F-010: off-host copy is encrypted, default off, and a restore drill proves a copy opens ----
+test('off-host backup: off by default; refuses without a passphrase; sends only an encrypted file that the restore drill opens; leaves invitation records out', { skip }, () => {
+  const config = join(work, 'etc-orbitdrive-2'), data = join(work, 'gateway-data'), dest = join(work, 'backups-2'), sent = join(work, 'sent');
+  mkdirSync(config); mkdirSync(data); mkdirSync(sent);
+  writeFileSync(join(config, 'gateway.env'), 'ASPNETCORE_ENVIRONMENT=Production\n');
+  writeFileSync(join(data, 'relay.json'), '{"pcs":[]}');
+  writeFileSync(join(data, 'invitations.json'), '{"secret":"invitation-record-marker"}');
+  const pass = join(work, 'pass.txt'); writeFileSync(pass, 'correct horse battery staple\n', { mode: 0o600 });
+  const base = { ...process.env, ORBIT_BACKUP_DIR: dest, ORBIT_BACKUP_SOURCES: `${config} ${data}` };
+  const run = (extra) => spawnSync('bash', [bin('orbitdrive-backup')], { env: { ...base, ...extra }, encoding: 'utf8' });
+
+  const plain = run({});
+  assert.equal(plain.status, 0, plain.stderr);
+  assert.match(plain.stdout, /off-host copy: off/);
+  assert.equal(readdirSync(sent).length, 0, 'nothing leaves the host unless it is configured');
+
+  const upload = `cp "$1" ${sent}/`;
+  const noPass = run({ ORBIT_BACKUP_UPLOAD_CMD: upload });
+  assert.equal(noPass.status, 3, 'an upload command with no passphrase file is refused, never sent unencrypted');
+  assert.equal(readdirSync(sent).length, 0);
+
+  spawnSync('sleep', ['1.1']);
+  const sentOk = run({ ORBIT_BACKUP_UPLOAD_CMD: upload, ORBIT_BACKUP_PASSPHRASE_FILE: pass });
+  assert.equal(sentOk.status, 0, sentOk.stderr);
+  const [encrypted] = readdirSync(sent);
+  assert.match(encrypted, /\.tar\.gz\.gpg$/);
+  const raw = readFileSync(join(sent, encrypted));
+  assert.ok(!raw.includes('ASPNETCORE_ENVIRONMENT'), 'the sent file is not readable text');
+  assert.equal(raw.includes(Buffer.from('invitation-record-marker')), false);
+
+  const drill = (file, passFile) => spawnSync('bash', [bin('orbitdrive-restore-verify'), file, ...(passFile ? [passFile] : [])], { encoding: 'utf8', env: { ...process.env, ORBIT_BACKUP_PASSPHRASE_FILE: '' } });
+  const good = drill(join(sent, encrypted), pass);
+  assert.equal(good.status, 0, good.stdout + good.stderr);
+  assert.match(good.stdout, /restore drill ok/);
+  const wrong = join(work, 'wrong.txt'); writeFileSync(wrong, 'not the passphrase\n', { mode: 0o600 });
+  assert.notEqual(drill(join(sent, encrypted), wrong).status, 0, 'a wrong passphrase fails the drill');
+  assert.equal(drill(join(sent, encrypted)).status, 2, 'an encrypted archive needs the passphrase file');
+  const local = readdirSync(dest).filter((f) => f.endsWith('.tar.gz')).sort().at(-1);
+  assert.equal(drill(join(dest, local)).status, 0, 'a local archive opens without a passphrase');
+  const listing = execFileSync('tar', ['-tzf', join(dest, local), '--absolute-names']).toString();
+  assert.ok(!listing.includes('invitations.json'), 'invitation records are never archived');
+  // A damaged archive is reported, not accepted.
+  const broken = join(work, 'broken.tar.gz'); writeFileSync(broken, readFileSync(join(dest, local)).subarray(0, 40));
+  assert.notEqual(drill(broken).status, 0);
+  // A failing upload keeps the local copy and says so.
+  spawnSync('sleep', ['1.1']);
+  const failed = run({ ORBIT_BACKUP_UPLOAD_CMD: 'exit 1', ORBIT_BACKUP_PASSPHRASE_FILE: pass });
+  assert.equal(failed.status, 5); assert.match(failed.stderr, /upload FAILED/);
+});
+
+// ---- F-011: no downgrades; signatures enforced only when the host has a public key ----
+test('a release lower than the running one is refused, noted once, and never installed', { skip }, async () => {
+  publish('1.2.5', v1);                                              // the newest release listed is older than the running 1.4.0
+  assert.equal((await update()).status, 0);
+  assert.equal(await serving(), '1.4.0');
+  assert.equal(existsSync(join(root, 'releases', '1.2.5')), false);
+  assert.deepEqual([audit().at(-1).action, audit().at(-1).detail], ['refused', 'version is lower than the running release']);
+  const count = audit().length;
+  assert.equal((await update()).status, 0);
+  assert.equal(audit().length, count, 'the same refusal is not written every five minutes');
+  releases.shift();
+});
+
+test('with no signing key on the host an unsigned release still installs (ready but off), and the log says so', { skip }, async () => {
+  publish('1.5.0', build('1.5.0'));                                  // the gateway inside reports the version it is published as
+  const result = await update({ ORBIT_SIGNING_KEY: join(work, 'no-such-key.pub') });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(await serving(), '1.5.0');
+  assert.match(audit().at(-1).detail, /checksum only: no signing key on this host/);
+});
+
+test('with a signing key on the host: a signed release installs; unsigned, wrongly signed and other-key releases are refused', { skip }, async () => {
+  const keys = generateKeys(join(work, 'keys')), other = generateKeys(join(work, 'other-keys'));
+  
+  const strict = { ORBIT_SIGNING_KEY: keys.pub };
+
+  publish('1.6.0', v2);                                              // no .sig at all
+  assert.equal((await update(strict)).status, 1);
+  assert.match(audit().at(-1).detail, /not signed but this host requires signed releases/);
+  releases.shift();
+
+  publish('1.6.1', v2, { signWith: keys.priv, badSignature: true }); // a damaged signature
+  assert.equal((await update(strict)).status, 1);
+  assert.equal(audit().at(-1).detail, 'signature does not verify');
+  releases.shift();
+
+  publish('1.6.2', v2, { signWith: other.priv });                    // signed by someone else's key
+  assert.equal((await update(strict)).status, 1);
+  assert.equal(audit().at(-1).detail, 'signature does not verify');
+  assert.equal(await serving(), '1.5.0');
+  releases.shift();
+
+  publish('1.6.3', build('1.6.3'), { signWith: keys.priv });                     // the right key
+  const result = await update(strict);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(await serving(), '1.6.3');
+  assert.match(audit().at(-1).detail, /signature verified/);
 });

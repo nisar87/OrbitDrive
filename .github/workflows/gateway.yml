@@ -45,4 +45,4 @@ jobs:
           dotnet build ../../apps/desktop/OrbitDrive.Agent -c Release
           npx firebase emulators:exec --only firestore --project demo-orbit "node --test --test-timeout=300000 --test-reporter=spec ../integration/firestore-restart.test.mjs"
       - name: Relay updater, rollback, monitor and backup scripts (real gateway builds)
-        run: node --test tests/relay/updater.test.mjs
+        run: node --test tests/relay/updater.test.mjs tests/relay/relay-sign.test.mjs

@@ -1,6 +1,8 @@
 name: relay-release
 # Builds, tests and publishes a gateway release for the DEVELOPMENT relay. The relay host pulls releases itself
-# (infra/relay/bin/orbitdrive-update): this workflow holds no server credentials and opens no connection to the host.
+# (infra/relay/bin/orbitdrive-update): this workflow holds no server credentials and opens no connection to the host. Its one optional secret,
+# RELAY_SIGNING_KEY, only signs the release archive (a temporary file removed straight after); without it releases are published unsigned and the host,
+# which enforces signatures only when it holds the matching public key, installs them on the checksum alone.
 # It then checks that the live relay really reports the new version. Production has no automatic path here.
 on:
   push:
@@ -29,9 +31,9 @@ jobs:
       - run: npm ci
         working-directory: tests/integration
       - name: Gateway behaviour with real processes
-        run: node --test tests/integration/slice.test.mjs tests/integration/devices.test.mjs tests/integration/firebase-auth.test.mjs tests/integration/restart.test.mjs tests/integration/faults.test.mjs tests/integration/pairing-limits.test.mjs tests/integration/browse.test.mjs tests/integration/transfers.test.mjs tests/integration/invitations.test.mjs tests/integration/previews.test.mjs tests/integration/archives.test.mjs tests/integration/search.test.mjs tests/integration/multipc.test.mjs tests/integration/uploads.test.mjs tests/integration/admin.test.mjs tests/integration/hardening.test.mjs tests/integration/diagnostics.test.mjs tests/integration/sessions.test.mjs tests/integration/maintenance.test.mjs tests/integration/idempotency.test.mjs tests/integration/fuzz.test.mjs tests/integration/fuzz-agent.test.mjs tests/integration/busy.test.mjs
+        run: node tests/integration/run-all.mjs --only-relay -- --test-timeout=600000
       - name: Updater, rollback, monitor and backup scripts
-        run: node --test tests/relay/updater.test.mjs
+        run: node --test tests/relay/updater.test.mjs tests/relay/relay-sign.test.mjs
   publish:
     needs: test
     runs-on: ubuntu-24.04
@@ -58,12 +60,27 @@ jobs:
           tar -czf "gateway-$VERSION.tar.gz" -C out .
           sha256sum "gateway-$VERSION.tar.gz" > "gateway-$VERSION.tar.gz.sha256"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Sign the release (only when the owner has stored a signing key; otherwise the release is checksum-only and says so)
+        id: sign
+        env:
+          RELAY_SIGNING_KEY: ${{ secrets.RELAY_SIGNING_KEY }}
+        run: |
+          V="${{ steps.pack.outputs.version }}"
+          if [ -z "$RELAY_SIGNING_KEY" ]; then echo "signed=false" >> "$GITHUB_OUTPUT"; echo "No RELAY_SIGNING_KEY secret: publishing without a signature."; exit 0; fi
+          umask 077; printf '%s\n' "$RELAY_SIGNING_KEY" > "$RUNNER_TEMP/release-signing.key"
+          node scripts/relay-sign.mjs sign "gateway-$V.tar.gz" "$RUNNER_TEMP/release-signing.key"
+          rm -f "$RUNNER_TEMP/release-signing.key"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
       - name: Publish development pre-release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           V="${{ steps.pack.outputs.version }}"
-          gh release create "relay-dev-$V" "gateway-$V.tar.gz" "gateway-$V.tar.gz.sha256" --prerelease --target "${{ github.sha }}" \
+          SIG=""; [ "${{ steps.sign.outputs.signed }}" = "true" ] && SIG="gateway-$V.tar.gz.sig"
+          gh release create "relay-dev-$V" "gateway-$V.tar.gz" "gateway-$V.tar.gz.sha256" $SIG --prerelease --target "${{ github.sha }}" \
             --title "Relay (development) $V" \
             --notes "Gateway build for the development relay. Commit ${{ github.sha }}. Tests and build: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Architecture-neutral (x86-64 and ARM64); needs the ASP.NET Core 10 runtime."
   verify-deployment:

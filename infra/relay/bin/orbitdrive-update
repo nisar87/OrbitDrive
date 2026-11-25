@@ -3,6 +3,11 @@
 # The server polls this repository's public GitHub Releases over HTTPS: no inbound access, no SSH and no
 # credentials are needed on either side. A release is installed only if its checksum matches, and kept only
 # if the running gateway then reports exactly that version; otherwise the previous release is restored.
+# ENFORCED always: a release whose version is LOWER than the running one is refused (no downgrade).
+# ENFORCED ONLY WHEN A KEY IS PRESENT: if the host has a release-signing public key (ORBIT_SIGNING_KEY, default
+# /etc/orbitdrive/release-signing.pub), the release must carry a detached signature (gateway-<v>.tar.gz.sig, ECDSA P-256 / SHA-256)
+# that verifies against it. With no key on the host, only the checksum is checked (integrity, not authenticity) and each install says so in the log.
+# Create the key and sign with scripts/relay-sign.mjs; see docs/operations/relay.md.
 set -euo pipefail
 ROOT=${ORBIT_ROOT:-/opt/orbitdrive}
 API=${ORBIT_API:-https://api.github.com/repos/nisar87/OrbitDrive}
@@ -11,6 +16,7 @@ HEALTH=${ORBIT_HEALTH_URL:-http://127.0.0.1:8080}
 RESTART=${ORBIT_RESTART_CMD:-systemctl restart orbitdrive-gateway}
 LOG=${ORBIT_DEPLOY_LOG:-/var/log/orbitdrive/deploy.log}
 MAX_DISK=${ORBIT_MAX_DISK_PCT:-90}
+SIGNING_KEY=${ORBIT_SIGNING_KEY:-/etc/orbitdrive/release-signing.pub}
 TRIES=${ORBIT_HEALTH_TRIES:-30}
 mkdir -p "$ROOT/releases" "$(dirname "$LOG")"
 exec 9>"$ROOT/.update.lock"
@@ -33,6 +39,11 @@ version=${tag#relay-"$CHANNEL"-}
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { audit refused "$version" "" "invalid version in tag"; exit 1; }
 previous=$(current)
 [ "$version" = "$previous" ] && exit 0
+# Never go backwards: an old release re-published (or served by a hostile mirror) cannot replace a newer one. Noted once per version, then ignored.
+if [ -n "$previous" ] && [ "$(printf '%s\n%s\n' "$version" "$previous" | sort -V | head -n1)" = "$version" ]; then
+  grep -qxF "$version" "$ROOT/refused-versions" 2>/dev/null || { echo "$version" >>"$ROOT/refused-versions"; audit refused "$version" "$previous" "version is lower than the running release"; }
+  exit 0
+fi
 grep -qxF "$version" "$ROOT/bad-versions" 2>/dev/null && exit 0   # already tried and rolled back
 
 used=$(df --output=pcent "$ROOT" | tail -1 | tr -dc 0-9)
@@ -45,6 +56,15 @@ tar_url=$(asset "gateway-$version.tar.gz"); sum_url=$(asset "gateway-$version.ta
 curl -fsSL -m 300 -o "$work/gateway-$version.tar.gz" "$tar_url"
 curl -fsSL -m 60 -o "$work/gateway-$version.tar.gz.sha256" "$sum_url"
 (cd "$work" && sha256sum -c "gateway-$version.tar.gz.sha256" >/dev/null) || { audit refused "$version" "$previous" "checksum mismatch"; exit 1; }
+signature_note="checksum only: no signing key on this host"
+if [ -s "$SIGNING_KEY" ]; then
+  sig_url=$(asset "gateway-$version.tar.gz.sig")
+  [ -n "$sig_url" ] || { audit refused "$version" "$previous" "release is not signed but this host requires signed releases"; exit 1; }
+  curl -fsSL -m 60 -o "$work/gateway-$version.tar.gz.sig" "$sig_url"
+  openssl dgst -sha256 -verify "$SIGNING_KEY" -signature "$work/gateway-$version.tar.gz.sig" "$work/gateway-$version.tar.gz" >/dev/null 2>&1 \
+    || { audit refused "$version" "$previous" "signature does not verify"; exit 1; }
+  signature_note="signature verified"
+fi
 
 target="$ROOT/releases/$version"
 rm -rf "$target.tmp" && mkdir -p "$target.tmp"
@@ -55,7 +75,7 @@ rm -rf "$target" && mv "$target.tmp" "$target"
 switch() { ln -sfn "$ROOT/releases/$1" "$ROOT/current.new" && mv -T "$ROOT/current.new" "$ROOT/current"; $RESTART 9>&-; }   # never let the service inherit the update lock
 switch "$version"
 if healthy "$version"; then
-  audit deployed "$version" "$previous" "health check passed"
+  audit deployed "$version" "$previous" "health check passed; $signature_note"
   # keep the three newest releases plus whatever is current
   ls -1t "$ROOT/releases" | tail -n +4 | while read -r old; do [ "$old" = "$version" ] || rm -rf "$ROOT/releases/${old:?}"; done
   exit 0

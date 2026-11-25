@@ -1,17 +1,47 @@
 #!/usr/bin/env bash
-# Daily local backup of relay configuration and state, with a restore check. Seven copies are kept.
-# Local copies protect against a bad change, not against losing the disk: the server can always be rebuilt from
-# the repository with bootstrap.sh. Off-host backup (Oracle Object Storage, Always Free) is a later step.
+# Daily backup of relay configuration and state, with a restore check. Seven local copies are kept.
+#
+# ENFORCED (always): a local archive, verified by extracting it and comparing every file with what is on disk.
+# READY BUT OFF (until the owner configures it in /etc/orbitdrive/backup.env): an encrypted copy sent off this host.
+#   ORBIT_BACKUP_UPLOAD_CMD       a command that receives the path of one finished, encrypted file as its only argument and puts it
+#                                 somewhere that is not this server (for example `rclone copyto "$1" remote:orbitdrive/` or an
+#                                 `oci os object put ...` wrapper). Unset means no copy leaves this host.
+#   ORBIT_BACKUP_PASSPHRASE_FILE  file (mode 600) holding the passphrase. Required when the upload command is set: the script refuses to
+#                                 send an unencrypted archive anywhere. Keep a copy of the passphrase away from this server, or the
+#                                 off-host copy cannot be opened after the server is lost.
+# Invitation records are left out of every archive: they are short-lived and the relay can rebuild nothing from them that people need.
+# Local copies protect against a bad change, not against losing the disk; the server can be rebuilt from the repository with
+# bootstrap.sh, and the off-host copy (when switched on) supplies the state. Rehearse a restore with orbitdrive-restore-verify.
 set -euo pipefail
 DEST=${ORBIT_BACKUP_DIR:-/var/backups/orbitdrive}
 SOURCES=${ORBIT_BACKUP_SOURCES:-/etc/orbitdrive /var/lib/orbitdrive /var/lib/orbitdrive-gateway /etc/caddy/Caddyfile /opt/orbitdrive/bad-versions}
+UPLOAD_CMD=${ORBIT_BACKUP_UPLOAD_CMD:-}
+PASSFILE=${ORBIT_BACKUP_PASSPHRASE_FILE:-}
+if [ -n "$UPLOAD_CMD" ]; then
+  [ -n "$PASSFILE" ] && [ -s "$PASSFILE" ] || { echo "off-host backup is configured but ORBIT_BACKUP_PASSPHRASE_FILE is missing or empty: refusing to send an unencrypted archive" >&2; exit 3; }
+  command -v gpg >/dev/null || { echo "off-host backup needs gpg" >&2; exit 3; }
+fi
 mkdir -p "$DEST"; chmod 700 "$DEST"
 file="$DEST/orbitdrive-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 existing=(); for s in $SOURCES; do [ -e "$s" ] && existing+=("$s"); done
-tar -czf "$file" --absolute-names "${existing[@]}"
+tar -czf "$file" --absolute-names --exclude='invitations.json' "${existing[@]}"
+chmod 600 "$file"
 # Restore test: the archive must list and extract cleanly, and every file must match what is on disk now.
 check=$(mktemp -d); trap 'rm -rf "$check"' EXIT
 tar -xzf "$file" -C "$check" --absolute-names --transform 's,^/,,'
-for s in "${existing[@]}"; do diff -r "$s" "$check/${s#/}" >/dev/null || { echo "backup verification failed for $s" >&2; rm -f "$file"; exit 1; }; done
+for s in "${existing[@]}"; do diff -r -x invitations.json "$s" "$check/${s#/}" >/dev/null || { echo "backup verification failed for $s" >&2; rm -f "$file"; exit 1; }; done
 ls -1t "$DEST"/orbitdrive-*.tar.gz | tail -n +8 | xargs -r rm -f
 echo "backup ok: $file"
+if [ -n "$UPLOAD_CMD" ]; then
+  enc="$file.gpg"
+  rm -f "$enc"
+  gpg --batch --yes --quiet --pinentry-mode loopback --symmetric --cipher-algo AES256 --passphrase-file "$PASSFILE" -o "$enc" "$file"
+  chmod 600 "$enc"
+  # Prove the encrypted file opens with the stored passphrase before it leaves, so a bad passphrase file cannot produce unreadable backups.
+  gpg --batch --quiet --pinentry-mode loopback --decrypt --passphrase-file "$PASSFILE" "$enc" 2>/dev/null | tar -tzf - >/dev/null \
+    || { echo "the encrypted backup did not open with the passphrase file: not sent" >&2; rm -f "$enc"; exit 4; }
+  if bash -c "$UPLOAD_CMD" _ "$enc"; then echo "off-host copy ok: $(basename "$enc")"; else echo "off-host upload FAILED (the local copy is kept)" >&2; rm -f "$enc"; exit 5; fi
+  rm -f "$enc"
+else
+  echo "off-host copy: off (no ORBIT_BACKUP_UPLOAD_CMD)"
+fi
