@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import './kit.css';
 
 /** Small building blocks of the operator console. Nothing here knows about accounts or money; pages compose these. */
@@ -128,12 +129,17 @@ function useModal(open: boolean, onClose: () => void) {
   return box;
 }
 
+/** Overlays are drawn on the page itself, not inside the console: the console is a scrolling container (it uses container queries, which make a fixed child scroll with it), so a drawer inside it would drift away when the console is scrolled. */
+function Overlay({ className, onClose, children }: { className: string; onClose: () => void; children: ReactNode }) {
+  return createPortal(<div className="kit"><div className={className} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>{children}</div></div>, document.body);
+}
+
 /** Side panel for one record. Modal, so the page behind it cannot be reached by keyboard until it is closed. */
 export function Drawer({ title, subtitle, onClose, children, testId }: { title: ReactNode; subtitle?: ReactNode; onClose: () => void; children: ReactNode; testId?: string }) {
   const box = useModal(true, onClose);
   const titleId = useId();
   return (
-    <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <Overlay className="overlay" onClose={onClose}>
       <div className="drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={box} data-testid={testId}>
         <header className="drawer-head">
           <div><h2 id={titleId}>{title}</h2>{subtitle && <p className="hint">{subtitle}</p>}</div>
@@ -141,7 +147,7 @@ export function Drawer({ title, subtitle, onClose, children, testId }: { title: 
         </header>
         <div className="drawer-body">{children}</div>
       </div>
-    </div>
+    </Overlay>
   );
 }
 
@@ -156,7 +162,7 @@ export function ReasonDialog({ title, effect, confirmLabel, danger, onConfirm, o
   const box = useModal(true, onCancel);
   const titleId = useId(); const fieldId = useId();
   return (
-    <div className="overlay top" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+    <Overlay className="overlay top" onClose={onCancel}>
       <form className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid="admin-confirm" onSubmit={(e) => { e.preventDefault(); if (reason.trim().length >= 3) onConfirm(reason.trim()); }}
         ref={box as unknown as React.RefObject<HTMLFormElement>}>
         <h2 id={titleId}>{title}</h2>
@@ -169,7 +175,7 @@ export function ReasonDialog({ title, effect, confirmLabel, danger, onConfirm, o
           <button type="submit" className={danger ? 'danger-solid' : undefined} disabled={busy || reason.trim().length < 3}>{confirmLabel}</button>
         </p>
       </form>
-    </div>
+    </Overlay>
   );
 }
 
@@ -178,7 +184,7 @@ export function ConfirmDialog({ title, effect, confirmLabel, danger, onConfirm, 
   const box = useModal(true, onCancel);
   const titleId = useId();
   return (
-    <div className="overlay top" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+    <Overlay className="overlay top" onClose={onCancel}>
       <form className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} onSubmit={(e) => { e.preventDefault(); onConfirm(); }} ref={box as unknown as React.RefObject<HTMLFormElement>}>
         <h2 id={titleId}>{title}</h2>
         <p>{effect}</p>
@@ -187,7 +193,7 @@ export function ConfirmDialog({ title, effect, confirmLabel, danger, onConfirm, 
           <button type="submit" className={danger ? 'danger-solid' : undefined} disabled={busy}>{confirmLabel}</button>
         </p>
       </form>
-    </div>
+    </Overlay>
   );
 }
 

@@ -64,9 +64,12 @@ test('an operator sees the administration area, with measured numbers, and can s
   const scroller = admin.locator('.con-box');
   await expect(admin.getByText('Plan limits')).toBeVisible();
   expect(await scroller.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
-  await scroller.hover();
-  await page.mouse.wheel(0, 600);
-  await expect.poll(() => scroller.evaluate((e) => e.scrollTop)).toBeGreaterThan(0);
+  expect(await scroller.evaluate((e) => getComputedStyle(e).overflowY)).toMatch(/auto|scroll/);   // the box scrolls itself; its window body clips
+  if (!info.project.name.includes('webkit-emulated')) {   // mobile WebKit has no mouse wheel; everywhere else a real wheel must move it
+    await scroller.hover();
+    await page.mouse.wheel(0, 600);
+    await expect.poll(() => scroller.evaluate((e) => e.scrollTop)).toBeGreaterThan(0);
+  }
   if (original) await page.setViewportSize(original);
   await admin.getByRole('button', { name: 'Accounts', exact: true }).click();
   const row = admin.getByTestId('admin-users').getByRole('row').filter({ hasText: uidOf(TARGET) });
