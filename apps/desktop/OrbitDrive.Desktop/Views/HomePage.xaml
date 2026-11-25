@@ -21,6 +21,7 @@
 
     <StackPanel MaxWidth="{StaticResource Page.MaxWidth}">
         <TextBlock Text="Home" Style="{StaticResource Style.Text.PageTitle}" AutomationProperties.HeadingLevel="Level1"/>
+        <TextBlock Text="Whether your folders can be reached from your phone right now, and anything that needs you." Style="{StaticResource Style.Text.PageIntro}"/>
 
         <!-- 1. Is sharing on, paused or broken, and the one button that fixes it. -->
         <Border Style="{StaticResource Style.Card}">
@@ -48,7 +49,7 @@
                             Style="{DynamicResource AccentButtonStyle}" Padding="{StaticResource Inset.Button}" MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="PauseButton"/>
                     <Button Content="Start MyOrbitDrive" Command="{Binding StartCommand}" Visibility="{Binding ShowStart, Converter={StaticResource BoolToVisibility}}"
                             Style="{DynamicResource AccentButtonStyle}" Padding="{StaticResource Inset.Button}" MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="StartAgentButton"/>
-                    <Button Content="Set up connection" Command="{Binding SetUpCommand}" Visibility="{Binding ShowSetUp, Converter={StaticResource BoolToVisibility}}"
+                    <Button Content="Open Settings" Command="{Binding SetUpCommand}" Visibility="{Binding ShowSetUp, Converter={StaticResource BoolToVisibility}}"
                             Style="{DynamicResource AccentButtonStyle}" Padding="{StaticResource Inset.Button}" MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="SetUpConnectionButton"/>
                     <Button Content="Open updates" Command="{Binding OpenUpdatesCommand}" Visibility="{Binding ShowUpdates, Converter={StaticResource BoolToVisibility}}"
                             Style="{DynamicResource AccentButtonStyle}" Padding="{StaticResource Inset.Button}" MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="OpenUpdatesButton"/>
@@ -56,13 +57,18 @@
             </Grid>
         </Border>
 
-        <!-- Things that need the owner's attention. -->
-        <c:InfoBar Severity="Warning" Title="A device wants to connect" Message="{Binding ApprovalMessage}" ActionText="Review" ActionCommand="{Binding ReviewApprovalCommand}"
-                   ActionAutomationId="ReviewApprovalButton" Visibility="{Binding ShowApproval, Converter={StaticResource BoolToVisibility}}"/>
-        <c:InfoBar Severity="Info" Title="An update is ready" Message="{Binding UpdateMessage}" ActionText="Open Settings" ActionCommand="{Binding OpenUpdatesCommand}"
-                   ActionAutomationId="UpdateReadyButton" Visibility="{Binding ShowUpdateBar, Converter={StaticResource BoolToVisibility}}"/>
-        <c:InfoBar Severity="Warning" Title="This PC is on a metered connection" Message="{Binding MeteredMessage}"
-                   Visibility="{Binding ShowMetered, Converter={StaticResource BoolToVisibility}}"/>
+        <!-- Things that need the owner's attention, under one heading (the same idea as "Needs attention" in the web console). -->
+        <StackPanel Visibility="{Binding NeedsAttention, Converter={StaticResource BoolToVisibility}}">
+            <TextBlock Text="Needs your attention" Style="{StaticResource Style.Text.Section}" AutomationProperties.HeadingLevel="Level2" AutomationProperties.AutomationId="NeedsAttentionTitle"/>
+            <c:InfoBar Severity="Warning" Title="A device wants to connect" Message="{Binding ApprovalMessage}" ActionText="Review" ActionCommand="{Binding ReviewApprovalCommand}"
+                       ActionAutomationId="ReviewApprovalButton" Visibility="{Binding ShowApproval, Converter={StaticResource BoolToVisibility}}"/>
+            <c:InfoBar Severity="Info" Title="An update is ready" Message="{Binding UpdateMessage}" ActionText="Open Settings" ActionCommand="{Binding OpenUpdatesCommand}"
+                       ActionAutomationId="UpdateReadyButton" Visibility="{Binding ShowUpdateBar, Converter={StaticResource BoolToVisibility}}"/>
+            <c:InfoBar Severity="Warning" Title="This PC is on a metered connection" Message="{Binding MeteredMessage}"
+                       Visibility="{Binding ShowMetered, Converter={StaticResource BoolToVisibility}}"/>
+        </StackPanel>
+        <TextBlock Text="Nothing is waiting for you." Style="{StaticResource Style.Text.Muted}" Margin="2,0,0,16" AutomationProperties.AutomationId="AllClearText"
+                   Visibility="{Binding AllClear, Converter={StaticResource BoolToVisibility}}"/>
 
         <!-- 2. First run: a folder shared and a device paired, in that order. Shown only while a step is open. -->
         <Border Style="{StaticResource Style.Card}" Visibility="{Binding ShowGetStarted, Converter={StaticResource BoolToVisibility}}">

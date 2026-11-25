@@ -23,6 +23,10 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Icon = AppIcon.Image;
+        // On a small or highly scaled screen the usual size would not fit: never open larger than the usable area, and never demand more than it has.
+        var area = SystemParameters.WorkArea;
+        Width = Math.Min(Width, area.Width); Height = Math.Min(Height, area.Height);
+        MinWidth = Math.Min(MinWidth, area.Width); MinHeight = Math.Min(MinHeight, area.Height);
         _host = new ConsoleHost(stateDirectory, Dispatcher);
         var updates = new UpdatePanel(_host.StateDirectory, _host.DrainForUpdateAsync, _host.QuitAsync);
         var home = new HomePageViewModel(_host, title => _shell!.GoTo(title), updates);

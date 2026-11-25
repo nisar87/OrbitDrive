@@ -33,7 +33,7 @@ internal sealed class SettingsPageViewModel : PageViewModel
         ClearThumbnailsCommand = new AsyncRelayCommand(ClearThumbnailsAsync);
         SendToOnCommand = new AsyncRelayCommand(() => SetSendToAsync(true));
         SendToOffCommand = new AsyncRelayCommand(() => SetSendToAsync(false));
-        CopyDiagnosticsCommand = new RelayCommand(() => { try { _copy(_diagnostics); } catch (ExternalException) { SettingsError = "Windows would not let MyOrbitDrive use the clipboard just now."; } });
+        CopyDiagnosticsCommand = new RelayCommand(() => { try { _copy(_diagnostics); } catch (ExternalException) { SettingsError = "Windows would not let MyOrbitDrive use the clipboard just now. Close any program that is using it, then try again."; } });
         QuitCommand = new AsyncRelayCommand(host.QuitAsync);
         host.AddStatusConsumer(OnStatus);
     }
@@ -60,7 +60,7 @@ internal sealed class SettingsPageViewModel : PageViewModel
         {
             SettingsError = "";
             try { StartupRegistration.Set(_host.StateDirectory, value); }
-            catch (Exception e) when (e is UnauthorizedAccessException or System.Security.SecurityException or IOException) { SettingsError = "Windows did not allow changing the start-up setting."; }
+            catch (Exception e) when (e is UnauthorizedAccessException or System.Security.SecurityException or IOException) { SettingsError = "Windows did not allow changing the start-up setting. Try again, or change it in Windows Settings under Apps, Startup."; }
             _start = StartupRegistration.IsEnabled(_host.StateDirectory);   // show what is really registered
             OnPropertyChanged();
         }
@@ -73,7 +73,7 @@ internal sealed class SettingsPageViewModel : PageViewModel
         {
             SettingsError = "";
             try { _host.Settings.SetPauseWhenLocked(value); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { SettingsError = "The setting could not be saved."; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { SettingsError = "The setting could not be saved. Check that the disk this PC keeps MyOrbitDrive's files on is not full or read-only, then try again."; }
             _host.Policies.LockEnabled = _host.Settings.PauseWhenLocked;
             _lock = _host.Settings.PauseWhenLocked;
             OnPropertyChanged();
@@ -88,7 +88,7 @@ internal sealed class SettingsPageViewModel : PageViewModel
         {
             SettingsError = "";
             try { _host.Settings.SetPauseOnMetered(value); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { SettingsError = "The setting could not be saved."; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { SettingsError = "The setting could not be saved. Check that the disk this PC keeps MyOrbitDrive's files on is not full or read-only, then try again."; }
             _host.Policies.MeteredEnabled = _host.Settings.PauseOnMetered;
             _metered = _host.Settings.PauseOnMetered;
             OnPropertyChanged();
@@ -141,7 +141,7 @@ internal sealed class SettingsPageViewModel : PageViewModel
         LimitsError = "";
         if (!int.TryParse(MaxSpeed.Trim(), out var speed) || !int.TryParse(MaxFiles.Trim(), out var files))
         {
-            LimitsError = "Enter whole numbers: a speed in KB/s (0 for no limit) and 1 to 16 files.";
+            LimitsError = "Enter whole numbers only: a speed in KB/s (0 for no limit) and a number of files from 1 to 16.";
             return;
         }
         LimitsError = await _host.RunAsync(async client =>

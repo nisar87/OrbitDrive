@@ -15,7 +15,7 @@
         <Setter Property="FontFamily" Value="{StaticResource Font.Display}"/>
         <Setter Property="FontSize" Value="{StaticResource FontSize.Title}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="Margin" Value="0,0,0,18"/>
+        <Setter Property="Margin" Value="0,0,0,4"/>
     </Style>
     <Style x:Key="Style.Text.Section" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Base}">
         <Setter Property="FontSize" Value="{StaticResource FontSize.Lead}"/>
@@ -35,6 +35,10 @@
                 <Setter Property="Opacity" Value="1"/>
             </DataTrigger>
         </Style.Triggers>
+    </Style>
+    <!-- One plain sentence under a page title that says what the page is for (the same as the web console's page introductions). -->
+    <Style x:Key="Style.Text.PageIntro" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Muted}">
+        <Setter Property="Margin" Value="0,0,0,16"/>
     </Style>
     <Style x:Key="Style.Text.Pill" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Base}">
         <Setter Property="FontSize" Value="{StaticResource FontSize.Small}"/>

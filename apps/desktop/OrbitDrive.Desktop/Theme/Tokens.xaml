@@ -13,7 +13,8 @@
     <sys:Double x:Key="FontSize.Body">14</sys:Double>
     <sys:Double x:Key="FontSize.Lead">16</sys:Double>
     <sys:Double x:Key="FontSize.Subtitle">20</sys:Double>
-    <sys:Double x:Key="FontSize.Title">28</sys:Double>
+    <!-- Page titles are 20 (the same as the web console); Title keeps its name so every page follows. -->
+    <sys:Double x:Key="FontSize.Title">20</sys:Double>
     <sys:Double x:Key="FontSize.Stat">32</sys:Double>
     <sys:Double x:Key="FontSize.Icon">16</sys:Double>
 
@@ -35,7 +36,8 @@
 
     <!-- Shape and layout. -->
     <CornerRadius x:Key="Radius.Control">4</CornerRadius>
-    <CornerRadius x:Key="Radius.Card">8</CornerRadius>
+    <!-- 6, the same as the web console's cards and buttons. -->
+    <CornerRadius x:Key="Radius.Card">6</CornerRadius>
     <CornerRadius x:Key="Radius.Pill">12</CornerRadius>
     <sys:Double x:Key="Nav.Width">216</sys:Double>
     <sys:Double x:Key="Nav.WidthCompact">56</sys:Double>

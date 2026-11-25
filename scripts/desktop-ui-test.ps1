@@ -460,6 +460,16 @@ try {
             Check ($bad.Count -eq 0) "every control on '$where' is reachable by keyboard $($bad -join ', ')"
         }
     }
+    # Every page scrolls: with the window made small, a tall page (Settings, Sending) can be scrolled and its last control brought into view.
+    Nav 'Settings'; [void](SelectSettingsTab 'Sending')
+    $transform = $script:win.GetCurrentPattern([System.Windows.Automation.TransformPattern]::Pattern)
+    $transform.Resize(700, 500); Start-Sleep -Milliseconds 800
+    $scroll = (Find 'PageScroll').GetCurrentPattern([System.Windows.Automation.ScrollPattern]::Pattern)
+    Check ([bool]$scroll.Current.VerticallyScrollable) 'a page taller than the window can be scrolled'
+    $scroll.SetScrollPercent([System.Windows.Automation.ScrollPattern]::NoScroll, 100); Start-Sleep -Milliseconds 500
+    Check (-not (Find 'SendToOffButton').Current.IsOffscreen) 'scrolling to the bottom brings the last control of the page into view'
+    $scroll.SetScrollPercent([System.Windows.Automation.ScrollPattern]::NoScroll, 0); Start-Sleep -Milliseconds 300
+    $transform.Resize(980, 680); Start-Sleep -Milliseconds 800
     # Settings is divided into tabs, each holding one kind of setting.
     Nav 'Settings'
     Check (@($SettingsTabs | Where-Object { SelectSettingsTab $_ }).Count -eq 6) 'Settings has six tabs: General, Sending, Privacy, Connection, Updates and Diagnostics'

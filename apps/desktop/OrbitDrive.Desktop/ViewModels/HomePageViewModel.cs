@@ -51,6 +51,7 @@ internal sealed class HomePageViewModel : PageViewModel
     private string _foldersTile = "–", _devicesTile = "–";
     private bool _step1Done, _step2Done, _showGetStarted, _showApproval, _showMetered, _showUpdateNotice;
     private string _approvalMessage = "", _updateMessage = "";
+    private bool _running;
 
     public HomePageViewModel(ConsoleHost host, Action<string> go, UpdatePanel updates)
     {
@@ -116,11 +117,18 @@ internal sealed class HomePageViewModel : PageViewModel
     public bool Step2Later => !_step1Done && !_step2Done;
     public bool ShowGetStarted { get => _showGetStarted; private set => SetProperty(ref _showGetStarted, value); }
 
-    public bool ShowApproval { get => _showApproval; private set => SetProperty(ref _showApproval, value); }
+    public bool ShowApproval { get => _showApproval; private set { if (SetProperty(ref _showApproval, value)) RefreshAttention(); } }
     public string ApprovalMessage { get => _approvalMessage; private set => SetProperty(ref _approvalMessage, value); }
-    public bool ShowMetered { get => _showMetered; private set => SetProperty(ref _showMetered, value); }
+    public bool ShowMetered { get => _showMetered; private set { if (SetProperty(ref _showMetered, value)) RefreshAttention(); } }
     public string MeteredMessage => "Files you send from this PC count against this connection's data allowance.";
-    public bool ShowUpdateBar { get => _showUpdateNotice; private set => SetProperty(ref _showUpdateNotice, value); }
+    public bool ShowUpdateBar { get => _showUpdateNotice; private set { if (SetProperty(ref _showUpdateNotice, value)) RefreshAttention(); } }
+
+    /// <summary>True while something below the status card needs the owner (a device asking, an update, a metered connection).</summary>
+    public bool NeedsAttention => _showApproval || _showUpdateNotice || _showMetered;
+    /// <summary>The "all clear" line: sharing is running (on or paused) and nothing is waiting.</summary>
+    public bool AllClear => _running && !NeedsAttention;
+
+    private void RefreshAttention() { OnPropertyChanged(nameof(NeedsAttention)); OnPropertyChanged(nameof(AllClear)); }
     public string UpdateMessage { get => _updateMessage; private set => SetProperty(ref _updateMessage, value); }
 
     public bool HasActiveTransfers => ActiveTransfers.Count > 0;
@@ -159,17 +167,19 @@ internal sealed class HomePageViewModel : PageViewModel
         var connection = _host.Connection;
         (Headline, Detail, StatusGlyph, Kind) = connection.Phase switch
         {
-            AgentPhase.KeepsStopping => ("MyOrbitDrive keeps stopping", $"The background agent stopped unexpectedly {connection.MaxRestarts + 1} times in a short while, so it was not started again. Nothing is being shared.", "", StatusKind.Critical),
-            AgentPhase.Stopped => ("MyOrbitDrive is stopped", "Nothing is being shared until you start it again.", "", StatusKind.Critical),
-            AgentPhase.Starting => ("Starting…", "Starting MyOrbitDrive's background agent.", "", StatusKind.Neutral),
-            _ => ("MyOrbitDrive isn't running", "The background agent is not running. Nothing is being shared.", "", StatusKind.Critical),
+            AgentPhase.KeepsStopping => ("MyOrbitDrive keeps stopping", $"MyOrbitDrive's background program stopped unexpectedly {connection.MaxRestarts + 1} times in a short while, so it was not started again. Nothing is being shared. Choose Start MyOrbitDrive to try again. If it keeps stopping, copy the details from Settings, Diagnostics.", "", StatusKind.Critical),
+            AgentPhase.Stopped => ("MyOrbitDrive is stopped", "Nothing is being shared until you start it again. Choose Start MyOrbitDrive.", "", StatusKind.Critical),
+            AgentPhase.Starting => ("Starting…", "Starting MyOrbitDrive's background program.", "", StatusKind.Neutral),
+            _ => ("MyOrbitDrive isn't running", "The background program is not running, so nothing is being shared.", "", StatusKind.Critical),
         };
+        _running = false;
         ShowPause = ShowResume = ShowSetUp = ShowUpdates = false;
         ShowStart = !connection.MayStart;
         // Nothing is known while the agent is down: do not leave the last known numbers on screen.
         FoldersTile = DevicesTile = "–";
         ShowGetStarted = ShowApproval = false;
         ShowMetered = _host.Policies.IsMetered;
+        RefreshAttention();
         ClearTransfers();
         ClearRecent();
     }
@@ -180,12 +190,13 @@ internal sealed class HomePageViewModel : PageViewModel
         {
             "online" => ("Sharing is on", "Your paired devices can browse the folders you share.", "", StatusKind.Good),
             "paused" => ("Sharing is paused", "Your devices can't see anything until you resume.", "", StatusKind.Neutral),
-            "connecting" => ("Connecting…", "Trying to reach the MyOrbitDrive relay. Your devices can't connect until this finishes.", "", StatusKind.Warning),
-            "update_required" => ("Update needed", "This version of MyOrbitDrive is no longer accepted by the service. Update to keep sharing.", "", StatusKind.Critical),
-            "not_configured" => ("Not set up yet", "MyOrbitDrive doesn't know which relay to use. Add the relay address in Settings.", "", StatusKind.Neutral),
-            _ => ("Not connected", "MyOrbitDrive can't reach the relay right now. It keeps trying by itself.", "", StatusKind.Warning),
+            "connecting" => ("Connecting…", "Connecting to the relay, the MyOrbitDrive server that passes files to your devices. Your devices can't connect until this finishes.", "", StatusKind.Warning),
+            "update_required" => ("Update needed", "This version of MyOrbitDrive is no longer accepted by the service, so sharing is off. Open Settings, then Updates, and choose Update now.", "", StatusKind.Critical),
+            "not_configured" => ("Not set up yet", "This copy of MyOrbitDrive has no relay address, so it cannot connect. Install the latest version from the MyOrbitDrive website. You can see what this copy uses under Settings, Diagnostics.", "", StatusKind.Neutral),
+            _ => ("Not connected", "MyOrbitDrive can't reach the relay right now. Check that this PC is online. It keeps trying by itself.", "", StatusKind.Warning),
         };
         var running = status.State is "online" or "paused";
+        _running = running;
         ShowPause = status.State == "online";
         ShowResume = status.State == "paused";
         ShowStart = false;
@@ -203,6 +214,7 @@ internal sealed class HomePageViewModel : PageViewModel
         ShowApproval = status.Approval is not null;
         ApprovalMessage = status.Approval is null ? "" : $"“{status.Approval.BrowserName}” is asking to connect. Check the code on the Devices page before you approve.";
         ShowMetered = _host.Policies.IsMetered;
+        RefreshAttention();   // _running changed too
         ShowSending(status);
         if (!running) ClearRecent();
     }

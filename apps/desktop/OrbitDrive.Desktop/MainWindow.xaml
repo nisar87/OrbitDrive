@@ -4,7 +4,7 @@
         xmlns:local="clr-namespace:OrbitDrive.Desktop"
         xmlns:vm="clr-namespace:OrbitDrive.Desktop.ViewModels"
         xmlns:views="clr-namespace:OrbitDrive.Desktop.Views"
-        Title="MyOrbitDrive" Width="980" Height="680" MinWidth="680" MinHeight="460" WindowStartupLocation="CenterScreen"
+        Title="MyOrbitDrive" Width="980" Height="680" MinWidth="680" MinHeight="480" WindowStartupLocation="CenterScreen"
         FontFamily="{StaticResource Font.Text}" UseLayoutRounding="True"
         AutomationProperties.AutomationId="OrbitDriveMainWindow">
     <Window.Resources>
@@ -56,7 +56,9 @@
             </DockPanel>
         </Border>
 
-        <ScrollViewer x:Name="PageScroll" Grid.Column="1" VerticalScrollBarVisibility="Auto" Focusable="False" Padding="{Binding PagePadding}">
+        <!-- Every page sits inside this scroller, so a page taller than the window can always be scrolled (wheel, scroll bar, or Tab moving into view). -->
+        <ScrollViewer x:Name="PageScroll" Grid.Column="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False" Padding="{Binding PagePadding}"
+                      AutomationProperties.AutomationId="PageScroll" AutomationProperties.Name="Page">
             <ContentControl Content="{Binding CurrentPage}" Focusable="False" IsTabStop="False"/>
         </ScrollViewer>
     </Grid>

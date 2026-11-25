@@ -5,7 +5,9 @@
              IsTabStop="False" Focusable="False">
     <StackPanel MaxWidth="{StaticResource Page.MaxWidth}">
         <TextBlock Text="Settings" Style="{StaticResource Style.Text.PageTitle}" AutomationProperties.HeadingLevel="Level1"/>
-        <TabControl x:Name="Tabs" AutomationProperties.AutomationId="SettingsTabs" AutomationProperties.Name="Settings sections" Margin="0,8,0,0">
+        <TextBlock Text="How MyOrbitDrive starts, sends files and connects. Changes to switches and limits apply straight away." Style="{StaticResource Style.Text.PageIntro}"
+                   AutomationProperties.AutomationId="SettingsIntro" Margin="0,0,0,8"/>
+        <TabControl x:Name="Tabs" AutomationProperties.AutomationId="SettingsTabs" AutomationProperties.Name="Settings sections" Margin="0,0,0,0">
             <TabItem Padding="14,8" MinHeight="{StaticResource Size.TouchTarget}" Header="General" AutomationProperties.AutomationId="SettingsTab_General" AutomationProperties.Name="General">
                 <StackPanel Margin="0,12,0,0">
                 <Border Style="{StaticResource Style.Card}">
@@ -15,12 +17,13 @@
                         <CheckBox Content="Pause remote access while this PC is locked" IsChecked="{Binding PauseWhenLocked, Mode=TwoWay}" AutomationProperties.AutomationId="PauseWhenLocked"/>
                         <TextBlock Text="Otherwise MyOrbitDrive keeps working while the PC is locked. When the PC sleeps, shuts down or you sign out, your phone cannot reach it. MyOrbitDrive never changes your sleep settings or keeps the PC awake."
                                    Style="{StaticResource Style.Text.Muted}" Margin="28,0,0,0"/>
+                        <TextBlock Text="{Binding SettingsError}" Style="{StaticResource Style.Text.Error}" TextWrapping="Wrap" AutomationProperties.AutomationId="GeneralError"/>
                     </StackPanel>
                 </Border>
 
                 <Border Style="{StaticResource Style.Card}">
                     <StackPanel>
-                        <TextBlock Text="Name shown on your phone and browser" Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,4"/>
+                        <TextBlock Text="Name of this PC, as your phone and browser show it" Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,4"/>
                         <TextBox Text="{Binding PcName, UpdateSourceTrigger=PropertyChanged}" MaxLength="60" Width="320" HorizontalAlignment="Left" AutomationProperties.AutomationId="PcNameBox"
                                  AutomationProperties.Name="PC name" Margin="0,0,0,12"/>
                         <Button Content="Save name" Command="{Binding SavePcNameCommand}" HorizontalAlignment="Left" Padding="{StaticResource Inset.Button}"
@@ -32,7 +35,7 @@
                 <Border Style="{StaticResource Style.Card}">
                     <StackPanel>
                         <TextBlock Text="Quit MyOrbitDrive" Style="{StaticResource Style.Text.Section}"/>
-                        <TextBlock Text="Closing this window keeps MyOrbitDrive running in the notification area so your phone can still reach shared folders. Quit stops remote access."
+                        <TextBlock Text="Closing this window keeps MyOrbitDrive running in the notification area, so your phone can still reach your shared folders. Quit stops all sharing until you open MyOrbitDrive again."
                                    Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,10" AutomationProperties.AutomationId="CloseHint"/>
                         <Button Content="Quit MyOrbitDrive" Command="{Binding QuitCommand}" HorizontalAlignment="Left" Padding="{StaticResource Inset.Button}"
                                 MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="QuitButton"/>
@@ -45,7 +48,7 @@
                 <Border Style="{StaticResource Style.Card}">
                     <StackPanel>
                         <TextBlock Text="Sending files" Style="{StaticResource Style.Text.Section}"/>
-                        <TextBlock Text="Upload speed limit for all files together, in KB/s (0 = no limit)" Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,4"/>
+                        <TextBlock Text="Top speed for all files together, in KB/s (0 means no limit)" Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,4"/>
                         <TextBox Text="{Binding MaxSpeed, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" AutomationProperties.AutomationId="MaxSpeedBox"
                                  AutomationProperties.Name="Upload speed limit in kilobytes per second" Margin="0,0,0,12"/>
                         <TextBlock Text="Files sent at the same time (1–16)" Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,4"/>
@@ -56,8 +59,9 @@
                         <TextBlock Text="{Binding LimitsError}" Style="{StaticResource Style.Text.Error}" TextWrapping="Wrap" AutomationProperties.AutomationId="LimitsError"/>
                         <CheckBox Content="Pause remote access while this PC is on a metered connection" IsChecked="{Binding PauseOnMetered, Mode=TwoWay}" Margin="0,14,0,0"
                                   AutomationProperties.AutomationId="PauseOnMetered"/>
-                        <TextBlock Text="Windows marks mobile hotspots and some other connections as metered. MyOrbitDrive shows a warning on such a connection; tick the box to stop sending until the connection is no longer metered."
+                        <TextBlock Text="Windows marks mobile hotspots and some other connections as metered. MyOrbitDrive shows a warning on such a connection. Tick the box to stop sending until the connection is no longer metered."
                                    Style="{StaticResource Style.Text.Muted}" Margin="28,0,0,0"/>
+                        <TextBlock Text="{Binding SettingsError}" Style="{StaticResource Style.Text.Error}" TextWrapping="Wrap" AutomationProperties.AutomationId="SendingError"/>
                     </StackPanel>
                 </Border>
 
@@ -76,7 +80,7 @@
                 <Border Style="{StaticResource Style.Card}">
                     <StackPanel>
                         <TextBlock Text="Send to phone from Explorer" Style="{StaticResource Style.Text.Section}"/>
-                        <TextBlock Text="Adds your paired devices to Explorer's Send to menu, so you can right-click a file and send it to your phone. This window can't tell whether it is on right now, so choose what you want."
+                        <TextBlock Text="Adds your paired devices to the Send to menu in File Explorer, so you can right-click a file and send it to your phone. This window can't tell whether it is on right now, so choose what you want."
                                    Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,10"/>
                         <StackPanel Orientation="Horizontal">
                             <Button Content="Turn on" Command="{Binding SendToOnCommand}" Padding="{StaticResource Inset.Button}" Margin="0,0,8,0" MinHeight="{StaticResource Size.TouchTarget}"
@@ -108,8 +112,8 @@
                 <Border Style="{StaticResource Style.Card}">
                     <StackPanel>
                         <TextBlock Text="Connection" Style="{StaticResource Style.Text.Section}"/>
-                        <TextBlock Text="The relay address is fixed by the build and is not changed here. You can read it under Diagnostics." Style="{StaticResource Style.Text.Muted}" TextWrapping="Wrap" Margin="0,0,0,12" AutomationProperties.AutomationId="RelayFixedNote"/>
-                        <TextBlock Text="Web app address shown in pairing links (optional)" Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,4"/>
+                        <TextBlock Text="The relay is the MyOrbitDrive server that passes files between this PC and your devices. Its address is built into this copy of MyOrbitDrive and cannot be changed here. You can read it under Diagnostics." Style="{StaticResource Style.Text.Muted}" TextWrapping="Wrap" Margin="0,0,0,12" AutomationProperties.AutomationId="RelayFixedNote"/>
+                        <TextBlock Text="Web app address used in pairing links (optional, leave empty unless you were told to set it)" Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,4"/>
                         <TextBox Text="{Binding WebOrigin, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="WebOriginBox" AutomationProperties.Name="Web app address" Margin="0,0,0,12"/>
                         <Button Content="Save web app address" Command="{Binding SaveGatewayCommand}" Style="{DynamicResource AccentButtonStyle}" HorizontalAlignment="Left"
                                 Padding="{StaticResource Inset.Button}" MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="SaveGatewayButton"/>
@@ -134,6 +138,7 @@
                         <TextBlock Text="{Binding Diagnostics}" Style="{StaticResource Style.Text.Base}" TextWrapping="Wrap" AutomationProperties.AutomationId="DiagnosticsText"/>
                         <Button Content="Copy diagnostics" Command="{Binding CopyDiagnosticsCommand}" HorizontalAlignment="Left" Margin="0,10,0,0" Padding="{StaticResource Inset.Button}"
                                 MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="CopyDiagnosticsButton"/>
+                        <TextBlock Text="{Binding SettingsError}" Style="{StaticResource Style.Text.Error}" TextWrapping="Wrap" AutomationProperties.AutomationId="DiagnosticsError"/>
                     </StackPanel>
                 </Border>
 

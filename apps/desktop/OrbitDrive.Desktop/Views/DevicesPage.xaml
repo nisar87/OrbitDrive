@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="clr-namespace:OrbitDrive.Desktop.Controls"
              xmlns:vm="clr-namespace:OrbitDrive.Desktop.ViewModels"
+             xmlns:local="clr-namespace:OrbitDrive.Desktop.Views"
              IsTabStop="False" Focusable="False">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
@@ -12,7 +13,7 @@
     </UserControl.Resources>
 
     <StackPanel MaxWidth="{StaticResource Page.MaxWidth}">
-        <Grid Margin="0,0,0,16">
+        <Grid Margin="0,0,0,4">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <TextBlock Text="Devices" Style="{StaticResource Style.Text.PageTitle}" AutomationProperties.HeadingLevel="Level1" VerticalAlignment="Center"/>
             <!-- One main action at a time: while a request waits for an answer, Approve is the main action and pairing is secondary. -->
@@ -22,6 +23,9 @@
                     MinHeight="{StaticResource Size.TouchTarget}" Visibility="{Binding ShowApproval, Converter={StaticResource BoolToVisibility}}" AutomationProperties.AutomationId="PairButton"/>
         </Grid>
 
+        <TextBlock Text="The phones and browsers that can open your shared folders. A new one must be paired here first, and you approve it on this PC." Style="{StaticResource Style.Text.PageIntro}"
+                   AutomationProperties.AutomationId="DevicesIntro"/>
+
         <!-- A device is asking to connect: the owner must see the confirmation code before approving. -->
         <Border Style="{StaticResource Style.Card}" Visibility="{Binding ShowApproval, Converter={StaticResource BoolToVisibility}}" BorderBrush="{DynamicResource SystemFillColorCautionBrush}">
             <StackPanel>
@@ -29,10 +33,10 @@
                 <TextBlock Style="{StaticResource Style.Text.Base}" TextWrapping="Wrap" AutomationProperties.AutomationId="ApprovalText">
                     <Run Text="Browser: "/><Run Text="{Binding ApprovalBrowser, Mode=OneWay}" FontWeight="SemiBold"/><LineBreak/>
                     <Run Text="Account: "/><Run Text="{Binding ApprovalAccount, Mode=OneWay}" FontWeight="SemiBold"/><LineBreak/>
-                    <Run Text="From site: "/><Run Text="{Binding ApprovalOrigin, Mode=OneWay}" FontWeight="SemiBold"/><LineBreak/>
+                    <Run Text="Web address: "/><Run Text="{Binding ApprovalOrigin, Mode=OneWay}" FontWeight="SemiBold"/><LineBreak/>
                     <Run Text="Code: "/><Run Text="{Binding ApprovalCode, Mode=OneWay}" FontFamily="{StaticResource Font.Display}" FontSize="26" FontWeight="SemiBold"/>
                 </TextBlock>
-                <TextBlock Text="Approve only if you started this yourself, the site above is your MyOrbitDrive address, and the same code is shown in your browser. Never approve a request you did not start, even if someone asks you to." Style="{StaticResource Style.Text.Muted}" Margin="0,8,0,14"/>
+                <TextBlock Text="Approve only if you started this yourself, the web address above is your own MyOrbitDrive address, and the same code is shown in your browser. Never approve a request you did not start, even if someone asks you to." Style="{StaticResource Style.Text.Muted}" Margin="0,8,0,14"/>
                 <StackPanel Orientation="Horizontal">
                     <Button Content="Approve" Command="{Binding ApproveCommand}" Style="{DynamicResource AccentButtonStyle}" Padding="{StaticResource Inset.Button}" Margin="0,0,8,0"
                             MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="ApproveButton"/>
@@ -46,7 +50,7 @@
         <Border Style="{StaticResource Style.Card}">
             <StackPanel>
                 <TextBlock Text="Pair a new device" Style="{StaticResource Style.Text.Section}"/>
-                <TextBlock Text="Create a one-time code, then scan it with your phone or open the link in the MyOrbitDrive web app. The code expires after two minutes."
+                <TextBlock Text="Choose Pair a device to make a one-time code. Scan it with your phone, or open the link in the MyOrbitDrive web app. The code stops working after two minutes."
                            Style="{StaticResource Style.Text.Muted}" Visibility="{Binding NoPairing, Converter={StaticResource BoolToVisibility}}" AutomationProperties.AutomationId="PairHelp"/>
                 <StackPanel Visibility="{Binding HasPairing, Converter={StaticResource BoolToVisibility}}">
                     <Grid>
@@ -80,7 +84,7 @@
                 <ListBox ItemsSource="{Binding Devices}" SelectedItem="{Binding Selected, Mode=TwoWay}" ItemContainerStyle="{StaticResource Style.DeviceItem}"
                          Visibility="{Binding HasDevices, Converter={StaticResource BoolToVisibility}}" Background="Transparent" BorderThickness="0"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled"
-                         AutomationProperties.AutomationId="DevicesList" AutomationProperties.Name="Paired devices">
+                         AutomationProperties.AutomationId="DevicesList" AutomationProperties.Name="Paired devices" local:ScrollForwarding.Enabled="True">
                     <ListBox.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:DeviceItem}">
                             <Grid>
@@ -102,7 +106,7 @@
                 <TextBlock Text="{Binding SelectedHeading}" Style="{StaticResource Style.Text.Section}"/>
                 <Button Content="Remove this device" Command="{Binding RemoveCommand}" HorizontalAlignment="Left" Padding="{StaticResource Inset.Button}"
                         MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="RevokeDeviceButton"/>
-                <TextBlock Text="It loses access right away and has to be paired again to come back." Style="{StaticResource Style.Text.Muted}" Margin="0,8,0,0"/>
+                <TextBlock Text="The device loses access to your shared folders right away. To use them again it has to be paired again." Style="{StaticResource Style.Text.Muted}" Margin="0,8,0,0"/>
             </StackPanel>
         </Border>
 

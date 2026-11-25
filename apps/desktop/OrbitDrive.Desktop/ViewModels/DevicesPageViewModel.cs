@@ -74,7 +74,7 @@ internal sealed class DevicesPageViewModel : PageViewModel
         }
     }
     public bool HasSelection => _selected is not null;
-    public string SelectedHeading => _selected is null ? "" : $"Settings for {_selected.Name}";
+    public string SelectedHeading => _selected is null ? "" : $"Options for {_selected.Name}";
 
     public bool HasPairing => _pairing is not null;
     public bool NoPairing => _pairing is null;
@@ -82,7 +82,7 @@ internal sealed class DevicesPageViewModel : PageViewModel
     public string PairLink => _pairing?.Url ?? "";
     public BitmapSource? PairQr { get => _qr; private set => SetProperty(ref _qr, value); }
     public string Expiry { get => _expiry; private set => SetProperty(ref _expiry, value); }
-    public string PairHelp => "Scan the QR code, or open the link, in the MyOrbitDrive web app on your phone. The code works once. Only use a code you created yourself just now.";
+    public string PairHelp => "Scan the QR code, or open the link, in the MyOrbitDrive web app on your phone. The code works once. Only use a code you made yourself just now.";
 
     public bool ShowApproval => _approval is not null;
     public bool NoApproval => _approval is null;
@@ -112,7 +112,7 @@ internal sealed class DevicesPageViewModel : PageViewModel
     {
         if (_pairing?.ExpiresAt is not { } at) { Expiry = ""; return; }
         var left = at - DateTimeOffset.UtcNow;
-        Expiry = left <= TimeSpan.Zero ? "This code has expired. Create a new one." : $"Expires in {(int)left.TotalMinutes}:{left.Seconds:00}";
+        Expiry = left <= TimeSpan.Zero ? "This code has expired. Choose Pair a device to make a new one." : $"Expires in {(int)left.TotalMinutes}:{left.Seconds:00}";
     }
 
     private Task OnStatus(ConsoleStatus? status)

@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="clr-namespace:OrbitDrive.Desktop.Controls"
              xmlns:vm="clr-namespace:OrbitDrive.Desktop.ViewModels"
+             xmlns:local="clr-namespace:OrbitDrive.Desktop.Views"
              IsTabStop="False" Focusable="False">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
@@ -16,6 +17,8 @@
 
     <StackPanel MaxWidth="{StaticResource Page.MaxWidth}">
         <TextBlock Text="Activity" Style="{StaticResource Style.Text.PageTitle}" AutomationProperties.HeadingLevel="Level1"/>
+        <TextBlock Text="What MyOrbitDrive is sending right now, and what it has recorded on this PC. No file or folder names are kept in the history." Style="{StaticResource Style.Text.PageIntro}"
+                   AutomationProperties.AutomationId="ActivityIntro"/>
 
         <Border Style="{StaticResource Style.Card}">
             <StackPanel>
@@ -23,7 +26,7 @@
                 <TextBlock Text="{Binding Summary}" Style="{StaticResource Style.Text.Base}" AutomationProperties.AutomationId="TransfersText" Margin="0,0,0,6"/>
                 <ListBox ItemsSource="{Binding Transfers}" ItemContainerStyle="{StaticResource Style.TransferRow}" Background="Transparent" BorderThickness="0"
                          Visibility="{Binding HasTransfers, Converter={StaticResource BoolToVisibility}}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                         ScrollViewer.VerticalScrollBarVisibility="Disabled" AutomationProperties.AutomationId="TransfersList" AutomationProperties.Name="Recent transfers">
+                         ScrollViewer.VerticalScrollBarVisibility="Disabled" AutomationProperties.AutomationId="TransfersList" AutomationProperties.Name="Recent transfers" local:ScrollForwarding.Enabled="True">
                     <ListBox.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:TransferRow}">
                             <StackPanel>
@@ -48,7 +51,7 @@
                               Visibility="{Binding NoHistory, Converter={StaticResource BoolToVisibility}}"/>
                 <ListBox ItemsSource="{Binding History}" ItemContainerStyle="{StaticResource Style.HistoryRow}" Background="Transparent" BorderThickness="0"
                          Visibility="{Binding HasHistory, Converter={StaticResource BoolToVisibility}}" MaxHeight="420"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.AutomationId="HistoryList" AutomationProperties.Name="Activity history">
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.AutomationId="HistoryList" AutomationProperties.Name="Activity history" local:ScrollForwarding.Enabled="True">
                     <ListBox.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:ActivityItem}">
                             <Grid>
@@ -83,7 +86,7 @@
                     <Button Content="Clear history" Command="{Binding ClearCommand}" Padding="{StaticResource Inset.Button}" MinHeight="{StaticResource Size.TouchTarget}"
                             AutomationProperties.AutomationId="ClearHistoryButton"/>
                 </StackPanel>
-                <TextBlock Text="Only what happened is kept: times, kinds of events, counts and sizes. File names, folder names and people are never saved. The newest 200 are shown."
+                <TextBlock Text="Only what happened is kept: times, kinds of events, counts and sizes. File names, folder names and people are never saved. The newest 200 entries are shown."
                            Style="{StaticResource Style.Text.Muted}" Margin="0,10,0,0"/>
                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
                     <TextBlock Text="&#xE783;" Style="{StaticResource Style.Text.Icon}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" Margin="0,2,8,0" VerticalAlignment="Top"/>
@@ -94,9 +97,9 @@
 
         <Border Style="{StaticResource Style.Card}" Visibility="{Binding HasNotes, Converter={StaticResource BoolToVisibility}}">
             <StackPanel>
-                <TextBlock Text="Notes from this session" Style="{StaticResource Style.Text.Section}"/>
+                <TextBlock Text="Since MyOrbitDrive opened" Style="{StaticResource Style.Text.Section}"/>
                 <ListBox ItemsSource="{Binding Notes}" ItemContainerStyle="{StaticResource Style.RowItem}" Background="Transparent" BorderThickness="0" MaxHeight="260"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.AutomationId="ActivityList" AutomationProperties.Name="Notes from this session">
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.AutomationId="ActivityList" AutomationProperties.Name="Messages since MyOrbitDrive opened" local:ScrollForwarding.Enabled="True">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <TextBlock Text="{Binding}" Style="{StaticResource Style.Text.Muted}" TextWrapping="Wrap"/>

@@ -72,7 +72,7 @@ internal sealed class FoldersPageViewModel : PageViewModel
     }
 
     public bool HasSelection => _selected is not null;
-    public string SelectedHeading => _selected is null ? "" : $"Settings for {_selected.Name}";
+    public string SelectedHeading => _selected is null ? "" : $"Options for {_selected.Name}";
     public string HiddenActionText => _selected is { ShowHidden: true } ? "Stop sharing hidden items" : "Share hidden items too";
     public string UploadsActionText => _selected is { UploadsEnabled: true } ? "Stop accepting new files" : "Allow adding files";
 

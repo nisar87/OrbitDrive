@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="clr-namespace:OrbitDrive.Desktop.Controls"
              xmlns:vm="clr-namespace:OrbitDrive.Desktop.ViewModels"
+             xmlns:local="clr-namespace:OrbitDrive.Desktop.Views"
              IsTabStop="False" Focusable="False" AllowDrop="True">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
@@ -18,19 +19,23 @@
             <Button Grid.Column="1" Content="Share a folder…" Command="{Binding ShareFolderCommand}" Style="{DynamicResource AccentButtonStyle}"
                     Padding="{StaticResource Inset.Button}" MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="ShareFolderButton"/>
         </Grid>
-        <TextBlock Text="Only folders listed here can be seen from your paired devices. They can look and download, nothing more, unless you allow adding files to a folder. Windows permissions still apply. You can also drag a folder onto this page."
-                   Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,16" AutomationProperties.AutomationId="RootsIntro"/>
+        <TextBlock Text="Your paired devices can see only the folders listed here. They can look at files and download them, nothing more, unless you allow adding files to a folder. Windows permissions still apply. You can also drag a folder from File Explorer onto this page."
+                   Style="{StaticResource Style.Text.PageIntro}" AutomationProperties.AutomationId="RootsIntro"/>
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,16" Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
+            <TextBlock Text="&#xE783;" Style="{StaticResource Style.Text.Icon}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" Margin="0,2,8,0" VerticalAlignment="Top"/>
+            <TextBlock Text="{Binding Error}" Style="{StaticResource Style.Text.Base}" TextWrapping="Wrap" AutomationProperties.AutomationId="RootError"/>
+        </StackPanel>
 
         <Border Style="{StaticResource Style.Card}">
             <StackPanel>
                 <TextBlock Text="Shared now" Style="{StaticResource Style.Text.Section}"/>
                 <c:EmptyState Glyph="&#xE8B7;" Title="Nothing is shared yet" TitleAutomationId="RootsEmpty"
-                              Message="Your files stay private until you pick a folder. Drag one here, or use Share a folder."
+                              Message="Your files stay private until you pick a folder. Use Share a folder, or drag a folder here from File Explorer."
                               Visibility="{Binding NoFolders, Converter={StaticResource BoolToVisibility}}"/>
                 <ListBox ItemsSource="{Binding Folders}" SelectedItem="{Binding Selected, Mode=TwoWay}" ItemContainerStyle="{StaticResource Style.FolderItem}"
                          Visibility="{Binding HasFolders, Converter={StaticResource BoolToVisibility}}" Background="Transparent" BorderThickness="0"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled" AutomationProperties.AutomationId="RootsList"
-                         AutomationProperties.Name="Shared folders">
+                         AutomationProperties.Name="Shared folders" local:ScrollForwarding.Enabled="True">
                     <ListBox.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:FolderItem}">
                             <Grid>
@@ -46,10 +51,6 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-                <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
-                    <TextBlock Text="&#xE783;" Style="{StaticResource Style.Text.Icon}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" Margin="0,2,8,0" VerticalAlignment="Top"/>
-                    <TextBlock Text="{Binding Error}" Style="{StaticResource Style.Text.Base}" TextWrapping="Wrap" AutomationProperties.AutomationId="RootError"/>
-                </StackPanel>
             </StackPanel>
         </Border>
 
@@ -64,21 +65,26 @@
                     <Button Content="Stop sharing this folder" Command="{Binding RemoveCommand}" Padding="{StaticResource Inset.Button}" Margin="0,0,8,8"
                             MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="RemoveRootButton"/>
                 </WrapPanel>
-                <TextBlock Text="Windows system files are never shared. A folder is tied to the disk it is on: another disk at the same drive letter is not shared."
+                <TextBlock Text="Windows system files are never shared. A folder is tied to the disk it is on, so a different disk that gets the same drive letter is not shared."
                            Style="{StaticResource Style.Text.Muted}"/>
             </StackPanel>
         </Border>
 
         <Border Style="{StaticResource Style.Card}">
             <StackPanel>
-                <TextBlock Text="Share by typing a path" Style="{StaticResource Style.Text.Section}"/>
-                <TextBlock Text="Name shown on your phone" Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,4"/>
-                <TextBox Text="{Binding NewName, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="RootName" AutomationProperties.Name="Name shown on your phone" Margin="0,0,0,12"/>
-                <TextBlock Text="Folder" Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,4"/>
+                <TextBlock Text="Share a folder by typing its path" Style="{StaticResource Style.Text.Section}"/>
+                <TextBlock Text="Same result as the Share a folder button. Use it if you already know the path." Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,10"/>
+                <TextBlock Text="Name your devices will see" Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,4"/>
+                <TextBox Text="{Binding NewName, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="RootName" AutomationProperties.Name="Name your devices will see" Margin="0,0,0,12"/>
+                <TextBlock Text="Folder path, for example D:\Photos" Style="{StaticResource Style.Text.Muted}" Margin="0,0,0,4"/>
                 <TextBox Text="{Binding NewPath, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="RootPath" AutomationProperties.Name="Folder path" Margin="0,0,0,12"/>
                 <CheckBox Content="Also share hidden files and folders from this folder" IsChecked="{Binding IncludeHidden}" AutomationProperties.AutomationId="NewRootHidden" Margin="0,0,0,12"/>
                 <Button Content="Share this folder" Command="{Binding AddByPathCommand}" HorizontalAlignment="Left" Padding="{StaticResource Inset.Button}"
                         MinHeight="{StaticResource Size.TouchTarget}" AutomationProperties.AutomationId="AddRootButton"/>
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Text="&#xE783;" Style="{StaticResource Style.Text.Icon}" Foreground="{DynamicResource SystemFillColorCriticalBrush}" Margin="0,2,8,0" VerticalAlignment="Top"/>
+                    <TextBlock Text="{Binding Error}" Style="{StaticResource Style.Text.Base}" TextWrapping="Wrap" AutomationProperties.AutomationId="RootFormError"/>
+                </StackPanel>
             </StackPanel>
         </Border>
     </StackPanel>

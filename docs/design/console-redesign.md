@@ -95,3 +95,23 @@ Mica backdrop in both themes; 100/125/150/200 % DPI and a narrow window (nav col
 "pause while locked" on; tray open/pause/quit; close to tray; second launch brings up the existing window; Ctrl+1..5; Tab focus ring on every page; Narrator reads
 the Home headline and a device card; drag a folder from Explorer onto Shared folders; the three folder confirmations, the device removal and Clear history dialogs;
 Copy link and Copy as text; scan the QR on Devices with a phone.
+
+## 12. Second pass: the same treatment as the web console (branch `feature/desktop-redesign`)
+
+Scope: the WPF layer only (views, view-model wording, tokens, one small helper). No change to the agent, protocol, security behaviour, update or signing code, and no new feature.
+Written after reading `ADMIN_CONSOLE_REDESIGN.md`; verified by the `desktop` and `desktop-ui` workflows only (Windows Server runners), not on Windows 11 or a real screen.
+
+- **Answer first.** Home keeps the status card and its one fixing button, then a "Needs your attention" group (a device asking to connect, an update, a metered connection) or the line
+  "Nothing is waiting for you." when sharing is running and nothing waits. Same idea as the web console's "Needs attention".
+- **Every page says what it is for.** One plain sentence under each page title (Home, Shared folders, Devices, Activity, Settings). Page titles are 20 px and cards have a 6 px corner
+  radius, matching the web console's visual system; fonts, accent, light/dark and high contrast still come from Windows.
+- **Everything reachable.** All pages sit in one scroller (named "Page"). Lists inside a page used to swallow the mouse wheel; `Views/ScrollForwarding` hands the wheel to the page unless
+  the list itself still has room to scroll. The window never opens larger than the usable screen, and its smallest size is 680 x 480 (reduced only if the screen is smaller). A UI test
+  makes the window small, scrolls Settings, Sending to the bottom and checks the last control comes into view.
+- **Errors say what happened and what to do.** Examples: "Not set up yet" no longer tells people to "add the relay address in Settings" (there is no such field any more); the
+  start-up, save and clipboard messages now say what to try next. Errors for switches on the General, Sending and Diagnostics tabs now appear on those tabs (they were only shown on Connection).
+  A folder error is shown at the top of Shared folders and again under the typed-path form.
+- **Same names for the same thing.** "Open Settings" (was "Set up connection"), "Options for ..." for the selected folder or device (was "Settings for ..."), "Web address" in the pairing
+  request (was "From site"), "relay" is explained once in plain words where it first matters (Connecting, Connection tab).
+- **Unchanged on purpose:** automation ids, page names, the status headlines the UI test reads, the Privacy text (files pass through the relay, not end-to-end encrypted), what the
+  history and lists show (no file or folder names beyond what was shown before), read-only sharing by default.
