@@ -10,6 +10,8 @@ export interface AuthClient {
   refresh(): Promise<void>;
   resetPassword(email: string): Promise<void>;
   signOut(): Promise<void>;
+  /** Deletes the sign-in record itself (email address and password) after the service has deleted the account. Needs a recent sign-in. */
+  deleteSignIn(): Promise<void>;
   getToken(): Promise<string | null>;
 }
 
@@ -23,6 +25,7 @@ const MESSAGES: Record<string, string> = {
   'auth/too-many-requests': 'Too many attempts. Wait a few minutes and try again.',
   'auth/network-request-failed': 'Cannot reach the sign-in service. Check your connection.',
   'auth/user-disabled': 'This account has been disabled.',
+  'auth/requires-recent-login': 'For your safety, sign in again and then repeat this.',
 };
 
 /** Turns an SDK error into a message that is safe and useful to show. */
@@ -57,6 +60,7 @@ export function firebaseAuth(): Promise<AuthClient> {
       async refresh() { if (!auth.currentUser) return; await auth.currentUser.reload(); await auth.currentUser.getIdToken(true); publish(); },
       resetPassword: (email) => sdk.sendPasswordResetEmail(auth, email),
       signOut: () => sdk.signOut(auth),
+      async deleteSignIn() { if (auth.currentUser) await sdk.deleteUser(auth.currentUser); },
       getToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null),
     };
   })();

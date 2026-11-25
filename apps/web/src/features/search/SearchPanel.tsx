@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { FileName } from '../explorer/FileName';
 import type { Session } from '../../api';
 import type { PcSummary, RootSummary, SearchHit } from '../../protocol';
 import { formatBytes, formatTime } from '../../format';
@@ -80,7 +81,7 @@ export function SearchPanel({ session, pcs, here, onClose, onOpenFolder, onOpenF
                           <li key={hit.entry.entryId}>
                             <button type="button" className="hit" onClick={() => (directory ? onOpenFolder({ pc, hit }) : onOpenFile({ pc, hit }))} aria-label={`${directory ? 'Open folder' : 'Open'} ${hit.entry.name} in ${folder} on ${o.pcName}`}>
                               <span className={`icon ${directory ? 'folder' : 'file'}`} aria-hidden="true" />
-                              <span className="hit-main"><bdi>{hit.entry.name}</bdi><small><bdi>{o.pcName} › {folder}</bdi></small></span>
+                              <span className="hit-main"><FileName name={hit.entry.name} /><small><bdi>{o.pcName} › {folder}</bdi></small></span>
                               <span className="hit-meta">{directory ? '' : formatBytes(hit.entry.size)} {formatTime(hit.entry.modifiedUnixMs)}</span>
                             </button>
                             {!directory && hit.parentEntryId !== undefined && <button type="button" className="ghost" onClick={() => onOpenFolder({ pc, hit: { ...hit, entry: { ...hit.entry, kind: 'directory', entryId: hit.parentEntryId ?? '', name: hit.path[hit.path.length - 1] ?? hit.rootName } } })} aria-label={`Show ${hit.entry.name} in its folder`}>Show in folder</button>}

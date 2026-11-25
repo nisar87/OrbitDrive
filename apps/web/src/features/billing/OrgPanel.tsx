@@ -91,6 +91,7 @@ export function OrgPanel({ session, onAuthLost }: Props) {
             <form className="section" onSubmit={(e) => { e.preventDefault(); void run(() => orgApi.join(session, code, label), 'You have joined the organisation.'); }}>
               <h3>Join with an invitation</h3>
               <p className="hint">Use the code the organisation owner gave you. It works once.</p>
+              <p className="hint" data-testid="join-notice">Before you join: the organisation's owner and admins can see your name, your file and data counts, and how many PCs and browsers you have. They can also sign out every browser on this account, including browsers you use for your own PCs. They cannot see your files or file names. Use an account that is only for work if that matters to you.</p>
               <div className="fields">
                 <label>Invitation code<input value={code} maxLength={16} onChange={(e) => setCode(e.target.value)} required autoComplete="off" /></label>
                 <label>Your name in the organisation<input value={label} maxLength={40} onChange={(e) => setLabel(e.target.value)} required /></label>

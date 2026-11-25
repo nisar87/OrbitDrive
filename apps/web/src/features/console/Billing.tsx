@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../api';
 import { billingApi, formatPkr, formatUsd, GIB, MIB, monthsLabel, type AdminBilling, type Coupon, type EditablePlan, type Order } from '../../billing';
 import { Badge, DataTable, PageHead, TabPanel, Tabs, type Column } from './ui';
-import { shortDate, type Ctx } from './shared';
+import { plural, shortDate, type Ctx } from './shared';
 
 const numberOrNull = (text: string): number | null => (text.trim() === '' ? null : Number(text));
 const statusLabel: Record<string, [string, 'wait' | 'ok' | 'bad' | 'plain']> = {
@@ -45,7 +45,7 @@ function OrdersTable({ ctx, orders, after }: { ctx: Ctx; orders: Order[]; after:
     { key: 'order', header: 'Order', sort: (a, b) => a.createdAt.localeCompare(b.createdAt), text: (o) => `${o.planId} ${o.id}`, cell: (o) => <><strong>{o.planId}</strong>, {monthsLabel(o.months)}<small className="hint block">Placed {shortDate(o.createdAt)}{o.couponCode ? `, code ${o.couponCode}` : ''}</small></> },
     { key: 'who', header: 'Account', text: (o) => o.subject, cell: (o) => <bdi className="idtext" title={o.subject}>{o.subject.replace(/^acct:/, '')}</bdi> },
     { key: 'amount', header: 'Amount', numeric: true, sort: (a, b) => a.dueUsd - b.dueUsd, cell: (o) => <>{formatPkr(o.duePkr, false)} <span className="hint">({formatUsd(o.dueUsd)})</span></> },
-    { key: 'paid', header: 'Payment', text: (o) => `${o.method ?? ''} ${o.reference ?? ''}`, cell: (o) => (o.status === 'proof_submitted' ? <>{o.method}, reference <bdi>{o.reference}</bdi></> : <span className="hint">None yet</span>) },
+    { key: 'paid', header: 'Payment', text: (o) => `${o.method ?? ''} ${o.reference ?? ''}`, cell: (o) => (o.status === 'proof_submitted' ? <>{o.method}, reference <bdi>{o.reference}</bdi>{o.sameReferenceAs && o.sameReferenceAs.length > 0 && <Badge tone="bad">Same reference on {plural(o.sameReferenceAs.length, 'other order')}</Badge>}</> : <span className="hint">None yet</span>) },
     { key: 'status', header: 'Status', sort: (a, b) => a.status.localeCompare(b.status), cell: (o) => { const [text, tone] = statusLabel[o.status] ?? [o.status, 'plain' as const]; return <Badge tone={tone}>{text}</Badge>; } },
     { key: 'do', header: 'Decision', cell: (o) => (o.status === 'proof_submitted' || o.status === 'requested')
       ? <span className="actions"><button type="button" className="small" onClick={() => decide(o, 'verify')}>Activate</button><button type="button" className="ghost small" onClick={() => decide(o, 'reject')}>Reject</button></span> : null },
@@ -68,9 +68,9 @@ function PlansEditor({ ctx, data, after }: { ctx: Ctx; data: AdminBilling; after
   return (
     <>
       <section className="section" aria-labelledby="lim">
-        <h3 id="lim">Plan limits</h3>
-        <p>Limits are <Badge tone={on ? 'ok' : 'plain'}>{on ? 'Switched on' : 'Switched off'}</Badge> Usage is counted either way.</p>
-        <p className="actions"><button type="button" className={on ? 'ghost' : ''} onClick={() => ctx.ask({ title: on ? 'Switch limits off' : 'Switch limits on', effect: on ? 'Nobody is held to a plan limit until you switch them on again.' : 'Every account is held to its plan from now on. Accounts over a limit will be refused.', confirmLabel: on ? 'Switch limits off' : 'Switch limits on', danger: !on, done: on ? 'Limits switched off' : 'Limits switched on', run: async (reason) => { await billingApi.setLimits(ctx.session, !on, reason); await after(); } })}>{on ? 'Switch limits off' : 'Switch limits on'}</button></p>
+        <h3 id="lim">Start date: plan limits and ordering</h3>
+        <p>Limits and ordering are <Badge tone={on ? 'ok' : 'plain'}>{on ? 'Switched on' : 'Switched off'}</Badge> This one switch decides both. While it is off, nobody is held to a limit and customers cannot see or place orders. Usage is counted either way.</p>
+        <p className="actions"><button type="button" className={on ? 'ghost' : ''} onClick={() => ctx.ask({ title: on ? 'Switch limits off' : 'Switch limits on', effect: on ? 'Nobody is held to a plan limit, and ordering closes, until you switch them on again.' : 'Every account is held to its plan from now on, and customers can order passes. Accounts over a limit will be refused.', confirmLabel: on ? 'Switch limits off' : 'Switch limits on', danger: !on, done: on ? 'Limits switched off' : 'Limits switched on', run: async (reason) => { await billingApi.setLimits(ctx.session, !on, reason); await after(); } })}>{on ? 'Switch limits off' : 'Switch limits on'}</button></p>
       </section>
       <section className="section" aria-labelledby="rate">
         <h3 id="rate">Exchange rate</h3>

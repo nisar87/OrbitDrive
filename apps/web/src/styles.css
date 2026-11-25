@@ -373,3 +373,5 @@ dl.metrics dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right
 .pre-wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
 .meter { margin: 0.5rem 0; }
 .meter progress { display: block; width: 100%; height: 0.6rem; margin-top: 0.25rem; }
+.file-name { unicode-bidi: isolate; }
+.file-ext { unicode-bidi: isolate; direction: ltr; }

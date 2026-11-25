@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
+import { FileName } from '../explorer/FileName';
 import { ApiError, type Session } from '../../api';
 import { formatBytes } from '../../format';
 import { transfers } from '../transfers/transfers';
@@ -156,7 +157,7 @@ export function PreviewApp({ session, onAuthLost }: { session: Session; onAuthLo
       <div className="preview-bar" role="toolbar" aria-label="Preview">
         <button type="button" className="ghost" aria-label="Previous file" disabled={state.items.length < 2} onClick={() => previewStore.go(-1)}>‹</button>
         <button type="button" className="ghost" aria-label="Next file" disabled={state.items.length < 2} onClick={() => previewStore.go(1)}>›</button>
-        <strong className="preview-name" title={item.name}><bdi>{item.name}</bdi></strong>
+        <strong className="preview-name" title={item.name}><FileName name={item.name} /></strong>
         <span className="hint">{state.index + 1} of {state.items.length} · {formatBytes(String(item.size))}</span>
         <button type="button" onClick={() => void download()}>Download original</button>
       </div>

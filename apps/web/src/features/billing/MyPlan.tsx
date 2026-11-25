@@ -9,7 +9,7 @@ import { UsageTable } from './UsageTable';
 interface Props { session: Session; onAuthLost: (error: unknown) => void }
 
 const STATUS: Record<string, string> = {
-  requested: 'Waiting for your payment', proof_submitted: 'Payment sent, being checked', verified: 'Paid and active', rejected: 'Not accepted', cancelled: 'Cancelled',
+  requested: 'Waiting for your payment', proof_submitted: 'Payment sent, being checked', verified: 'Paid and active', rejected: 'Not accepted', cancelled: 'Cancelled', expired: 'Expired (not paid in time)',
 };
 
 function Meter({ label, used, limit, text }: { label: string; used: number; limit: number | null; text: string }) {
@@ -42,7 +42,9 @@ export function MyPlan({ session, onAuthLost }: Props) {
   }, [session, fail]);
   useEffect(() => { void load(); }, [load]);
 
-  const selectable = plans?.plans.filter((p) => p.purchasable && p.prices.length > 0) ?? [];
+  // Ordering opens with the start date: the same switch as plan limits. Before it, nothing about buying is shown and the relay refuses orders anyway.
+  const ordering = Boolean(plan?.limitsEnabled && plans?.limitsEnabled);
+  const selectable = ordering ? plans?.plans.filter((p) => p.purchasable && p.prices.length > 0) ?? [] : [];
   const chosenPlan = selectable.find((p) => p.id === choice.planId) ?? selectable[0];
   const months = chosenPlan?.prices.some((x) => x.months === choice.months) ? choice.months : chosenPlan?.prices[0]?.months ?? 1;
 
@@ -68,7 +70,7 @@ export function MyPlan({ session, onAuthLost }: Props) {
         {plan.state === 'grace' && plan.graceEndsAt && <> · ended; your extra limits stay until {new Date(plan.graceEndsAt).toLocaleDateString()}</>}
         {plan.state === 'free' && <> · free for life</>}
       </p>
-      {!plan.limitsEnabled && <p className="hint">Plan limits are not switched on yet, so nothing is held back today. These are the limits that will apply.</p>}
+      {!plan.limitsEnabled && <p className="hint">Plan limits are not switched on yet, so nothing is held back today. These are the limits that will apply. Paid plans are not on sale yet.</p>}
       <Meter label="Files today" used={plan.filesToday} limit={plan.limits.filesPerDay} text={`${plan.filesToday} of ${limitText(plan.limits.filesPerDay, 'count')}`} />
       <Meter label="Data today" used={plan.bytesToday} limit={plan.limits.bytesPerDay} text={`${limitText(plan.bytesToday, 'bytes')} of ${limitText(plan.limits.bytesPerDay, 'bytes')}`} />
       <dl>
@@ -105,7 +107,7 @@ export function MyPlan({ session, onAuthLost }: Props) {
       {selectable.length > 0 && (
         <>
           <h3>Buy or extend a pass</h3>
-          <p className="hint">Passes are one-time and never renew by themselves. Buying again adds time after the pass you have.</p>
+          <p className="hint">Passes are one-time and never renew by themselves. A pass keeps its price and end date. Buying the same plan again adds time after your pass; buying a higher plan starts now.</p>
           <label className="stack" htmlFor="buy-plan">Plan</label>
           <select id="buy-plan" value={chosenPlan?.id} onChange={(e) => { setChoice({ ...choice, planId: e.target.value }); setQuote(null); }}>
             {selectable.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -128,7 +130,7 @@ export function MyPlan({ session, onAuthLost }: Props) {
         </>
       )}
 
-      {open.map((order) => {
+      {ordering && open.map((order) => {
         const form = proof[order.id] ?? { method: order.method ?? 'jazzcash', reference: order.reference ?? '' };
         return (
           <section key={order.id} className="panel" aria-label={`Order ${order.id}`} data-testid="open-order">

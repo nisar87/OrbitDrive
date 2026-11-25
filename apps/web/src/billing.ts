@@ -13,6 +13,8 @@ export interface Quote { planId: string; planName: string; months: number; listU
 export interface Order {
   id: string; subject: string; planId: string; months: number; listUsd: number; dueUsd: number; duePkr: number; couponCode: string | null; status: string;
   createdAt: string; method: string | null; reference: string | null; licenceId: string | null; decidedBy: string | null; decidedAt: string | null; reason: string | null;
+  /** Owner's list only: ids of other orders that carry the same payment reference (after ignoring case and spaces). */
+  sameReferenceAs?: string[] | null;
 }
 export interface Coupon { code: string; kind: 'percent' | 'fixed'; value: number; planIds: string[]; expiresAt: string | null; maxRedemptions: number | null; redeemed: number; active: boolean; note: string | null }
 export interface EditablePlan { id: string; name: string; rank: number; limits: Limits; prices: { months: number; usd: number; pkrOverride: number | null }[]; purchasable: boolean }

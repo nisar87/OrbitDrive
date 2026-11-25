@@ -78,8 +78,13 @@ test('create account, verify email, pair, download, sign out, sign in again, res
 
   await page.getByRole('button', { name: 'Account', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Sign out' }).click();
+  // Sign-out asks whether to remove the pairing from this browser. The default keeps it; this test removes it, which is what a shared computer should do.
+  const signOutDialog = page.getByRole('dialog', { name: 'Sign out' });
+  await expect(signOutDialog.getByLabel('Also remove the pairing from this browser?')).not.toBeChecked();
+  await signOutDialog.getByLabel('Also remove the pairing from this browser?').check();
+  await signOutDialog.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByRole('heading', { name: 'Sign in' }).first()).toBeVisible();
-  expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('orbitdrive.device'))), 'device credential cleared on sign-out').toEqual([]);
+  expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('orbitdrive.device'))), 'device credential cleared when the pairing is removed').toEqual([]);
 
   await page.getByRole('button', { name: 'Create an account' }).click();
   await page.getByLabel('Email').fill(email);
@@ -94,6 +99,7 @@ test('create account, verify email, pair, download, sign out, sign in again, res
   // Signed in again as the same verified account, but this browser was revoked at sign-out, so it must pair again.
   await expect(page.getByRole('heading', { name: 'Pair with your PC' }).first()).toBeVisible();
   await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.getByRole('dialog', { name: 'Sign out' }).getByRole('button', { name: 'Sign out' }).click();
 
   await page.getByRole('button', { name: 'Forgot password?' }).click();
   await page.getByLabel('Email').fill(email);

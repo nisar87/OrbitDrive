@@ -18,6 +18,8 @@ import { InboxApp } from './features/inbox/InboxApp';
 import { inbox } from './features/inbox/inbox';
 import type { AccountSummary } from './protocol';
 import { pwa } from './pwa';
+import { SignOutDialog } from './features/auth/SignOutDialog';
+import { DataControls } from './features/account/DataControls';
 
 // The operator area is a separate chunk: ordinary accounts never download it.
 const AdminApp = lazy(() => import('./features/admin/AdminApp'));
@@ -25,35 +27,57 @@ import { applyTheme, loadPrefs, savePrefs, type Prefs } from './prefs';
 
 const initialLink = takePairingLinkFromLocation(window.location, window.history);
 
-interface WorkspaceProps { session: Session; onDevice: (device: Session['device']) => void; onSignOut: () => Promise<void>; onUnauthenticated: () => void }
+interface WorkspaceProps {
+  session: Session; onDevice: (device: Session['device']) => void;
+  /** Ends this browser's sign-in. `removePairing` also forgets the approved-browser record kept for this account on this browser. */
+  onSignOut: (removePairing: boolean) => Promise<void>;
+  /** After the service deleted the account: remove the sign-in record too where the build can, then sign out. */
+  onAccountDeleted: () => Promise<void>;
+  onUnauthenticated: () => void;
+}
 
 /** Everything after sign-in: pair this browser, then browse. Shared by both identity modes. */
-function Workspace({ session, onDevice, onSignOut, onUnauthenticated }: WorkspaceProps) {
+function Workspace({ session, onDevice, onSignOut, onAccountDeleted, onUnauthenticated }: WorkspaceProps) {
   const [link, setLink] = useState<PairingLink | null>(initialLink);
   const [pairing, setPairing] = useState(initialLink !== null);
 
-  const signOut = useCallback(async () => {
-    // Signing out revokes this browser's approval on the service, then clears every local credential.
+  const [asking, setAsking] = useState(false);
+  const signOut = useCallback(async (removePairing: boolean) => {
+    // Signing out clears this browser's local copies. Whether the pairing goes too is the person's choice (default: it stays).
     transfers.reset();
     inbox.reset();
     void pwa.purge();
-    if (session.device) await api.revokeThisBrowser(session).catch(() => undefined);
-    await onSignOut();
+    if (removePairing && session.device) await api.revokeThisBrowser(session).catch(() => undefined);
+    await onSignOut(removePairing);
   }, [session, onSignOut]);
+  const askSignOut = useCallback(() => setAsking(true), []);
+  const deleted = useCallback(async () => {
+    transfers.reset(); inbox.reset(); void pwa.purge();
+    await onAccountDeleted();
+  }, [onAccountDeleted]);
 
   const onAuthLost = useCallback((error: unknown) => {
     if (error instanceof ApiError && error.code === 'unauthenticated') onUnauthenticated();
     else if (error instanceof ApiError && error.code === 'forbidden') { onDevice(undefined); setPairing(true); }
   }, [onDevice, onUnauthenticated]);
 
+  const dialog = asking ? <SignOutDialog paired={Boolean(session.device)} onCancel={() => setAsking(false)} onConfirm={(removePairing) => { setAsking(false); void signOut(removePairing); }} /> : null;
   if (pairing || !session.device) {
     return (
-      <Shell title="Pair with your PC" account={session.email} onSignOut={signOut}>
+      <Shell title="Pair with your PC" account={session.email} onSignOut={askSignOut}>
         <Pairing session={session} link={link} onLinkUsed={() => setLink(null)} onPaired={(device) => { onDevice(device); setPairing(false); }} />
+        <details className="panel" data-testid="data-before-pairing">
+          <summary>Your account and data</summary>
+          <DataControls session={session} onAuthLost={onAuthLost} onDeleted={deleted} />
+        </details>
+        {dialog}
       </Shell>
     );
   }
-  return <Workbench session={session} onAuthLost={onAuthLost} onSignOut={() => void signOut()} onPairAnother={() => setPairing(true)} />;
+  return <>
+    <Workbench session={session} onAuthLost={onAuthLost} onSignOut={askSignOut} onSignOutNow={() => signOut(true)} onAccountDeleted={deleted} onPairAnother={() => setPairing(true)} />
+    {dialog}
+  </>;
 }
 
 const glyph = (path: string) => <svg viewBox="0 0 24 24" aria-hidden="true"><path d={path} /></svg>;
@@ -68,7 +92,7 @@ const ICONS = {
 };
 
 /** The signed-in, paired workspace: a desktop with the implemented apps only (Explorer, Devices, Settings). */
-function Workbench({ session, onAuthLost, onSignOut, onPairAnother }: { session: Session; onAuthLost: (error: unknown) => void; onSignOut: () => void; onPairAnother: () => void }) {
+function Workbench({ session, onAuthLost, onSignOut, onSignOutNow, onAccountDeleted, onPairAnother }: { session: Session; onAuthLost: (error: unknown) => void; onSignOut: () => void; onSignOutNow: () => Promise<void>; onAccountDeleted: () => Promise<void>; onPairAnother: () => void }) {
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
   const [dataVersion, setDataVersion] = useState(0);
   const [owner, setOwner] = useState<AccountSummary | null>(null);
@@ -94,9 +118,9 @@ function Workbench({ session, onAuthLost, onSignOut, onPairAnother }: { session:
     { id: 'inbox', title: 'Inbox', icon: ICONS.inbox, badge: waiting, render: () => <InboxApp session={session} /> },
     { id: 'transfers', title: 'Transfers', icon: ICONS.transfers, render: () => <TransfersApp session={session} /> },
     { id: 'devices', title: 'Devices', icon: ICONS.devices, render: () => <DevicesApp session={session} onAuthLost={onAuthLost} onPairAnother={onPairAnother} onChanged={changed} dataVersion={dataVersion} /> },
-    { id: 'settings', title: 'Settings', icon: ICONS.settings, render: () => <SettingsApp prefs={prefs} onPrefs={updatePrefs} account={session.email} onSignOut={onSignOut} session={session} onSummary={setOwner} onAuthLost={onAuthLost} /> },
+    { id: 'settings', title: 'Settings', icon: ICONS.settings, render: () => <SettingsApp prefs={prefs} onPrefs={updatePrefs} account={session.email} onSignOut={onSignOut} onSignOutNow={onSignOutNow} onAccountDeleted={onAccountDeleted} session={session} onSummary={setOwner} onAuthLost={onAuthLost} /> },
     ...(owner?.isOperator ? [{ id: 'admin', title: 'Administration', icon: ICONS.admin, render: () => <Suspense fallback={<p className="empty" role="status">Loading…</p>}><AdminApp session={session} onSignOut={onSignOut} /></Suspense> }] : []),
-  ], [session, prefs, updatePrefs, onAuthLost, dataVersion, onPairAnother, changed, onSignOut, waiting, owner?.isOperator]);
+  ], [session, prefs, updatePrefs, onAuthLost, dataVersion, onPairAnother, changed, onSignOut, onSignOutNow, onAccountDeleted, waiting, owner?.isOperator]);
   return (
     <>
       <Desktop apps={apps} account={session.email} prefs={prefs} onPrefs={updatePrefs} onSignOut={onSignOut} openRef={openApp} />
@@ -116,7 +140,7 @@ function DevApp() {
   const [session, setSession] = useState<Session | null>(loadSession);
   const update = useCallback((next: Session | null) => { saveSession(next); setSession(next); }, []);
   if (!session) return <Shell title="Sign in"><SignIn mode="dev" onSignedIn={(s) => update(s)} /></Shell>;
-  return <Workspace session={session} onDevice={(device) => update({ ...session, device })} onSignOut={async () => update(null)} onUnauthenticated={() => update(null)} />;
+  return <Workspace session={session} onDevice={(device) => update({ ...session, device })} onSignOut={async () => update(null)} onAccountDeleted={async () => update(null)} onUnauthenticated={() => update(null)} />;
 }
 
 function FirebaseApp() {
@@ -138,10 +162,18 @@ function FirebaseApp() {
   if (failure) return <Shell title="Setup needed"><p role="alert" className="notice error">{failure}</p></Shell>;
   if (user === undefined) return <Shell title="MyOrbitDrive"><p className="empty" role="status">Loading…</p></Shell>;
   if (user === null) return <Shell title="Sign in"><AccountForms /></Shell>;
-  const signOut = async () => { saveDevice(user.uid, undefined); await (await firebaseAuth()).signOut(); };
-  if (!user.emailVerified) return <Shell title="Verify your email" account={user.email} onSignOut={signOut}><VerifyEmail email={user.email} /></Shell>;
+  // Keeping the pairing is the default: the approved-browser record stays stored for this account, so signing in again needs no new code.
+  const signOut = async (removePairing = false) => { if (removePairing) saveDevice(user.uid, undefined); await (await firebaseAuth()).signOut(); };
+  const accountDeleted = async () => {
+    saveDevice(user.uid, undefined);
+    const auth = await firebaseAuth();
+    // The service has already deleted its records. Deleting the sign-in record can need a fresh sign-in; if it is refused the person is told, never left believing it is gone.
+    try { await auth.deleteSignIn(); } catch { window.alert('Your account data was deleted, but your sign-in record (email address and password) could not be deleted automatically. Sign in again and delete the account once more, or write to the address on the Privacy page.'); }
+    await auth.signOut().catch(() => undefined);
+  };
+  if (!user.emailVerified) return <Shell title="Verify your email" account={user.email} onSignOut={() => void signOut(true)}><VerifyEmail email={user.email} /></Shell>;
   return (
-    <Workspace session={{ idToken: '', email: user.email, device }} onSignOut={signOut} onUnauthenticated={() => void signOut()}
+    <Workspace session={{ idToken: '', email: user.email, device }} onSignOut={signOut} onAccountDeleted={accountDeleted} onUnauthenticated={() => void signOut(false)}
       onDevice={(next) => { saveDevice(user.uid, next); setDevice(next); }} />
   );
 }

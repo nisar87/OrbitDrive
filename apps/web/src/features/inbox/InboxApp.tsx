@@ -1,4 +1,5 @@
 import { useState, useSyncExternalStore } from 'react';
+import { FileName } from '../explorer/FileName';
 import { ApiError, INVITATION_PREFIX, type Session } from '../../api';
 import type { InvitationSummary } from '../../protocol';
 import { formatBytes } from '../../format';
@@ -38,7 +39,7 @@ export function InboxApp({ session }: { session: Session }) {
   const accept = async (item: InvitationSummary, mode: 'browser' | 'file') => {
     setBusy(item.invitationId); setMessage((m) => ({ ...m, [item.invitationId]: '' }));
     try {
-      const entry = { entryId: INVITATION_PREFIX + item.invitationId, name: item.name };
+      const entry = { entryId: INVITATION_PREFIX + item.invitationId, name: item.name || 'file' };
       if (mode === 'file') await transfers.toFile(session, item.pcId, entry);
       else await transfers.toBrowser(session, item.pcId, entry);
     } catch (e) {
@@ -68,7 +69,7 @@ export function InboxApp({ session }: { session: Session }) {
     return (
       <li key={item.invitationId} data-state={item.state} data-testid="invitation">
         <div className="transfer-head">
-          <strong><bdi>{item.name}</bdi></strong>
+          <strong>{item.name ? <FileName name={item.name} /> : <em className="hint" data-testid="no-name">Name not shown while the PC is offline</em>}</strong>
           <span className="badge">{formatBytes(item.size)}</span>
         </div>
         <p className="hint">From <bdi>{item.pcName}</bdi> · offered {when(item.createdAtUnixMs)}{actionable ? ` · ${expiresIn(item.expiresAtUnixMs)}` : ''}</p>

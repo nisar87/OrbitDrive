@@ -58,7 +58,7 @@ async function refresh(mine: number) {
     const fresh = list.invitations.filter((i) => i.state === 'pending' && !seen.has(i.invitationId));
     for (const i of list.invitations) seen.add(i.invitationId);
     if (!first && fresh.length > 0) {
-      announcements = [...announcements.slice(-4), fresh.length === 1 ? `New file from ${fresh[0].pcName}: ${fresh[0].name}` : `${fresh.length} new files from ${fresh[0].pcName}`];
+      announcements = [...announcements.slice(-4), fresh.length === 1 ? (fresh[0].name ? `New file from ${fresh[0].pcName}: ${fresh[0].name}` : `New file from ${fresh[0].pcName}`) : `${fresh.length} new files from ${fresh[0].pcName}`];
       void notifyGeneric();
       const text = announcements[announcements.length - 1];
       setTimeout(() => { if (announcements.includes(text)) { announcements = announcements.filter((a) => a !== text); publish(); } }, TOAST_MS);

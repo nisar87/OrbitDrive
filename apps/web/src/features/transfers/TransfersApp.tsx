@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { FileName } from '../explorer/FileName';
 import { api, type Session } from '../../api';
 import type { DownloadSessionSummary } from '../../protocol';
 import { formatBytes } from '../../format';
@@ -63,7 +64,7 @@ export function TransfersApp({ session }: { session: Session }) {
           return (
             <li key={item.id} data-state={item.state} data-testid="transfer">
               <div className="transfer-head">
-                <strong><bdi>{item.name}</bdi></strong>
+                <strong><FileName name={item.name} /></strong>
                 <span className="badge">{item.mode === 'file' ? 'Written by MyOrbitDrive' : 'Browser download'}</span>
               </div>
               <p role="status" className={item.state === 'failed' || item.state === 'changed' ? 'transfer-text problem' : 'transfer-text'}>{describe(item, observed)}{item.message ? ` ${item.message}` : ''}</p>

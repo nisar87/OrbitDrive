@@ -175,6 +175,7 @@ test('signing out removes every trace of what was offered: page, storage and cac
 
   await page.getByRole('button', { name: 'Account', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Sign out' }).click();
+  await page.getByRole('dialog', { name: 'Sign out' }).getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByLabel('Email')).toBeVisible();
   await expect(page.getByText('private-name.txt')).toHaveCount(0);
   now = await stored();

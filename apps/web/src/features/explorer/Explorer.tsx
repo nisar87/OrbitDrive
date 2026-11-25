@@ -1,4 +1,5 @@
 import { memo, useSyncExternalStore, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { FileName } from './FileName';
 import { createPortal } from 'react-dom';
 import { api, ApiError, type Session } from '../../api';
 import type { Breadcrumb, FileEntry, PcSummary, RootSummary } from '../../protocol';
@@ -714,7 +715,7 @@ const Row = memo(function Row({ entry, selected, current, checkbox, actions, thu
         <button type="button" className="row-button" tabIndex={current ? 0 : -1} onFocus={() => actions.focus(entry.entryId)}
           onClick={() => { if (!actions.consumeSuppressedClick()) actions.activate(entry); }}
           title={entry.name} aria-label={`${entry.kind === 'directory' ? `Open folder ${entry.name}` : opensOnActivate(previewKindOf(entry.name)) ? `Preview ${entry.name}` : `Download ${entry.name}`}${entry.hidden ? ' (hidden item)' : ''}`}>
-          {thumbs && entry.kind === 'file' && previewKindOf(entry.name) === 'image' ? <Thumb session={thumbs.session} pcId={thumbs.pcId} entryId={entry.entryId} /> : <span className={`icon ${entry.kind === 'directory' ? 'folder' : 'file'}`} data-kind={entry.kind === 'directory' ? undefined : fileKindOf(entry.name)} aria-hidden="true" />}<bdi>{entry.name}</bdi>
+          {thumbs && entry.kind === 'file' && previewKindOf(entry.name) === 'image' ? <Thumb session={thumbs.session} pcId={thumbs.pcId} entryId={entry.entryId} /> : <span className={`icon ${entry.kind === 'directory' ? 'folder' : 'file'}`} data-kind={entry.kind === 'directory' ? undefined : fileKindOf(entry.name)} aria-hidden="true" />}<FileName name={entry.name} />
         </button>
       </td>
       <td className="modified">{formatTime(entry.modifiedUnixMs)}</td>

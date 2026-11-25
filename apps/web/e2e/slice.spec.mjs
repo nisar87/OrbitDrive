@@ -27,6 +27,10 @@ const openApp = (page, name) => page.getByRole('navigation', { name: 'Taskbar' }
 async function signOut(page) {
   await page.getByRole('button', { name: 'Account', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Sign out' }).click();
+  // Sign-out asks whether to remove the pairing too (default: keep). This test removes it, because it checks that the approval is revoked on the service.
+  const dialog = page.getByRole('dialog', { name: 'Sign out' });
+  await dialog.getByLabel('Also remove the pairing from this browser?').check();
+  await dialog.getByRole('button', { name: 'Sign out' }).click();
 }
 
 async function signIn(page, email) {

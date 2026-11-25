@@ -180,7 +180,7 @@ export const api = {
   adminUsers: (s: Session) => call('AdminUserList', s, 'GET', '/v1/admin/users'),
   adminAudit: (s: Session) => call('AuditList', s, 'GET', '/v1/admin/audit'),
   adminSettings: (s: Session) => call('AdminSettings', s, 'GET', '/v1/admin/settings'),
-  setAdminSettings: (s: Session, minAgentVersion: string) => call('Ack', s, 'PUT', '/v1/admin/settings', { minAgentVersion }),
+  setAdminSettings: (s: Session, minAgentVersion: string, reason: string) => call('Ack', s, 'PUT', '/v1/admin/settings', { minAgentVersion, reason }),
   adminUserAction: (s: Session, uid: string, action: 'suspend' | 'unsuspend' | 'revoke-all' | 'reset-relay-allowance', reason: string) =>
     call(action === 'revoke-all' ? 'AccountRevokeResult' : 'Ack', s, 'POST', `/v1/admin/users/${encodeURIComponent(uid)}/${action}`, { reason }),
   revokeThisBrowser: (s: Session) => call('Ack', s, 'DELETE', '/v1/browser-devices/current'),

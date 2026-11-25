@@ -32,3 +32,6 @@
 .idtext { display: inline-block; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .block { display: block; }
 
+
+.banners { list-style: none; padding: 0; margin: 0 0 12px; }
+.banners li { margin: 6px 0; }
