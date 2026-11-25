@@ -23,6 +23,15 @@ public sealed class FirestoreBackendTests
     private static Store Open(FirestoreSnapshotBackend backend) => new(new GatewayOptions { PairingTtlSeconds = 120 }, TimeProvider.System, backend);
     private static readonly Identity Alice = new("alice", "alice@example.test");
 
+    /// <summary>A PC that an account has paired. An unpaired PC is held in memory only and is never stored (F-001), so tests about storing a PC must pair it.</summary>
+    private static void UpsertPaired(Store store, string pcId, byte key, string name)
+    {
+        store.UpsertPc(pcId, [key], name, "0.1.0");
+        var (id, secret, _) = store.CreatePairing(pcId);
+        store.ClaimPairing(id, secret, Alice, "phone " + pcId);
+        store.ConfirmPairing(id, pcId, approve: true);
+    }
+
     private static async Task<(Store Store, BrowserDeviceRecord Device)> PairedAsync(FirestoreSnapshotBackend backend)
     {
         var store = Open(backend);
@@ -202,7 +211,7 @@ public sealed class FirestoreBackendTests
         var db = NewProject();
         var backend = new FirestoreSnapshotBackend(db, TimeProvider.System);
         var store = Open(backend);
-        for (var i = 0; i < 40; i++) store.UpsertPc($"pc{i}", [(byte)i], $"PC {i}", "0.1.0");
+        for (var i = 0; i < 40; i++) UpsertPaired(store, $"pc{i}", (byte)i, $"PC {i}");
         store.SetSuspended("alice", true);
         var dispose = backend.DisposeAsync().AsTask();       // no flush first: shutdown itself must finish the writes
         await dispose.WaitAsync(TimeSpan.FromSeconds(30));
@@ -220,9 +229,9 @@ public sealed class FirestoreBackendTests
         var db = NewProject();
         var backend = new FirestoreSnapshotBackend(db, TimeProvider.System);
         var store = Open(backend);
-        store.UpsertPc("pc1", [1], "Before", "0.1.0");
+        UpsertPaired(store, "pc1", 1, "Before");
         await backend.DisposeAsync();
-        store.UpsertPc("pc2", [2], "After", "0.1.0");        // the request that raced shutdown: must not throw into the caller
+        UpsertPaired(store, "pc2", 2, "After");        // the request that raced shutdown: must not throw into the caller
         await Task.Delay(300);
         var stored = (await db.Collection("pcs").GetSnapshotAsync()).Select(d => d.Id).ToList();
         Assert.Equal(["pc1"], stored);
@@ -303,7 +312,7 @@ public sealed class FirestoreBackendTests
         await lost.Task.WaitAsync(TimeSpan.FromSeconds(15));
         Assert.True(old.LeaseLost);
         var store = Open(old);
-        store.UpsertPc("pc-after-loss", [7], "Late PC", "0.1.0");
+        UpsertPaired(store, "pc-after-loss", 7, "Late PC");
         await old.FlushAsync(TimeSpan.FromSeconds(5));
         Assert.False((await db.Document("pcs/pc-after-loss").GetSnapshotAsync()).Exists, "a gateway that lost the lease must not write");
     }

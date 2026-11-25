@@ -190,7 +190,10 @@ try {
     Nav 'Settings'
     Check (-not (Exists 'GatewayBox')) 'Settings has no relay address field: the relay is fixed by the build or the command line'
     # The relay for this test is set through the agent's own command line (the same channel the app uses), not through a Settings field.
-    $refused = (& $AgentExe ctl set_gateway 'http://relay.example.com' --state $state 2>&1 | Out-String)
+    # The agent reports the refusal on stderr; a native command's stderr must not stop this script, so the preference is relaxed for this one call.
+    $previousPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $refused = (& $AgentExe ctl set_gateway 'http://relay.example.com' --state $state 2>&1 | ForEach-Object { "$_" } | Out-String)
+    $ErrorActionPreference = $previousPreference
     Check ($refused -match 'HTTPS') 'a non-HTTPS relay address is refused'
     [void](& $AgentExe ctl set_gateway $relay 'http://localhost:5173' --state $state)
     SetText 'WebOriginBox' 'http://localhost:5173'; Click 'SaveGatewayButton'
