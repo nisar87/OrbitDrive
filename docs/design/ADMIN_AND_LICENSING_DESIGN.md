@@ -91,7 +91,7 @@ Security (OWASP ASVS says administrative interfaces use multi-factor authenticat
 - A. Prices live in a versioned repo file used by both site and gateway; changing a price is a reviewed commit and deploy. Safest, least flexible.
 - B. The gateway serves a public read-only `/v1/plans`; the site fetches it and falls back to baked-in values; the site CSP allows connecting to the relay origin only. Flexible; one new public endpoint and a CSP change.
 - C. Panel edits trigger a deploy that regenerates the site. Most moving parts.
-Recommendation: A for launch (matches how the project already ships, fully tested), B once prices change often. Either way Terms and Refund text must not quote prices that can drift; they point to the Services page.
+Decision: B (see section 11). Either way Terms and Refund text must not quote prices that can drift; they point to the Services page.
 
 ## 7. Individual users: Account page (free and paid)
 
@@ -154,6 +154,6 @@ Entity: an organisation with an owner; members join by emailed invitation; **sea
 
 - **No trial.** The Free plan already lets people try the product.
 - **Grace period: yes, 3 days** after a pass ends, then fall back to Free (PCs/devices beyond Free are paused, not deleted).
-- **Price display: option A** (prices in a versioned repo file used by the site and the gateway; a price change is a reviewed deploy). Option B can come later.
+- **Price display: option B** (revised after the owner asked to change prices from the admin panel). The panel is the source of truth; the gateway serves a public read-only `/v1/plans`; the site fetches it with baked-in fallback values; the site CSP `connect-src` allows only the gateway origin. Option A (repo file) is rejected because panel edits would not reach the site.
 - **Free plan: 5 files/day, 100 MB per file** (300 MB/day), as published.
 - **Sales tax: postponed.** Revisit with an accountant before charging anyone.
