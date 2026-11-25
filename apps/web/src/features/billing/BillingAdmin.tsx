@@ -22,7 +22,7 @@ export function BillingAdmin({ session, onFail }: Props) {
   const [coupon, setCoupon] = useState({ code: '', kind: 'percent', value: '10', max: '', expires: '', plan: '' });
   const [grant, setGrant] = useState({ uid: '', planId: 'plus', months: '1', source: 'grant' as 'grant' | 'manual' });
 
-  const fail = useCallback((e: unknown) => { onFail(e); setError(e instanceof ApiError ? e.message : 'Something went wrong.'); }, [onFail]);
+  const fail = useCallback((e: unknown) => { if (e instanceof ApiError && e.code === 'unauthenticated') onFail(e); setError(e instanceof ApiError ? e.message : 'Something went wrong.'); }, [onFail]);
   const load = useCallback(async () => {
     try {
       const [billing, queue] = await Promise.all([billingApi.admin(session), billingApi.orders(session, null)]);
