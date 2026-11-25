@@ -3,6 +3,7 @@ import { api, ApiError, type Session } from '../../api';
 import type { AdminOverview, AdminUser, AuditEntry } from '../../protocol';
 import { formatBytes, formatTime } from '../../format';
 import { BillingAdmin } from '../billing/BillingAdmin';
+import { AccountDetail, OrgAdmin } from '../billing/AdminDetails';
 
 interface Props { session: Session; onSignOut: () => void }
 
@@ -23,6 +24,7 @@ export default function AdminApp({ session, onSignOut }: Props) {
   const [note, setNote] = useState<string | null>(null);
   const [pending, setPending] = useState<{ uid: string; action: Action } | null>(null);
   const [reason, setReason] = useState('');
+  const [detailUid, setDetailUid] = useState<string | null>(null);
 
   const fail = useCallback((e: unknown) => setError({ text: e instanceof ApiError ? e.message : 'Something went wrong.', signInAgain: e instanceof ApiError && e.code === 'unauthenticated' }), []);
   const load = useCallback(async () => {
@@ -82,6 +84,7 @@ export default function AdminApp({ session, onSignOut }: Props) {
               <span><strong><bdi>{user.uid}</bdi></strong>{user.suspended && <span className="notice error"> suspended</span>}
                 <small>{user.devices} browser{user.devices === 1 ? '' : 's'} · {user.pcs} PC{user.pcs === 1 ? '' : 's'} · {formatBytes(user.relayBytesToday)} today</small></span>
               <span className="actions">
+                <button type="button" className="ghost" onClick={() => setDetailUid(user.uid)}>Details</button>
                 {(['suspend', 'unsuspend', 'revoke-all', 'reset-relay-allowance'] as Action[]).filter((a) => a !== (user.suspended ? 'suspend' : 'unsuspend')).map((action) => (
                   <button key={action} type="button" className="ghost" onClick={() => { setPending({ uid: user.uid, action }); setReason(''); }}>{LABEL[action]}</button>
                 ))}
@@ -99,6 +102,8 @@ export default function AdminApp({ session, onSignOut }: Props) {
           </form>
         )}
       </article>
+      {detailUid && <AccountDetail session={session} uid={detailUid} onClose={() => setDetailUid(null)} />}
+      <OrgAdmin session={session} />
       <article className="panel" aria-labelledby="admin-audit">
         <h2 id="admin-audit">Audit log</h2>
         <ul className="device-list" data-testid="admin-audit">

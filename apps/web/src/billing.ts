@@ -24,6 +24,14 @@ export interface OrgMember { uid: string; label: string; role: 'owner' | 'admin'
 export interface OrgView { org: { id: string; name: string; role: 'owner' | 'admin' | 'member' } | null; planId: string | null; members: OrgMember[]; filesToday: number; bytesToday: number }
 export interface OrgEvent { at: string; action: string; detail: string; by: string }
 
+export interface UsageDay { date: string; files: number; bytes: number }
+export interface AdminUserDetail {
+  uid: string; suspended: boolean; plan: AccountPlan; orgName: string | null; orgRole: string | null; history: UsageDay[];
+  pcs: { name: string; agentVersion: string; lastSeen: string }[]; devices: { name: string; createdAt: string; lastUsedAt: string }[];
+}
+export interface AdminOrgRow { id: string; name: string; ownerUid: string; members: number; planId: string; filesToday: number; bytesToday: number; suspended: boolean; createdAt: string }
+export interface AdminOrgDetail { org: AdminOrgRow; members: OrgMember[]; history: UsageDay[]; events: OrgEvent[] }
+
 export const MIB = 1024 * 1024;
 export const GIB = 1024 * MIB;
 
@@ -45,7 +53,16 @@ export function limitText(value: number | null, kind: 'count' | 'bytes'): string
 /** How full a limit is, 0 to 100, or null when there is no limit. */
 export function percentUsed(used: number, limit: number | null): number | null { return limit === null || limit <= 0 ? null : Math.min(100, Math.round((used / limit) * 100)); }
 
+export const adminApi = {
+  userDetail: (s: Session, uid: string) => callJson<AdminUserDetail>(s, 'GET', `/v1/admin/users/${encodeURIComponent(uid)}/detail`),
+  orgs: (s: Session) => callJson<AdminOrgRow[]>(s, 'GET', '/v1/admin/orgs'),
+  org: (s: Session, id: string) => callJson<AdminOrgDetail>(s, 'GET', `/v1/admin/orgs/${encodeURIComponent(id)}`),
+  orgAction: (s: Session, id: string, action: 'suspend' | 'unsuspend' | 'delete', reason: string) => callJson<{ ok: boolean }>(s, 'POST', `/v1/admin/orgs/${encodeURIComponent(id)}/${action}`, { reason }),
+};
+
 export const orgApi = {
+  memberUsage: (s: Session, uid: string) => callJson<{ label: string; history: UsageDay[] }>(s, 'GET', `/v1/account/org/members/${encodeURIComponent(uid)}/usage`),
+  revokeDevices: (s: Session, uid: string) => callJson<OrgView>(s, 'POST', `/v1/account/org/members/${encodeURIComponent(uid)}/revoke-devices`, {}),
   get: (s: Session) => callJson<OrgView>(s, 'GET', '/v1/account/org'),
   create: (s: Session, name: string) => callJson<OrgView>(s, 'POST', '/v1/account/org', { name }),
   invite: (s: Session) => callJson<{ code: string; expiresAt: string }>(s, 'POST', '/v1/account/org/invite', {}),

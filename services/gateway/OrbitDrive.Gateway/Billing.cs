@@ -69,7 +69,7 @@ public sealed record Order(string Id, string Subject, string PlanId, int Months,
 public sealed record Quote(string PlanId, string PlanName, int Months, decimal ListUsd, decimal DueUsd, int ListPkr, int DuePkr, string? CouponCode, decimal DiscountUsd);
 
 /// <summary>An organisation (a company or office) sharing the owner's Office pass. Members keep their own sign-in; the owner and admins manage who belongs.</summary>
-public sealed record Organisation(string Id, string Name, string OwnerUid, DateTimeOffset CreatedAt);
+public sealed record Organisation(string Id, string Name, string OwnerUid, DateTimeOffset CreatedAt, bool Suspended = false);
 /// <summary>Role is owner, admin or member. Label is how the organisation refers to the person (a name they type when joining), never read from their files.</summary>
 public sealed record OrgMember(string OrgId, string Uid, string Role, DateTimeOffset JoinedAt, string Label);
 public sealed record OrgInvite(string Code, string OrgId, DateTimeOffset ExpiresAt);
@@ -150,7 +150,7 @@ public sealed class BillingStore : IDisposable
 
     public void SetPaymentInstructions(string text)
     {
-        text = text.Trim();
+        text = (text ?? "").Trim();
         if (text.Length > 1500 || text.Any(c => char.IsControl(c) && c is not ('\n' or '\r' or '\t'))) throw new ProtocolException(ErrorCode.InvalidRequest, "The payment instructions are too long or contain unusual characters.");
         lock (_gate) { _instructions = text; Mark("config/instructions", JsonSerializer.Serialize(text)); }
     }
@@ -399,8 +399,8 @@ public sealed class BillingStore : IDisposable
     /// <summary>The customer says they paid and gives the payment reference (a transaction id or the last digits). Text only; no screenshots are stored.</summary>
     public Order SubmitProof(string subject, string orderId, string method, string reference)
     {
-        reference = reference.Trim();
-        if (!Methods.Contains(method)) throw new ProtocolException(ErrorCode.InvalidRequest, "Choose bank, jazzcash, easypaisa, raast or other.");
+        reference = (reference ?? "").Trim();
+        if (!Methods.Contains(method ?? "")) throw new ProtocolException(ErrorCode.InvalidRequest, "Choose bank, jazzcash, easypaisa, raast or other.");
         if (reference.Length is < 4 or > 80 || reference.Any(char.IsControl)) throw new ProtocolException(ErrorCode.InvalidRequest, "Enter the payment reference (4 to 80 characters).");
         lock (_gate)
         {
@@ -481,7 +481,7 @@ public sealed class BillingStore : IDisposable
     {
         lock (_gate)
         {
-            if (MembershipLocked(uid) is { } me && _orgs.TryGetValue(me.OrgId, out var org))
+            if (MembershipLocked(uid) is { } me && _orgs.TryGetValue(me.OrgId, out var org) && !org.Suspended)
             {
                 var e = EntitlementFor(AccountSubject(org.OwnerUid));
                 if (e.PlanId == "office" && e.State != EntitlementState.Free) return "org:" + org.Id;
@@ -502,7 +502,7 @@ public sealed class BillingStore : IDisposable
 
     public Organisation CreateOrg(string ownerUid, string name)
     {
-        name = name.Trim();
+        name = (name ?? "").Trim();
         if (name.Length is < 2 or > 60 || name.Any(char.IsControl)) throw new ProtocolException(ErrorCode.InvalidRequest, "Give the organisation a name of 2 to 60 characters.");
         lock (_gate)
         {
@@ -559,6 +559,7 @@ public sealed class BillingStore : IDisposable
         lock (_gate)
         {
             RequireAdmin(orgId, byUid);
+            if (_orgs.TryGetValue(orgId, out var held) && held.Suspended) throw Deny("This organisation is suspended. Contact support.");
             var now = _time.GetUtcNow();
             foreach (var old in _invites.Values.Where(i => i.ExpiresAt <= now).Select(i => i.Code).ToList()) { _invites.Remove(old); Mark("orginvite/" + old, null); }
             if (_invites.Values.Count(i => i.OrgId == orgId) >= MaxInvites) throw new ProtocolException(ErrorCode.LimitExceeded, "There are already many unused invitations. Wait for them to expire.");
@@ -574,12 +575,12 @@ public sealed class BillingStore : IDisposable
     public Organisation Join(string uid, string code, string label)
     {
         code = (code ?? "").Trim().ToUpperInvariant();
-        label = label.Trim();
+        label = (label ?? "").Trim();
         if (label.Length is < 1 or > 40 || label.Any(char.IsControl)) throw new ProtocolException(ErrorCode.InvalidRequest, "Enter the name your organisation knows you by (up to 40 characters).");
         lock (_gate)
         {
             if (MembershipLocked(uid) is not null) throw new ProtocolException(ErrorCode.Conflict, "You already belong to an organisation. Leave it first.");
-            if (!_invites.TryGetValue(code, out var invite) || invite.ExpiresAt <= _time.GetUtcNow() || !_orgs.TryGetValue(invite.OrgId, out var org))
+            if (!_invites.TryGetValue(code, out var invite) || invite.ExpiresAt <= _time.GetUtcNow() || !_orgs.TryGetValue(invite.OrgId, out var org) || org.Suspended)
                 throw new ProtocolException(ErrorCode.InvalidRequest, "That invitation is not valid or has expired.");
             if (_members.Values.Count(m => m.OrgId == org.Id) >= MaxMembers) throw new ProtocolException(ErrorCode.LimitExceeded, "The organisation has the most members it can have.");
             _invites.Remove(code); Mark("orginvite/" + code, null);
@@ -661,6 +662,80 @@ public sealed class BillingStore : IDisposable
     }
 
     public void RequireTransferFor(string uid, long size) => RequireTransfer(SubjectFor(uid), size);
+
+    // ---- usage history and operator views (counts only: days, files, bytes; never names or times of transfers) ----------------------------------
+
+    public sealed record UsageDayView(string Date, int Files, long Bytes);
+
+    /// <summary>One entry per Pakistan day, newest first, for the last <paramref name="days"/> days (days with no transfers show zero).</summary>
+    public IReadOnlyList<UsageDayView> UsageHistory(string subject, int days)
+    {
+        days = Math.Clamp(days, 1, KeepUsageDays);
+        lock (_gate)
+        {
+            var today = DayOf(_time.GetUtcNow());
+            return [.. Enumerable.Range(0, days).Select(n =>
+            {
+                var day = today - n;
+                var (files, bytes) = _usage.GetValueOrDefault(UsageKey(subject, day));
+                return new UsageDayView(DateTimeOffset.FromUnixTimeSeconds(day * 86400L).ToString("yyyy-MM-dd"), files, bytes);
+            })];
+        }
+    }
+
+    /// <summary>A member's history for the organisation's own admins. The member must belong to that organisation.</summary>
+    public IReadOnlyList<UsageDayView> MemberHistory(string orgId, string byUid, string targetUid, int days)
+    {
+        lock (_gate)
+        {
+            RequireAdmin(orgId, byUid);
+            if (!_members.ContainsKey(orgId + "|" + targetUid)) throw new ProtocolException(ErrorCode.NotFound, "That person is not in the organisation.");
+            return UsageHistory(AccountSubject(targetUid), days);
+        }
+    }
+
+    /// <summary>Checks that <paramref name="byUid"/> may manage <paramref name="targetUid"/> (an admin manages members; only the owner manages admins; nobody manages the owner) and returns the target.</summary>
+    public OrgMember RequireManage(string orgId, string byUid, string targetUid)
+    {
+        lock (_gate)
+        {
+            var by = RequireAdmin(orgId, byUid);
+            if (!_members.TryGetValue(orgId + "|" + targetUid, out var target)) throw new ProtocolException(ErrorCode.NotFound, "That person is not in the organisation.");
+            if (target.Role == "owner" || (target.Role == "admin" && by.Role != "owner" && byUid != targetUid)) throw Deny("You cannot manage that person.");
+            return target;
+        }
+    }
+
+    public void NoteOrgAction(string orgId, string byUid, string action, string detail) { lock (_gate) Audit(orgId, byUid, action, detail); }
+
+    public IReadOnlyList<Organisation> AllOrgs() { lock (_gate) return [.. _orgs.Values.OrderBy(o => o.CreatedAt)]; }
+    public Organisation? FindOrg(string orgId) { lock (_gate) return _orgs.GetValueOrDefault(orgId); }
+    public IReadOnlyList<OrgMember> MembersUnchecked(string orgId) { lock (_gate) return [.. _members.Values.Where(m => m.OrgId == orgId).OrderBy(m => m.JoinedAt)]; }
+    public IReadOnlyList<OrgEvent> OrgEventsUnchecked(string orgId) { lock (_gate) return [.. (_orgEvents.GetValueOrDefault(orgId) ?? []).OrderByDescending(e => e.At).Take(100)]; }
+
+    /// <summary>Operator action: stops the organisation sharing the plan (members fall back to their own accounts) and blocks invitations. Reversible.</summary>
+    public bool SetOrgSuspended(string orgId, bool suspended)
+    {
+        lock (_gate)
+        {
+            if (!_orgs.TryGetValue(orgId, out var org)) return false;
+            if (org.Suspended == suspended) return true;
+            org = org with { Suspended = suspended };
+            _orgs[orgId] = org; Mark("org/" + orgId, JsonSerializer.Serialize(org));
+            Audit(orgId, "operator", suspended ? "organisation-suspended" : "organisation-restored", "");
+            return true;
+        }
+    }
+
+    public bool DeleteOrgByOperator(string orgId)
+    {
+        lock (_gate)
+        {
+            if (!_orgs.ContainsKey(orgId)) return false;
+            RemoveOrgLocked(orgId);
+            return true;
+        }
+    }
 
     // ---- persistence ---------------------------------------------------------------------------------------------------------------------------
 

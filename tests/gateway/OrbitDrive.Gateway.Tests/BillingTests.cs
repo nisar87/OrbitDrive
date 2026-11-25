@@ -475,7 +475,69 @@ public class BillingTests
         Assert.Null(second.OrgOf("ali"));
         Assert.Equal("acct:ali", second.SubjectFor("ali"));
         second.Flush();
-        Assert.Empty(persistence.LoadAll().Where(e => e.Key.StartsWith("org", StringComparison.Ordinal)));
+        Assert.DoesNotContain(persistence.LoadAll(), e => e.Key.StartsWith("org", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Usage_history_lists_each_day_newest_first_with_zeros_and_only_counts()
+    {
+        var time = new FakeTime();
+        var billing = Store(new MemoryBillingPersistence(), time);
+        billing.RecordTransfer("acct:ali", 700, true);
+        time.Now = time.Now.AddDays(1);
+        billing.RecordTransfer("acct:ali", 300, true);
+        billing.RecordTransfer("acct:ali", 100, true);
+        var history = billing.UsageHistory("acct:ali", 3);
+        Assert.Equal(3, history.Count);
+        Assert.Equal((2, 400L), (history[0].Files, history[0].Bytes));
+        Assert.Equal((1, 700L), (history[1].Files, history[1].Bytes));
+        Assert.Equal((0, 0L), (history[2].Files, history[2].Bytes));
+        Assert.True(string.CompareOrdinal(history[0].Date, history[1].Date) > 0);
+        Assert.Equal(40, billing.UsageHistory("acct:ali", 500).Count);                                  // never asks for more than is kept
+    }
+
+    [Fact]
+    public void Org_admins_see_member_history_and_manage_only_whom_they_may()
+    {
+        var billing = OfficeOwner(new MemoryBillingPersistence(), new FakeTime(), out var org);
+        billing.Join("ali", billing.Invite(org.Id, "boss").Code, "Ali");
+        billing.Join("sana", billing.Invite(org.Id, "boss").Code, "Sana");
+        billing.SetRole(org.Id, "boss", "ali", "admin");
+        billing.RecordTransferFor("sana", 50, true);
+        Assert.Equal(1, billing.MemberHistory(org.Id, "ali", "sana", 7)[0].Files);
+        Assert.Equal(ErrorCode.Forbidden, Refusal(() => billing.MemberHistory(org.Id, "sana", "ali", 7)).Code);        // members are not admins
+        Assert.Equal(ErrorCode.Forbidden, Refusal(() => billing.MemberHistory(org.Id, "stranger", "sana", 7)).Code);
+        Assert.Equal(ErrorCode.NotFound, Refusal(() => billing.MemberHistory(org.Id, "boss", "stranger", 7)).Code);
+        Assert.Equal("sana", billing.RequireManage(org.Id, "ali", "sana").Uid);
+        Assert.Equal(ErrorCode.Forbidden, Refusal(() => billing.RequireManage(org.Id, "ali", "boss")).Code);           // nobody manages the owner
+        Assert.Equal(ErrorCode.Forbidden, Refusal(() => billing.RequireManage(org.Id, "sana", "ali")).Code);
+        billing.SetRole(org.Id, "boss", "sana", "admin");
+        Assert.Equal(ErrorCode.Forbidden, Refusal(() => billing.RequireManage(org.Id, "ali", "sana")).Code);           // an admin does not manage another admin
+        Assert.Equal("sana", billing.RequireManage(org.Id, "boss", "sana").Uid);
+        billing.NoteOrgAction(org.Id, "ali", "devices-revoked", "Sana: 2 browsers");
+        Assert.Contains(billing.OrgAudit(org.Id, "boss"), e => e.Action == "devices-revoked");
+    }
+
+    [Fact]
+    public void A_suspended_organisation_stops_sharing_its_plan_and_can_be_restored_or_deleted_by_the_operator()
+    {
+        var billing = OfficeOwner(new MemoryBillingPersistence(), new FakeTime(), out var org);
+        var spare = billing.Invite(org.Id, "boss");
+        billing.Join("ali", billing.Invite(org.Id, "boss").Code, "Ali");
+        Assert.Equal("org:" + org.Id, billing.SubjectFor("ali"));
+        Assert.True(billing.SetOrgSuspended(org.Id, true));
+        Assert.Equal("acct:ali", billing.SubjectFor("ali"));
+        Assert.Equal(["ali"], billing.PoolOf("ali"));
+        Assert.Equal(ErrorCode.Forbidden, Refusal(() => billing.Invite(org.Id, "boss")).Code);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.Join("bo", spare.Code, "Bo")).Code);
+        Assert.True(billing.AllOrgs().Single().Suspended);
+        Assert.True(billing.SetOrgSuspended(org.Id, false));
+        Assert.Equal("org:" + org.Id, billing.SubjectFor("ali"));
+        Assert.Contains(billing.OrgEventsUnchecked(org.Id), e => e.Action == "organisation-suspended");
+        Assert.True(billing.DeleteOrgByOperator(org.Id));
+        Assert.False(billing.DeleteOrgByOperator(org.Id));
+        Assert.Null(billing.OrgOf("ali"));
+        Assert.False(billing.SetOrgSuspended("missing", true));
     }
 
     private sealed class FlakyPersistence(MemoryBillingPersistence inner) : IBillingPersistence

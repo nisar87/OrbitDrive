@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, type Session } from '../../api';
-import { formatSize, orgApi, type OrgEvent, type OrgView } from '../../billing';
+import { formatSize, orgApi, type OrgEvent, type OrgView, type UsageDay } from '../../billing';
+import { UsageTable } from './AdminDetails';
 
 interface Props { session: Session; onAuthLost: (error: unknown) => void }
 
 const ACTIONS: Record<string, string> = {
   'organisation-created': 'Created the organisation', 'invitation-created': 'Made an invitation', 'member-joined': 'Joined', 'member-removed': 'Removed',
-  'member-left': 'Left', 'role-changed': 'Changed a role',
+  'member-left': 'Left', 'role-changed': 'Changed a role', 'devices-revoked': 'Signed out browsers', 'organisation-suspended': 'Suspended by support', 'organisation-restored': 'Restored by support',
 };
 
 /** Team sharing for Office: the owner invites people, they share the plan's limits, and admins see counts and who-did-what, never file or folder names. */
@@ -16,6 +17,7 @@ export function OrgPanel({ session, onAuthLost }: Props) {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [label, setLabel] = useState('');
+  const [usage, setUsage] = useState<{ label: string; history: UsageDay[] } | null>(null);
   const [invite, setInvite] = useState<{ code: string; expiresAt: string } | null>(null);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
 
@@ -68,6 +70,8 @@ export function OrgPanel({ session, onAuthLost }: Props) {
                   {admin && <>
                     <td>{m.pcs}</td><td>{m.devices}</td><td>{m.filesToday}</td><td>{formatSize(m.bytesToday)}</td>
                     <td>
+                      <button type="button" onClick={() => { void (async () => { try { setUsage(await orgApi.memberUsage(session, m.uid)); } catch (e) { fail(e); } })(); }}>Usage of {m.label}</button>
+                      {m.role !== 'owner' && (m.role === 'member' || org.role === 'owner') && <button type="button" onClick={() => void run(() => orgApi.revokeDevices(session, m.uid), `${m.label}'s browsers were signed out.`)}>Sign out {m.label}'s browsers</button>}
                       {m.role !== 'owner' && (m.role === 'member' || org.role === 'owner') && <button type="button" onClick={() => void run(() => orgApi.remove(session, m.uid), `${m.label} was removed.`)}>Remove {m.label}</button>}
                       {org.role === 'owner' && m.role !== 'owner' && <button type="button" onClick={() => void run(() => orgApi.role(session, m.uid, m.role === 'admin' ? 'member' : 'admin'), 'Role changed.')}>{m.role === 'admin' ? 'Make member' : 'Make admin'}</button>}
                     </td>
@@ -76,6 +80,7 @@ export function OrgPanel({ session, onAuthLost }: Props) {
               ))}
             </tbody>
           </table>
+          {usage && <section aria-label={`Usage of ${usage.label}`}><h3>{usage.label}</h3><UsageTable history={usage.history} caption={usage.label} /><button type="button" className="ghost" onClick={() => setUsage(null)}>Close</button></section>}
           {admin && (
             <>
               <button type="button" onClick={() => { void (async () => { try { setInvite(await orgApi.invite(session)); setMessage(null); await load(); } catch (e) { fail(e); } })(); }}>Make an invitation code</button>

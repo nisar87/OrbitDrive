@@ -56,3 +56,11 @@ public sealed record OrgEventView(DateTimeOffset At, string Action, string Detai
 public sealed record OrgCreateRequest(string Name);
 public sealed record OrgJoinRequest(string Code, string Label);
 public sealed record OrgRoleRequest(string Role);
+
+public sealed record AdminPcView(string Name, string AgentVersion, DateTimeOffset LastSeen);
+public sealed record AdminDeviceView(string Name, DateTimeOffset CreatedAt, DateTimeOffset LastUsedAt);
+/// <summary>What the operator sees of one account: plan, 30 days of counts, and which PCs and browsers belong to it. No file or folder names exist in this view.</summary>
+public sealed record AdminUserDetail(string Uid, bool Suspended, AccountPlanView Plan, string? OrgName, string? OrgRole, IReadOnlyList<BillingStore.UsageDayView> History, IReadOnlyList<AdminPcView> Pcs, IReadOnlyList<AdminDeviceView> Devices);
+public sealed record AdminOrgRow(string Id, string Name, string OwnerUid, int Members, string PlanId, int FilesToday, long BytesToday, bool Suspended, DateTimeOffset CreatedAt);
+public sealed record AdminOrgDetail(AdminOrgRow Org, IReadOnlyList<OrgMemberView> Members, IReadOnlyList<BillingStore.UsageDayView> History, IReadOnlyList<OrgEventView> Events);
+public sealed record MemberHistoryView(string Label, IReadOnlyList<BillingStore.UsageDayView> History);

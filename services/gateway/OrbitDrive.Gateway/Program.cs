@@ -1080,6 +1080,96 @@ app.MapGet("/v1/account/org/audit", (HttpContext context) =>
     return WriteBilling(context, events);
 });
 
+// ---- Operator views of accounts and organisations: counts, plans, PCs and browsers; never file or folder names. Every change needs a reason and is audited.
+
+AdminOrgRow OrgRow(Organisation o)
+{
+    var (files, bytes) = billing.UsageToday("org:" + o.Id);
+    return new AdminOrgRow(o.Id, o.Name, o.OwnerUid, billing.MembersUnchecked(o.Id).Count, billing.EntitlementFor(BillingStore.AccountSubject(o.OwnerUid)).PlanId, files, bytes, o.Suspended, o.CreatedAt);
+}
+
+app.MapGet("/v1/admin/users/{uid}/detail", (HttpContext context, string uid) =>
+{
+    AuthorizeOperator(context);
+    uid = CleanUid(uid);
+    var subject = BillingStore.AccountSubject(uid);
+    var org = billing.OrgOf(uid);
+    var detail = new AdminUserDetail(uid, store.IsSuspended(uid), AccountPlan(subject), org?.Org.Name, org?.Me.Role, billing.UsageHistory(subject, 30),
+        [.. store.PcsOwnedBy(uid).Select(p => new AdminPcView(p.Name, p.AgentVersion, p.LastSeen))],
+        [.. store.DevicesForOwner(uid).Select(d => new AdminDeviceView(d.Name, d.CreatedAt, d.LastUsedAt))]);
+    return WriteBilling(context, detail);
+});
+
+app.MapGet("/v1/admin/orgs", (HttpContext context) =>
+{
+    AuthorizeOperator(context);
+    return WriteBilling(context, billing.AllOrgs().Take(500).Select(OrgRow).ToList());
+});
+
+app.MapGet("/v1/admin/orgs/{id}", (HttpContext context, string id) =>
+{
+    AuthorizeOperator(context);
+    var org = billing.FindOrg(id) ?? throw new ProtocolException(ErrorCode.NotFound, "Organisation not found.");
+    var members = billing.MembersUnchecked(id).Select(m =>
+    {
+        var (files, bytes) = billing.UsageToday("acct:" + m.Uid);
+        return new OrgMemberView(m.Uid, m.Label, m.Role, m.JoinedAt, store.PcsOwnedBy(m.Uid).Count, store.DevicesForOwner(m.Uid).Count, files, bytes);
+    }).ToList();
+    var events = billing.OrgEventsUnchecked(id).Select(e => new OrgEventView(e.At, e.Action, e.Detail, e.By)).ToList();
+    return WriteBilling(context, new AdminOrgDetail(OrgRow(org), members, billing.UsageHistory("org:" + id, 30), events));
+});
+
+app.MapPost("/v1/admin/orgs/{id}/suspend", async (HttpContext context, string id) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    var request = await ReadJson<AdminReasonRequest>(context);
+    if (!billing.SetOrgSuspended(id, true)) throw new ProtocolException(ErrorCode.NotFound, "Organisation not found.");
+    adminLog.Record(operatorIdentity.Uid, "org-suspend", id, request.Reason);
+    await WriteJson(context, new Ack { Ok = true });
+});
+
+app.MapPost("/v1/admin/orgs/{id}/unsuspend", async (HttpContext context, string id) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    var request = await ReadJson<AdminReasonRequest>(context);
+    if (!billing.SetOrgSuspended(id, false)) throw new ProtocolException(ErrorCode.NotFound, "Organisation not found.");
+    adminLog.Record(operatorIdentity.Uid, "org-unsuspend", id, request.Reason);
+    await WriteJson(context, new Ack { Ok = true });
+});
+
+app.MapPost("/v1/admin/orgs/{id}/delete", async (HttpContext context, string id) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    var request = await ReadJson<AdminReasonRequest>(context);
+    if (!billing.DeleteOrgByOperator(id)) throw new ProtocolException(ErrorCode.NotFound, "Organisation not found.");
+    adminLog.Record(operatorIdentity.Uid, "org-delete", id, request.Reason);
+    await WriteJson(context, new Ack { Ok = true });
+});
+
+// ---- Organisation admins: settings and counts for their own people. Never file names, never a feed of what someone moved.
+
+app.MapGet("/v1/account/org/members/{target}/usage", (HttpContext context, string target) =>
+{
+    var uid = SignedInSubject(context)["acct:".Length..];
+    target = CleanUid(target);
+    var orgId = OrgIdOf(uid);
+    var history = billing.MemberHistory(orgId, uid, target, 30);
+    var label = billing.MembersOf(orgId, uid).First(m => m.Uid == target).Label;
+    return WriteBilling(context, new MemberHistoryView(label, history));
+});
+
+app.MapPost("/v1/account/org/members/{target}/revoke-devices", async (HttpContext context, string target) =>
+{
+    var uid = SignedInSubject(context)["acct:".Length..];
+    target = CleanUid(target);
+    var orgId = OrgIdOf(uid);
+    var member = billing.RequireManage(orgId, uid, target);
+    var revoked = store.RevokeAllDevices(target);
+    EndAllWork(revoked);
+    billing.NoteOrgAction(orgId, uid, "devices-revoked", $"{member.Label}: {revoked.Count} browser{(revoked.Count == 1 ? "" : "s")}");
+    await WriteBilling(context, OrgViewFor(uid));
+});
+
 app.MapGet("/v1/admin/billing", (HttpContext context) =>
 {
     AuthorizeOperator(context);
