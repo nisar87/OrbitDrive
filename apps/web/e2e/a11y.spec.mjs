@@ -36,6 +36,8 @@ const setTheme = (page, theme) => page.evaluate((t) => { document.documentElemen
 
 /** Fails with a readable list of what is wrong and where. */
 async function expectAccessible(page, where) {
+  // Drawers and dialogs fade in; axe must measure the finished colours, not a frame mid-fade (that gave a false 1.3:1 contrast on slower runners).
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => undefined))));
   const { violations } = await new AxeBuilder({ page }).withTags(TAGS).analyze();
   const report = violations.map((v) => `${v.impact} ${v.id}: ${v.help}\n${v.nodes.slice(0, 4).map((n) => `    ${n.target.join(' ')}  ${n.failureSummary?.split('\n')[1] ?? ''}`).join('\n')}`).join('\n');
   expect(violations.length, `${where}\n${report}`).toBe(0);
