@@ -29,11 +29,11 @@ function useCompact(): boolean {
   return compact;
 }
 
-function defaultLayout(index: number): WindowLayout {
+function defaultLayout(index: number, wide = false): WindowLayout {
   const w = Math.min(1100, Math.max(MIN_W, window.innerWidth - 120)), h = Math.min(720, Math.max(MIN_H, window.innerHeight - TASKBAR - 80));
   // The cascade never pushes a new window past the edge of the desktop, however many apps there are.
   const x = Math.min((window.innerWidth - w) / 2 + index * 28, window.innerWidth - w - 8), y = Math.min((window.innerHeight - TASKBAR - h) / 2 + index * 28, window.innerHeight - TASKBAR - h - 8);
-  return { x: Math.max(8, x), y: Math.max(8, y), w, h, maximized: index === 0 && window.innerWidth < 1100 };
+  return { x: Math.max(8, x), y: Math.max(8, y), w, h, maximized: wide || (index === 0 && window.innerWidth < 1100) };
 }
 
 /** Keeps a window reachable: its title bar and 200 px of width (the buttons plus room to grab it) stay on the desktop. */
@@ -88,11 +88,12 @@ export function Desktop({ apps, account, prefs, onPrefs, onSignOut, openRef }: P
   const [windows, setWindows] = useState<Record<string, WindowState>>(() => ({ [apps[0].id]: { open: true, minimized: false, z: 1 } }));
   const [layouts, setLayouts] = useState<Record<string, WindowLayout>>(() => {
     const initial: Record<string, WindowLayout> = {};
-    apps.forEach((app, index) => { const saved = prefs.windows[app.id]; initial[app.id] = saved && saved.w >= MIN_W && saved.h >= MIN_H ? refit(saved) : defaultLayout(index); });
+    apps.forEach((app, index) => { const saved = prefs.windows[app.id]; const wide = app.id === 'admin';   // the operator console is dense: it opens full size, and an old small window is not kept
+      initial[app.id] = saved && saved.w >= MIN_W && saved.h >= MIN_H && (!wide || (saved.w >= 1000 && saved.h >= 640) || saved.maximized) ? refit(saved) : defaultLayout(index, wide); });
     return initial;
   });
   // An app can appear after the desktop was created (the operator area, once the service confirms the account is an operator): it gets a default window.
-  const layoutOf = (id: string): WindowLayout => layouts[id] ?? defaultLayout(Math.max(0, apps.findIndex((app) => app.id === id)));
+  const layoutOf = (id: string): WindowLayout => layouts[id] ?? defaultLayout(Math.max(0, apps.findIndex((app) => app.id === id)), id === 'admin');
   const [menu, setMenu] = useState<'launcher' | 'account' | null>(null);
   const zTop = useRef(1);
   const prefsRef = useRef(prefs);

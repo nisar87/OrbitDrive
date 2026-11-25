@@ -78,3 +78,4 @@
 .kit .codebox { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-radius: 6px; background: var(--hover); }
 .kit .codebox strong { font-size: 1.3rem; letter-spacing: 0.12em; font-variant-numeric: tabular-nums; }
 .kit .org .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.kit .steps { font-size: 0.9rem; margin: 4px 0 0; padding-inline-start: 1.3rem; display: flex; flex-direction: column; gap: 6px; max-width: 62ch; }

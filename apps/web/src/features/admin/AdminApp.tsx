@@ -85,7 +85,7 @@ export default function AdminApp({ session, onSignOut }: Props) {
         {page === 'orgs' && <Orgs ctx={ctx} rows={orgs} />}
         {page === 'billing' && <Billing ctx={ctx} orders={orders} waiting={waiting} />}
         {page === 'audit' && <Audit entries={audit} />}
-        {page === 'settings' && <ServiceSettings key={minVersion} ctx={ctx} initial={minVersion} />}
+        {page === 'settings' && <ServiceSettings key={minVersion} ctx={ctx} initial={minVersion} overview={overview} />}
       </main>
       {asking && <ReasonDialog title={asking.title} effect={asking.effect} confirmLabel={asking.confirmLabel} danger={asking.danger} busy={busy} onConfirm={(r) => void confirm(r)} onCancel={() => setAsking(null)} />}
     </div></div>

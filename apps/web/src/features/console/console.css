@@ -1,7 +1,7 @@
 /* Operator console shell: navigation, the overview, and the narrow-window layout. Loaded only with the operator code, so ordinary accounts never download it. No inline styles are used anywhere (strict CSP). */
 .con { display: grid; grid-template-columns: 12.5rem minmax(0, 1fr); gap: 0; min-height: 100%; }
-.con-box { container-type: inline-size; container-name: con; }
-.con-nav { display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; border-inline-end: 1px solid var(--line); position: sticky; top: 0; align-self: start; }
+.con-box { container-type: inline-size; container-name: con; flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }   /* the window body clips, so the console scrolls itself */
+.con-nav { display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; border-inline-end: 1px solid var(--line); position: sticky; top: 0; align-self: start; max-height: 100%; overflow-y: auto; }
 .con-nav h1 { font-size: 0.8rem; font-weight: 600; color: var(--muted); margin: 0 8px 8px; }
 .con-nav button { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; text-align: start; background: transparent; color: var(--text); font-weight: 400; border-radius: 6px; min-height: 40px; padding: 6px 10px; border: 0; position: relative; }
 .con-nav button:hover { background: var(--hover); }
@@ -35,3 +35,5 @@
 
 .banners { list-style: none; padding: 0; margin: 0 0 12px; }
 .banners li { margin: 6px 0; }
+.con .banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.con .banners { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }

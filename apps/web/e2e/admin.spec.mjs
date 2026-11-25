@@ -56,6 +56,18 @@ test('an operator sees the administration area, with measured numbers, and can s
   await expect(admin.getByTestId('admin-metrics')).toBeVisible();
   await expect(admin.getByTestId('m-users')).not.toHaveText('');
   await expect(admin.getByTestId('m-pcs')).toHaveText(/^\d+ of \d+$/);
+  // The console scrolls inside its window even when the window is short (it once clipped everything below the fold).
+  const original = page.viewportSize();
+  await page.setViewportSize({ width: 1000, height: 520 });
+  await admin.getByRole('button', { name: /^Billing/ }).click();
+  await admin.getByRole('tab', { name: 'Plans and prices' }).click();
+  const scroller = admin.locator('.con-box');
+  await expect(admin.getByText('Plan limits')).toBeVisible();
+  expect(await scroller.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
+  await scroller.hover();
+  await page.mouse.wheel(0, 600);
+  await expect.poll(() => scroller.evaluate((e) => e.scrollTop)).toBeGreaterThan(0);
+  if (original) await page.setViewportSize(original);
   await admin.getByRole('button', { name: 'Accounts', exact: true }).click();
   const row = admin.getByTestId('admin-users').getByRole('row').filter({ hasText: uidOf(TARGET) });
   await expect(row).toBeVisible();

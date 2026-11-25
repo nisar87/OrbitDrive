@@ -11,18 +11,17 @@ export function Overview({ overview, waiting, unpaid, go, refresh }: { overview:
   if (overview.costAlert) items.push({ key: 'cost', text: `Relayed data today is over the daily alert (${formatBytes(overview.relayBytesToday)} of ${formatBytes(overview.relayBytesDailyAlert)})`, action: 'See accounts', to: 'accounts', tone: 'bad' });
   if (overview.suspendedUsers > 0) items.push({ key: 'suspended', text: `${plural(overview.suspendedUsers, 'account')} suspended`, action: 'View accounts', to: 'accounts' });
   if (Number(overview.quotaRefusals) > 0) items.push({ key: 'refused', text: `${plural(Number(overview.quotaRefusals), 'transfer')} refused for the daily allowance since the relay started`, action: 'See accounts', to: 'accounts' });
-  const banners: { key: string; tone: 'bad' | 'warn' | 'info'; text: string }[] = [];
-  if (overview.billingDamaged) banners.push({ key: 'damaged', tone: 'bad', text: 'The billing file could not be read and was set aside. Plan limits and ordering stay off until you restore it (see the relay guide, "Billing file damaged").' });
-  if (!overview.secondFactorRequired) banners.push({ key: 'mfa-off', tone: 'warn', text: 'Second-factor sign-in is not required for this console. It is built but switched off, so a stolen password alone would open it. To turn it on: enable two-step sign-in for this account in Firebase, sign in again, then switch it on at the relay (see the relay guide, "Operator second factor").' });
-  else if (!overview.secondFactorPresent) banners.push({ key: 'mfa-missing', tone: 'bad', text: 'The relay requires a second factor but this sign-in did not use one.' });
-  if (overview.unpairedPcs > 0) banners.push({ key: 'unpaired', tone: 'info', text: `${plural(overview.unpairedPcs, 'PC')} connected that no one has paired yet (held in memory only, never saved).` });
+  const banners: { key: string; tone: 'bad' | 'warn'; text: string; action?: string }[] = [];
+  if (overview.billingDamaged) banners.push({ key: 'damaged', tone: 'bad', text: 'The billing file could not be read and was set aside. Plans and ordering stay off until it is restored.', action: 'What to do' });
+  if (!overview.secondFactorRequired) banners.push({ key: 'mfa-off', tone: 'warn', text: 'The extra sign-in step is off, so anyone who learns your password could open this console.', action: 'How to turn it on' });
+  else if (!overview.secondFactorPresent) banners.push({ key: 'mfa-missing', tone: 'bad', text: 'An extra sign-in step is required, but you signed in without it. Sign out and sign in again.' });
   return (
     <>
       <PageHead title="Overview" summary={<>Relay version {overview.gatewayVersion}, running since {formatTime(overview.startedUnixMs)}. Counts restart when the relay restarts.</>}
         actions={<button type="button" className="ghost" onClick={refresh}>Refresh</button>} />
       {banners.length > 0 && (
         <ul className="banners" data-testid="admin-banners" aria-label="Notices">
-          {banners.map((b) => <li key={b.key} className={`notice ${b.tone === 'bad' ? 'error' : b.tone === 'warn' ? 'warn' : ''}`} data-testid={`banner-${b.key}`}>{b.text}</li>)}
+          {banners.map((b) => <li key={b.key} className={`notice banner ${b.tone === 'bad' ? 'error' : 'warn'}`} data-testid={`banner-${b.key}`}><span>{b.text}</span>{b.action && <button type="button" className="ghost small" onClick={() => go('settings')}>{b.action}</button>}</li>)}
         </ul>
       )}
       <section className="attention" aria-labelledby="needs">
@@ -41,6 +40,7 @@ export function Overview({ overview, waiting, unpaid, go, refresh }: { overview:
       <details className="more">
         <summary>More about the relay</summary>
         <dl>
+          <dt>PCs connected but not paired to anyone</dt><dd>{overview.unpairedPcs}</dd>
           <dt>Sent to browsers</dt><dd data-testid="m-down">{formatBytes(overview.relayBytesDown)}</dd>
           <dt>Received from browsers</dt><dd>{formatBytes(overview.relayBytesUp)}</dd>
           <dt>Downloads completed or failed</dt><dd>{overview.downloadsCompleted} / {overview.downloadsFailed}</dd>
