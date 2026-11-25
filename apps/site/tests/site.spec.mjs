@@ -130,3 +130,18 @@ test('services page lists eight services and no end-to-end claim', async ({ page
   const t = (await page.locator('main').innerText()).toLowerCase();
   for (const bad of ['zero-knowledge', 'guarantee', 'unhackable']) expect(t).not.toContain(bad);
 });
+
+test('limits come from the service too, so what the owner sets in the console is what the site says; unclear answers keep the printed text', async ({ page }) => {
+  await page.unroute(PLANS_URL);
+  const GIB = 1073741824, MIB = 1048576;
+  await page.route(PLANS_URL, (route) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({
+    ...LIVE, plans: [
+      { id: 'plus', name: 'Plus', purchasable: true, limits: { pcs: 4, devices: 6, filesPerDay: 60, bytesPerFile: 2 * GIB, bytesPerDay: 30 * GIB }, prices: [] },
+      { id: 'office', name: 'Office', purchasable: true, limits: { pcs: 10, devices: null, filesPerDay: null, bytesPerFile: 2 * GIB, bytesPerDay: 100 * GIB }, prices: [] },
+      { id: 'free', name: 'Free', purchasable: false, limits: { pcs: 'many' }, prices: [] },
+    ] }) }));
+  await page.goto('/services.html');
+  await expect(page.locator('[data-limits="plus"]')).toHaveText('Up to 4 PCs, 6 paired devices, 60 files per day, up to 2 GB per file, up to 30 GB per day');
+  await expect(page.locator('[data-limits="office"]')).toHaveText('Up to 10 PCs, unlimited devices, unlimited files, up to 2 GB per file, up to 100 GB per day');
+  await expect(page.locator('[data-limits="free"]')).toHaveText('Up to 1 PC, 1 paired device, 5 files per day, up to 100 MB per file, up to 300 MB per day');
+});

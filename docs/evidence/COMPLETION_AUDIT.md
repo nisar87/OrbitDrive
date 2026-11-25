@@ -24,7 +24,7 @@ Pairing and identity (R04-R07, R53; PC key rotation added today), read-only brow
 
 ## C. Decided, not built (by design, with the reason)
 
-- **E2EE** (plan extension): design written (`docs/design/e2ee.md`), four decisions waiting for the owner. Not claimed anywhere.
+- **E2EE** (plan extension): no design document is written yet (an earlier version of this line cited `docs/design/e2ee.md`, which does not exist). Not built and not claimed anywhere.
 - **Several relay instances behind one address** (R41 scale-out): the plan uses one relay VM; instead a single-writer lease stops a second instance from corrupting state.
 - **OS-bound (non-exportable) device keys**: rotation is built; hardware binding is not.
 - **Extensions** (R60): out of scope by the plan.

@@ -12,7 +12,7 @@ Nothing here is a production release. The specification is [docs/plans/OrbitDriv
 - The PC owner chooses which folders are shared. Access is **read-only** by default. Windows permissions still apply.
 - The PC connects **outbound** over HTTPS/WSS to a relay. No router port forwarding, no FTP, no remote shell.
 - The PC must be on, awake and running the agent. There is no cloud copy of your files.
-- The relay terminates TLS and can process file bytes in transit. Nothing is stored there, but this is
+- The relay terminates TLS and can process file bytes in transit. File contents are not stored there and no file or folder names are written to its disk, but this is
   **not end-to-end encryption**.
 - A file "handed to your browser" is not the same as "saved on your phone"; the browser owns the download.
 
@@ -22,12 +22,12 @@ Nothing here is a production release. The specification is [docs/plans/OrbitDriv
 |---|---|
 | `apps/desktop/OrbitDrive.Core` | Local filesystem policy: approved roots, safe path/handle resolution, revisions |
 | `apps/desktop/OrbitDrive.Agent` | Per-user background agent (outbound control channel + byte uplink) |
-| `apps/desktop/OrbitDrive.Desktop` | WPF owner console (currently a feasibility window) |
+| `apps/desktop/OrbitDrive.Desktop` | WPF owner console (Home, Shared folders, Devices, Activity, Settings; built and UI-tested on Windows in CI) |
 | `apps/web` | React + TypeScript + Vite web app (static, Firebase Hosting ready) |
 | `services/gateway` | ASP.NET Core gateway and byte relay (separate origin from Hosting) |
 | `packages/protocol` | Canonical schema; generated C# and TypeScript models |
 | `tests/` | Contract, unit, real-process integration and browser tests |
-| `infra/` | Firebase Hosting/rules config and relay container (drafts, not deployed) |
+| `infra/` | Firebase Hosting/rules config, the relay host scripts and bootstrap (`infra/relay`, a development relay is live), and a relay container sketch |
 | `docs/` | Plan, architecture, threat model, evidence, continuation state |
 
 ## Run it locally (development identities only)

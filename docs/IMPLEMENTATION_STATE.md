@@ -2,6 +2,40 @@
 
 Updated: 2026-11-18 (session 1). Branch: `feature/orbitdrive-foundation`.
 
+
+## Audit-fix round (branch `feature/audit-fixes`, from `feature/operator-console-v2` 4c46a57), 2026-11-25
+
+Owner-approved fixes for the AI-assisted review of 2026-11-25 (an AI-assisted review, not an independent audit; commit 24dfb04). Owner decisions: (a) the relay keeps no
+file names (id, size, expiry only; the PC supplies or seals the name); (b) ordering is hidden until the start date behind one switch ("plan limits"); (c) thumbnails are
+free, viewing counts toward daily data, the relay cap and the per-file size. Evidence: `docs/evidence/phase-evidence.md` (section "Audit-fix round"), matrix row R63.
+
+| Finding | What changed | State |
+|---|---|---|
+| F-001, 002, 017 | Unpaired PCs live in memory only (cap 2,000, idle eviction, never saved); version text capped at 32; per-address handshake, connection and registration limits; handshake wait 4 s; the limiter keeps separate tables for anonymous and signed-in keys and groups IPv6 by /64 | Enforced; tested (unit, integration) |
+| F-003 | Invitation names are sealed by the PC (`sn1.` prefix); the relay stores id, size, expiry and an opaque blob; the Inbox asks the PC to open names (offline PC: no name); old plaintext names are read into memory only and never written; backups exclude `invitations.json` | Enforced; tested; PC side verified on Linux only |
+| F-004, 014, 018 | Thumbnails free; viewing counts toward daily data, relay cap and per-file size; a file counts once a day when the bytes delivered across all of the account's links for that file revision cover it (so splitting across links no longer avoids the count; the memory of covered ranges is cleared by a restart, which can only make a file count again); the daily relay cap lives in the billing store (survives restarts) | Enforced; unit + integration |
+| F-005 | `RequireOperatorSecondFactor` (reads `firebase.sign_in_second_factor`), console banner, docs | **Ready but off** (owner enables in Firebase, then `--require-operator-second-factor`); relay check tested with a development token carrying the claim, not with a real Firebase second factor |
+| F-006 | Every operator change needs a 3 to 200 character reason, writes the audit record first and does not change anything when the record cannot be written; null and wrong-type bodies are 4xx | Enforced; integration |
+| F-007 | `set_pc_name` and `rotate_identity` added to the IPC command list; a test parses the handler switch against the list in both directions | Enforced; Core test runs in CI (not run locally: no NuGet) |
+| F-008 | `tests/integration/run-all.mjs` runs every `*.test.mjs` (explicit, reasoned skip list); new `billing-http.test.mjs` and `audit-fixes.test.mjs` | Enforced in `integration` and `relay-release` |
+| F-009 | A damaged `billing.json` is set aside; the relay starts; plan limits and ordering stay off; console banner and monitor alert `billing_data_damaged` | Enforced; unit |
+| F-010 | Backup excludes invitations; optional encrypted off-host copy (gpg AES-256, refuses to send unencrypted); `orbitdrive-restore-verify` drill; docs | **Ready but off** until `backup.env` is written; a full restore on a fresh VM has not been done |
+| F-011 | Updater refuses a lower version; verifies a detached ECDSA signature when `/etc/orbitdrive/release-signing.pub` exists; `scripts/relay-sign.mjs`; CI signs when the secret `RELAY_SIGNING_KEY` exists | Downgrade refusal enforced; signing **ready but off** (no key exists) |
+| F-012 | Export and delete need only a recent sign-in (no paired browser); export includes billing; the web app deletes the Firebase sign-in record after the relay confirms; paid orders are kept in reduced form and the text says so | Enforced; relay side integration-tested; Firebase deletion (`deleteUser`) not run against real Firebase |
+| F-013 | Ordering hidden in the web app and refused by the relay until the start date; site and privacy policy rewritten from the data inventory | Enforced; the policy text needs the owner's and a lawyer's review (not done) |
+| F-015, 016 | References compared ignoring case and spaces; exact duplicates refused; owner's list flags shared references; coupon use counted at verification, one use per account; unpaid orders expire after 3 days | Enforced; unit + integration |
+| F-019 | Exclusive `relay.lock` in the data directory | Enforced; unit |
+| F-020 | Billing imported once into Firestore; audit log, minimum version and invitations stored in Firestore documents | Code written and compiled; **not run against real Firestore** |
+| F-021 | Joining an organisation says that admins can sign out every browser of the account | Text only |
+| F-022 | A test with a relay piece cap far below the PC cap, so only the relay can refuse | Added |
+| F-025 | File names are isolated with `bdi` and the extension is drawn on the right | Unit-tested split; not seen in a real browser |
+| F-028 | README, SECURITY.md, COMPLETION_AUDIT corrected | Done |
+| Held items | Sign-out asks "also remove the pairing from this browser?" (default keep); relay address removed from desktop Settings and shown read-only under Diagnostics; `--operator-uid`; F-023 recorded as AR-2 with a placeholder 30-day expiry | Web: tsc and vitest only locally, Playwright in CI; desktop: CI only (WPF) |
+
+**Not done in this round (owner decisions):** the Windows code-signing certificate and the lawyer review. **Not verifiable here:** anything on Windows, real browsers or phones, real Firestore, real Firebase second factor, the Oracle host.
+
+Local verification (Linux sandbox, nuget.org blocked): the gateway was built in a scratch copy with two Firestore files and one Google credential file replaced by stubs, and its C# unit tests ran through a stand-in for xunit (148 passed). The agent, gateway and integration tests ran as real processes (all 34 integration files except the two that need an emulator or a live relay). Web: `tsc --noEmit` and `vitest` (133 tests). These are not Windows or phone results.
+
 **Last code-verified commit: `d4c6dcb` (D6/W6 automated scope; seven workflows green on the feature branch — web 44210663837, security 44210663822, contracts 44210663874, integration 44210663965, gateway 44210663858, desktop 44210663831, desktop-ui 44210663883, relay-release 44210663786, contracts 44206498631, security 44206499702, desktop 44206498598, integration 44206498617, web 44206498609, desktop-ui 44206498670, gateway 44206498709; `main` fast-forwarded to it on 2026-11-18, relay-release succeeded). Previously `98e29a4`** (on `main`, fast-forwarded 2026-11-18 after seven green feature-branch workflows: security 44169390489, contracts 44169390588, desktop 44169390550, desktop-ui 44169390743, gateway 44169390732, integration 44169390695, web 44169390564; the security run performed every audit incl. NuGet, see `docs/security/accepted-risks.md` AR-1, expires 2026-12-17). Earlier reference: `d21dffa` — seven workflows green; `relay-release` run 44000402541 on `main`:
 test → publish `relay-dev-0.1.3` → verify-deployment (live relay reported 0.1.3) → **live-agent on windows-2025 and
 ubuntu-24.04: a real agent connected outbound over the internet to https://139-185-60-75.sslip.io, authenticated and

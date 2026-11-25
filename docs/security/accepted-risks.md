@@ -67,3 +67,39 @@ fix. Machine-readable source: `security/audit-exceptions.json`; enforcement: `sc
 Delete the entry from `security/audit-exceptions.json` and this section's OPEN status when a picomatch release
 outside the advisory range exists (update the lock file), or when vite/vitest no longer depend on it. Re-review
 earlier if dependencies, CI permissions/triggers or glob usage change.
+
+## AR-2 — F-023, the browser's device secret is kept in `localStorage` — OPEN, accepted until 2026-12-25 (placeholder)
+
+This entry is documentation only. It is not in `security/audit-exceptions.json`, because that file gates npm advisories and this is a design
+decision. The expiry below is a **placeholder** set 30 days after the entry was written; the owner confirms or changes it.
+
+| | |
+|---|---|
+| Source | AI-assisted review of 2026-11-25 (not an independent audit), finding F-023 |
+| Written | 2026-11-25 (UTC) |
+| Expires | 2026-12-25 (30 days), placeholder until the owner confirms |
+| Scope | `apps/web/src/api.ts`: the approved-browser id and secret, stored per account in the browser's `localStorage` |
+| Status | Not fixed |
+
+### What is accepted
+
+Each approved browser holds a secret that proves "this is the browser my owner approved". It is kept in `localStorage`, so script running in the web
+app's own page could read it. The browser also needs the signed-in account's token to use any route, so the secret alone opens nothing.
+
+### Why the risk is limited
+
+- The app's content policy forbids inline script, and the source contains no `innerHTML`, `eval` or third-party script (checked by review and by the web tests).
+  The usual way such a secret is stolen is script injection, which that policy blocks.
+- The secret is useless without a valid account token; both are needed on every request. Revoking the browser (sign-out with "remove the pairing", "Sign out
+  everywhere", or removal from the PC) stops it at once.
+- Since 2026-11-25 sign-out asks whether to remove the pairing from this browser. The default keeps it; on a shared or public computer the person should
+  choose to remove it.
+
+### What would remove the risk
+
+Bind the approval to a non-exportable key (WebAuthn or a WebCrypto key stored as non-extractable in IndexedDB) so the browser proves possession without
+ever exposing a secret. That is a larger change to pairing and is not scheduled.
+
+### Review
+
+Re-review at the expiry, and earlier if the web app gains any way to render text from another person as markup, or loads any third-party script.
