@@ -1,6 +1,6 @@
 # Admin, licensing and plan limits: research and design
 
-Status: PROPOSAL for the owner's review (25 Nov 2026). Nothing here is built. The program and the live website are unchanged.
+Status: PROPOSAL, owner decisions recorded 25 Nov 2026 (section 11). Nothing here is built. The program and the live website are unchanged.
 Related notes: `docs/branding/PRICING_DECISIONS.md` (agreed plans and prices), `docs/architecture/decisions.md` (ADR-4, 18, 21, 22).
 
 ## 1. What already exists (checked in the code, 25 Nov 2026)
@@ -38,7 +38,7 @@ Licence types:
 | Free | account | no end | 1 PC, 1 device, 5 files/day, 100 MB/file, 300 MB/day. Always the fallback. |
 | Pass (Plus) | account | 1, 3 or 12 months, no auto-renew | Extends from the later of now and the current end date. |
 | Pass (Office) | organisation | 1, 3 or 12 months | Seats are PCs. Devices unlimited under fair use. |
-| Trial | account | 7 days, once per account | Optional; gives Plus limits. Decision needed. |
+| Trial | - | - | Dropped (owner decision): Free is the trial. |
 | Grant | account or organisation | any | Issued by the owner (support goodwill, partners, testers). Always logged. |
 
 Rules:
@@ -149,3 +149,11 @@ Entity: an organisation with an owner; members join by emailed invitation; **sea
 - OWASP ASVS access control (4.3.1 MFA for administrative interfaces): https://github.com/OWASP/ASVS/blob/v4.0.2/4.0/en/0x11-V2-Authentication.md
 - Pakistan sales tax on digital services (secondary sources, verify with an accountant): https://trykintsugi.com/sales-tax-guides/apac/pakistan, https://payproglobal.com/saas-sales-tax/pakistan/
 - Manual payment practice in Pakistan (JazzCash, Easypaisa, bank transfer, proof review): https://wordpress.org/plugins/cardraabta-manual-payments-for-woocommerce/
+
+## 11. Owner decisions (25 Nov 2026)
+
+- **No trial.** The Free plan already lets people try the product.
+- **Grace period: yes, 3 days** after a pass ends, then fall back to Free (PCs/devices beyond Free are paused, not deleted).
+- **Price display: option A** (prices in a versioned repo file used by the site and the gateway; a price change is a reviewed deploy). Option B can come later.
+- **Free plan: 5 files/day, 100 MB per file** (300 MB/day), as published.
+- **Sales tax: postponed.** Revisit with an accountant before charging anyone.
