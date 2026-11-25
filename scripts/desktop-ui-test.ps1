@@ -20,10 +20,30 @@ $relay = 'http://127.0.0.1:5199'
 $script:win = $null; $script:shots = 0; $results = [ordered]@{}
 
 function Check([bool]$condition, [string]$what) { if (-not $condition) { throw "FAILED: $what" }; Write-Host "ok  $what"; $results[$what] = 'passed' }
-function Find([string]$id, [int]$timeoutMs = 15000) {
+# Settings is a page of tabs, and a tab that is not selected is not in the UI Automation tree. Find therefore looks on the current tab first and then on each
+# other Settings tab, so a check can name any Settings control without caring which tab it lives on. FindHere does not look on other tabs (used to prove grouping).
+$SettingsTabs = 'General', 'Sending', 'Privacy', 'Connection', 'Updates', 'Diagnostics'
+function FindHere([string]$id) {
     $condition = New-Object System.Windows.Automation.PropertyCondition($AE::AutomationIdProperty, $id)
+    $script:win.FindFirst($Scope::Descendants, $condition)
+}
+function SelectSettingsTab([string]$name) {
+    $tab = FindHere "SettingsTab_$name"
+    if (-not $tab) { return $false }
+    $tab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+    Start-Sleep -Milliseconds 300
+    return $true
+}
+function Find([string]$id, [int]$timeoutMs = 15000) {
     $deadline = (Get-Date).AddMilliseconds($timeoutMs)
-    do { $element = $script:win.FindFirst($Scope::Descendants, $condition); if ($element) { return $element }; Start-Sleep -Milliseconds 200 } while ((Get-Date) -lt $deadline)
+    do {
+        $element = FindHere $id
+        if ($element) { return $element }
+        if (FindHere 'SettingsTabs') {
+            foreach ($name in $SettingsTabs) { if (SelectSettingsTab $name) { $element = FindHere $id; if ($element) { return $element } } }
+        }
+        Start-Sleep -Milliseconds 200
+    } while ((Get-Date) -lt $deadline)
     throw "Element '$id' not found"
 }
 function WaitText([string]$id, [string]$pattern, [int]$timeoutMs = 30000) {
@@ -427,9 +447,30 @@ try {
     # Keyboard reachability on every page.
     foreach ($page in 'Home', 'Shared folders', 'Devices', 'Activity', 'Settings') {
         Nav $page
-        $bad = @(UnreachableControls)
-        Check ($bad.Count -eq 0) "every control on '$page' is reachable by keyboard $($bad -join ', ')"
+        $tabsToCheck = if ($page -eq 'Settings') { $SettingsTabs } else { @($null) }
+        foreach ($tabName in $tabsToCheck) {
+            if ($tabName) { [void](SelectSettingsTab $tabName) }
+            $where = if ($tabName) { "$page / $tabName" } else { $page }
+            $bad = @(UnreachableControls)
+            Check ($bad.Count -eq 0) "every control on '$where' is reachable by keyboard $($bad -join ', ')"
+        }
     }
+    # Settings is divided into tabs, each holding one kind of setting.
+    Nav 'Settings'
+    Check (@($SettingsTabs | Where-Object { SelectSettingsTab $_ }).Count -eq 6) 'Settings has six tabs: General, Sending, Privacy, Connection, Updates and Diagnostics'
+    [void](SelectSettingsTab 'Sending')
+    Check ([bool]((FindHere 'MaxSpeedBox') -and (FindHere 'ThumbnailsToggle') -and (FindHere 'SendToOnButton') -and -not (FindHere 'GatewayBox'))) 'the Sending tab holds the sending controls and none of the connection controls'
+    [void](SelectSettingsTab 'Connection')
+    Check ([bool]((FindHere 'GatewayBox') -and (FindHere 'SaveGatewayButton') -and -not (FindHere 'MaxSpeedBox'))) 'the Connection tab holds the relay address and none of the sending controls'
+    [void](SelectSettingsTab 'General')
+    Check ([bool]((FindHere 'StartAtSignIn') -and (FindHere 'PauseWhenLocked') -and (FindHere 'PcNameBox') -and (FindHere 'QuitButton'))) 'the General tab holds start-up, the lock setting, the PC name and Quit'
+    [void](SelectSettingsTab 'Diagnostics')
+    Check ([bool]((FindHere 'DiagnosticsText') -and (FindHere 'CopyDiagnosticsButton'))) 'the Diagnostics tab holds the diagnostics text and its copy button'
+    [void](SelectSettingsTab 'Privacy')
+    Check ([bool](FindHere 'PrivacyNote')) 'the Privacy tab holds the privacy note'
+    [void](SelectSettingsTab 'Updates')
+    Check ([bool]((FindHere 'UpdateVersion') -and (FindHere 'CheckUpdateButton'))) 'the Updates tab holds the update card'
+
     Nav 'Home'
     $script:win.SetFocus(); Start-Sleep -Milliseconds 300
     [System.Windows.Forms.SendKeys]::SendWait('^3'); Start-Sleep -Milliseconds 800
