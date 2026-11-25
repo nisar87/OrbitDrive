@@ -56,6 +56,18 @@ public sealed class MemoryBillingPersistence : IBillingPersistence
     }
 }
 
+/// <summary>A discount code the owner creates. Kind is "percent" (Value 1-100) or "fixed" (Value is USD off). Redeemed counts orders that used it and are not rejected or cancelled.</summary>
+public sealed record Coupon(string Code, string Kind, decimal Value, IReadOnlyList<string> PlanIds, DateTimeOffset? ExpiresAt, int? MaxRedemptions, int Redeemed, bool Active, string? Note);
+
+/// <summary>
+/// A request to buy a pass, with the price locked when it was made. Status: requested, proof_submitted, verified, rejected, cancelled.
+/// Payment is checked by a person in v1 (bank transfer, JazzCash, Easypaisa); an online gateway later calls the same verify step.
+/// </summary>
+public sealed record Order(string Id, string Subject, string PlanId, int Months, decimal ListUsd, decimal DueUsd, int DuePkr, string? CouponCode, string Status,
+    DateTimeOffset CreatedAt, string? Method, string? Reference, string? LicenceId, string? DecidedBy, DateTimeOffset? DecidedAt, string? Reason);
+
+public sealed record Quote(string PlanId, string PlanName, int Months, decimal ListUsd, decimal DueUsd, int ListPkr, int DuePkr, string? CouponCode, decimal DiscountUsd);
+
 /// <summary>What the gateway tells a caller about today's allowance (counts only, never names).</summary>
 public sealed record Allowance(string PlanId, string PlanName, EntitlementState State, DateTimeOffset? EndsAt, PlanLimits Limits, int FilesToday, long BytesToday, DateTimeOffset ResetsAt);
 
@@ -74,14 +86,17 @@ public sealed class BillingStore : IDisposable
     private readonly Lock _gate = new();
     private readonly Dictionary<string, Licence> _licences = [];
     private readonly Dictionary<string, (int Files, long Bytes)> _usage = [];     // key: subject|day
+    private readonly Dictionary<string, Coupon> _coupons = [];
+    private readonly Dictionary<string, Order> _orders = [];
     private readonly Dictionary<string, string?> _dirty = [];
     private IReadOnlyList<Plan> _plans = PlanCatalog.Defaults();
     private ExchangeRate _rate = PlanCatalog.DefaultRate;
     private readonly Timer? _timer;
+    private bool _limitsEnabled;
 
-    public BillingStore(IBillingPersistence persistence, TimeProvider time, ILogger? log = null, TimeSpan? flushEvery = null)
+    public BillingStore(IBillingPersistence persistence, TimeProvider time, ILogger? log = null, TimeSpan? flushEvery = null, bool limitsEnabled = false)
     {
-        _persistence = persistence; _time = time; _log = log;
+        _persistence = persistence; _time = time; _log = log; _limitsEnabled = limitsEnabled;
         foreach (var (key, json) in persistence.LoadAll())
         {
             try { LoadEntry(key, json); }
@@ -96,6 +111,9 @@ public sealed class BillingStore : IDisposable
         switch (parts[0])
         {
             case "licence" when JsonSerializer.Deserialize<Licence>(json) is { } licence: _licences[licence.Id] = licence; break;
+            case "config" when parts.Length == 2 && parts[1] == "limits" && JsonSerializer.Deserialize<bool>(json) is var enabled: _limitsEnabled = enabled; break;
+            case "coupon" when JsonSerializer.Deserialize<Coupon>(json) is { } coupon: _coupons[coupon.Code] = coupon; break;
+            case "order" when JsonSerializer.Deserialize<Order>(json) is { } order: _orders[order.Id] = order; break;
             case "usage" when parts.Length == 3 && JsonSerializer.Deserialize<UsageDay>(json) is { } day: _usage[parts[1] + "|" + parts[2]] = (day.Files, day.Bytes); break;
             case "config" when parts.Length == 2 && parts[1] == "plans" && JsonSerializer.Deserialize<List<Plan>>(json) is { } plans && plans.Any(p => p.Id == PlanCatalog.Free): _plans = plans; break;
             case "config" when parts.Length == 2 && parts[1] == "rate" && JsonSerializer.Deserialize<ExchangeRate>(json) is { PkrPerUsd: > 0 } rate: _rate = rate; break;
@@ -105,6 +123,11 @@ public sealed class BillingStore : IDisposable
     private sealed record UsageDay(int Files, long Bytes);
 
     // ---- plans and rate ------------------------------------------------------------------------------------------------------------------------
+
+    /// <summary>Whether the plan limits are enforced. Counting always happens; this is the owner's "start date" switch (set in the panel, kept across restarts).</summary>
+    public bool LimitsEnabled { get { lock (_gate) return _limitsEnabled; } }
+
+    public void SetLimitsEnabled(bool enabled) { lock (_gate) { _limitsEnabled = enabled; Mark("config/limits", JsonSerializer.Serialize(enabled)); } }
 
     public IReadOnlyList<Plan> Plans { get { lock (_gate) return _plans; } }
     public ExchangeRate Rate { get { lock (_gate) return _rate; } }
@@ -250,6 +273,7 @@ public sealed class BillingStore : IDisposable
         lock (_gate)
         {
             foreach (var id in _licences.Where(l => l.Value.Subject == subject).Select(l => l.Key).ToList()) { _licences.Remove(id); Mark("licence/" + id, null); }
+            foreach (var id in _orders.Where(o => o.Value.Subject == subject).Select(o => o.Key).ToList()) { _orders.Remove(id); Mark("order/" + id, null); }
             foreach (var key in _usage.Keys.Where(k => k.StartsWith(subject + "|", StringComparison.Ordinal)).ToList())
             {
                 _usage.Remove(key);
@@ -259,6 +283,149 @@ public sealed class BillingStore : IDisposable
     }
 
     private static string Describe(long bytes) => bytes >= PlanCatalog.GiB ? $"{bytes / (double)PlanCatalog.GiB:0.#} GB" : $"{bytes / PlanCatalog.MiB} MB";
+
+    // ---- coupons and orders --------------------------------------------------------------------------------------------------------------------
+
+    private static readonly string[] Methods = ["bank", "jazzcash", "easypaisa", "raast", "other"];
+    private const int MaxOpenOrders = 5;
+
+    public static string CleanCode(string? code)
+    {
+        var c = (code ?? "").Trim().ToUpperInvariant();
+        if (c.Length is < 3 or > 32 || !c.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_')) throw new ProtocolException(ErrorCode.InvalidRequest, "Codes are 3 to 32 letters, digits, dashes or underscores.");
+        return c;
+    }
+
+    public IReadOnlyList<Coupon> Coupons() { lock (_gate) return [.. _coupons.Values.OrderBy(c => c.Code, StringComparer.Ordinal)]; }
+
+    public Coupon SaveCoupon(string code, string kind, decimal value, IReadOnlyList<string>? planIds, DateTimeOffset? expiresAt, int? maxRedemptions, bool active, string? note)
+    {
+        code = CleanCode(code);
+        if (kind == "percent" ? value is < 1 or > 100 : kind == "fixed" ? value is <= 0 or > 100_000 : true) throw new ProtocolException(ErrorCode.InvalidRequest, "A coupon is a percentage from 1 to 100 or a positive amount in dollars.");
+        if (maxRedemptions is < 1 or > 1_000_000) throw new ProtocolException(ErrorCode.InvalidRequest, "The redemption limit must be at least 1.");
+        if (note is { Length: > 200 }) throw new ProtocolException(ErrorCode.InvalidRequest, "The note is too long.");
+        lock (_gate)
+        {
+            var plans = planIds ?? [];
+            if (plans.Any(id => !_plans.Any(p => p.Id == id && p.Id != PlanCatalog.Free))) throw new ProtocolException(ErrorCode.InvalidRequest, "A coupon can only name plans that are for sale.");
+            var redeemed = _coupons.TryGetValue(code, out var old) ? old.Redeemed : 0;
+            var coupon = new Coupon(code, kind, value, [.. plans], expiresAt, maxRedemptions, redeemed, active, note);
+            _coupons[code] = coupon;
+            Mark("coupon/" + code, JsonSerializer.Serialize(coupon));
+            return coupon;
+        }
+    }
+
+    /// <summary>The price for a plan and length, with an optional coupon. Throws when the plan or length is not for sale or the code cannot be used now.</summary>
+    public Quote QuoteFor(string planId, int months, string? couponCode)
+    {
+        lock (_gate) return QuoteLocked(planId, months, couponCode);
+    }
+
+    private Quote QuoteLocked(string planId, int months, string? couponCode)
+    {
+        var plan = _plans.FirstOrDefault(p => p.Id == planId && p.Purchasable) ?? throw new ProtocolException(ErrorCode.InvalidRequest, "That plan is not for sale.");
+        var price = plan.Prices.FirstOrDefault(p => p.Months == months) ?? throw new ProtocolException(ErrorCode.InvalidRequest, "That pass length is not offered.");
+        var listPkr = PlanCatalog.PkrFor(price, _rate);
+        if (string.IsNullOrWhiteSpace(couponCode)) return new Quote(plan.Id, plan.Name, months, price.Usd, price.Usd, listPkr, listPkr, null, 0);
+        var code = CleanCode(couponCode);
+        var now = _time.GetUtcNow();
+        if (!_coupons.TryGetValue(code, out var coupon) || !coupon.Active || (coupon.ExpiresAt is { } end && now >= end) || (coupon.MaxRedemptions is { } max && coupon.Redeemed >= max)
+            || (coupon.PlanIds.Count > 0 && !coupon.PlanIds.Contains(planId)))
+            throw new ProtocolException(ErrorCode.InvalidRequest, "That code is not valid for this plan.");
+        var due = coupon.Kind == "percent" ? Math.Round(price.Usd * (100 - coupon.Value) / 100m, 2, MidpointRounding.AwayFromZero) : Math.Max(0m, price.Usd - coupon.Value);
+        var duePkr = price.Usd == 0 ? 0 : (int)(Math.Round(listPkr * due / price.Usd / 50m, MidpointRounding.AwayFromZero) * 50m);
+        return new Quote(plan.Id, plan.Name, months, price.Usd, due, listPkr, duePkr, code, price.Usd - due);
+    }
+
+    public Order CreateOrder(string subject, string planId, int months, string? couponCode, string? method)
+    {
+        if (method is not null && !Methods.Contains(method)) throw new ProtocolException(ErrorCode.InvalidRequest, "Choose bank, jazzcash, easypaisa, raast or other.");
+        lock (_gate)
+        {
+            if (_orders.Values.Count(o => o.Subject == subject && o.Status is ("requested" or "proof_submitted")) >= MaxOpenOrders)
+                throw new ProtocolException(ErrorCode.LimitExceeded, "You already have several open orders. Cancel one or wait for it to be checked.");
+            var quote = QuoteLocked(planId, months, couponCode);
+            if (quote.CouponCode is { } code) { var c = _coupons[code]; var used = c with { Redeemed = c.Redeemed + 1 }; _coupons[code] = used; Mark("coupon/" + code, JsonSerializer.Serialize(used)); }
+            var order = new Order(Guid.NewGuid().ToString("N")[..12], subject, quote.PlanId, months, quote.ListUsd, quote.DueUsd, quote.DuePkr, quote.CouponCode, "requested", _time.GetUtcNow(), method, null, null, null, null, null);
+            _orders[order.Id] = order;
+            Mark("order/" + order.Id, JsonSerializer.Serialize(order));
+            return order;
+        }
+    }
+
+    public IReadOnlyList<Order> OrdersFor(string subject) { lock (_gate) return [.. _orders.Values.Where(o => o.Subject == subject).OrderByDescending(o => o.CreatedAt)]; }
+
+    public IReadOnlyList<Order> AllOrders(string? status) { lock (_gate) return [.. _orders.Values.Where(o => status is null || o.Status == status).OrderByDescending(o => o.CreatedAt).Take(500)]; }
+
+    public Order? FindOrder(string id) { lock (_gate) return _orders.GetValueOrDefault(id); }
+
+    /// <summary>The customer says they paid and gives the payment reference (a transaction id or the last digits). Text only; no screenshots are stored.</summary>
+    public Order SubmitProof(string subject, string orderId, string method, string reference)
+    {
+        reference = reference.Trim();
+        if (!Methods.Contains(method)) throw new ProtocolException(ErrorCode.InvalidRequest, "Choose bank, jazzcash, easypaisa, raast or other.");
+        if (reference.Length is < 4 or > 80 || reference.Any(char.IsControl)) throw new ProtocolException(ErrorCode.InvalidRequest, "Enter the payment reference (4 to 80 characters).");
+        lock (_gate)
+        {
+            var order = OwnOpenOrder(subject, orderId);
+            var updated = order with { Status = "proof_submitted", Method = method, Reference = reference };
+            _orders[orderId] = updated;
+            Mark("order/" + orderId, JsonSerializer.Serialize(updated));
+            return updated;
+        }
+    }
+
+    private Order OwnOpenOrder(string subject, string orderId)
+    {
+        if (!_orders.TryGetValue(orderId, out var order) || order.Subject != subject) throw new ProtocolException(ErrorCode.NotFound, "That order was not found.");
+        if (order.Status is not ("requested" or "proof_submitted")) throw new ProtocolException(ErrorCode.Conflict, "That order is already closed.");
+        return order;
+    }
+
+    public Order CancelOrder(string subject, string orderId)
+    {
+        lock (_gate) return Close(OwnOpenOrder(subject, orderId), "cancelled", null, "cancelled by the customer");
+    }
+
+    /// <summary>The owner confirms the money arrived: closes the order and adds the pass (stacking after any running pass of that plan).</summary>
+    public Order VerifyOrder(string orderId, string by)
+    {
+        lock (_gate)
+        {
+            if (!_orders.TryGetValue(orderId, out var order)) throw new ProtocolException(ErrorCode.NotFound, "That order was not found.");
+            if (order.Status is not ("requested" or "proof_submitted")) throw new ProtocolException(ErrorCode.Conflict, "That order is already closed.");
+            var licence = AddPass(order.Subject, order.PlanId, order.Months, "order", "order " + order.Id);
+            var done = order with { Status = "verified", LicenceId = licence.Id, DecidedBy = by, DecidedAt = _time.GetUtcNow() };
+            _orders[orderId] = done;
+            Mark("order/" + orderId, JsonSerializer.Serialize(done));
+            return done;
+        }
+    }
+
+    public Order RejectOrder(string orderId, string by, string reason)
+    {
+        lock (_gate)
+        {
+            if (!_orders.TryGetValue(orderId, out var order)) throw new ProtocolException(ErrorCode.NotFound, "That order was not found.");
+            if (order.Status is not ("requested" or "proof_submitted")) throw new ProtocolException(ErrorCode.Conflict, "That order is already closed.");
+            return Close(order, "rejected", by, reason);
+        }
+    }
+
+    private Order Close(Order order, string status, string? by, string reason)
+    {
+        if (order.CouponCode is { } code && _coupons.TryGetValue(code, out var c) && c.Redeemed > 0)
+        {
+            var back = c with { Redeemed = c.Redeemed - 1 };
+            _coupons[code] = back;
+            Mark("coupon/" + code, JsonSerializer.Serialize(back));
+        }
+        var closed = order with { Status = status, DecidedBy = by, DecidedAt = _time.GetUtcNow(), Reason = reason.Length > 200 ? reason[..200] : reason };
+        _orders[order.Id] = closed;
+        Mark("order/" + order.Id, JsonSerializer.Serialize(closed));
+        return closed;
+    }
 
     // ---- persistence ---------------------------------------------------------------------------------------------------------------------------
 

@@ -210,6 +210,152 @@ public class BillingTests
         Assert.Equal(key, BillingIds.Decode(id));
     }
 
+    [Fact]
+    public void A_quote_shows_dollars_and_approximate_rupees_and_applies_a_coupon()
+    {
+        var billing = Store(new MemoryBillingPersistence(), new FakeTime());
+        var plain = billing.QuoteFor("plus", 1, null);
+        Assert.Equal((3.50m, 3.50m, 1000, 1000), (plain.ListUsd, plain.DueUsd, plain.ListPkr, plain.DuePkr));
+        billing.SaveCoupon("save20", "percent", 20, ["plus"], null, 10, true, null);
+        var cut = billing.QuoteFor("plus", 12, "save20");                                              // codes are not case sensitive
+        Assert.Equal((29m, 23.20m, 8000, 6400), (cut.ListUsd, cut.DueUsd, cut.ListPkr, cut.DuePkr));
+        billing.SaveCoupon("TWOOFF", "fixed", 2m, [], null, null, true, null);
+        Assert.Equal(1.5m, billing.QuoteFor("plus", 1, "TWOOFF").DueUsd);
+        Assert.Equal(0m, billing.QuoteFor("plus", 1, "TWOOFF").DueUsd - 1.5m);
+        billing.SaveCoupon("BIG", "fixed", 500m, [], null, null, true, null);
+        Assert.Equal(0m, billing.QuoteFor("plus", 1, "BIG").DueUsd);                                    // never negative
+    }
+
+    [Fact]
+    public void Coupons_are_refused_when_expired_used_up_switched_off_or_for_another_plan()
+    {
+        var time = new FakeTime();
+        var billing = Store(new MemoryBillingPersistence(), time);
+        billing.SaveCoupon("SOON", "percent", 10, [], time.Now.AddDays(1), null, true, null);
+        billing.SaveCoupon("ONCE", "percent", 10, [], null, 1, true, null);
+        billing.SaveCoupon("OFFICEONLY", "percent", 10, ["office"], null, null, true, null);
+        billing.SaveCoupon("DEAD", "percent", 10, [], null, null, false, null);
+        billing.QuoteFor("plus", 1, "SOON");
+        time.Now = time.Now.AddDays(2);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.QuoteFor("plus", 1, "SOON")).Code);
+        billing.CreateOrder("acct:a", "plus", 1, "ONCE", null);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.QuoteFor("plus", 1, "ONCE")).Code);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.QuoteFor("plus", 1, "OFFICEONLY")).Code);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.QuoteFor("plus", 1, "DEAD")).Code);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.QuoteFor("plus", 1, "NOSUCH")).Code);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.QuoteFor("plus", 1, "x")).Code);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.SaveCoupon("BAD", "percent", 101, [], null, null, true, null)).Code);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.SaveCoupon("BAD", "weird", 5, [], null, null, true, null)).Code);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.SaveCoupon("BAD", "percent", 5, ["free"], null, null, true, null)).Code);
+    }
+
+    [Fact]
+    public void An_order_is_priced_once_verified_by_the_owner_and_then_gives_the_pass()
+    {
+        var billing = Store(new MemoryBillingPersistence(), new FakeTime());
+        var order = billing.CreateOrder("acct:a", "plus", 3, null, "jazzcash");
+        Assert.Equal("requested", order.Status);
+        Assert.Equal(2500, order.DuePkr);
+        billing.SetRate(400m);                                                                          // a later rate change never alters an existing order
+        Assert.Equal(2500, billing.FindOrder(order.Id)!.DuePkr);
+        Assert.Equal("free", billing.EntitlementFor("acct:a").PlanId);                                  // asking is not paying
+        var proof = billing.SubmitProof("acct:a", order.Id, "jazzcash", "TXN 8841 2210");
+        Assert.Equal("proof_submitted", proof.Status);
+        var done = billing.VerifyOrder(order.Id, "operator1");
+        Assert.Equal("verified", done.Status);
+        Assert.Equal("plus", billing.EntitlementFor("acct:a").PlanId);
+        Assert.Equal(done.LicenceId, billing.LicencesFor("acct:a").Single().Id);
+        Assert.Equal(ErrorCode.Conflict, Refusal(() => billing.VerifyOrder(order.Id, "operator1")).Code);   // never verified twice
+        Assert.Equal(ErrorCode.Conflict, Refusal(() => billing.RejectOrder(order.Id, "operator1", "late")).Code);
+    }
+
+    [Fact]
+    public void Customers_can_only_touch_their_own_open_orders_and_a_rejection_frees_the_coupon()
+    {
+        var billing = Store(new MemoryBillingPersistence(), new FakeTime());
+        billing.SaveCoupon("ONCE", "percent", 10, [], null, 1, true, null);
+        var order = billing.CreateOrder("acct:a", "plus", 1, "ONCE", null);
+        Assert.Equal(ErrorCode.NotFound, Refusal(() => billing.SubmitProof("acct:b", order.Id, "bank", "12345678")).Code);
+        Assert.Equal(ErrorCode.NotFound, Refusal(() => billing.CancelOrder("acct:b", order.Id)).Code);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.SubmitProof("acct:a", order.Id, "cheque", "12345678")).Code);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.SubmitProof("acct:a", order.Id, "bank", "123")).Code);
+        billing.RejectOrder(order.Id, "operator1", "no such payment");
+        Assert.Equal(0, billing.Coupons().Single().Redeemed);
+        Assert.Equal("free", billing.EntitlementFor("acct:a").PlanId);
+        Assert.Equal(ErrorCode.Conflict, Refusal(() => billing.CancelOrder("acct:a", order.Id)).Code);
+        billing.CreateOrder("acct:a", "plus", 1, "ONCE", null);                                         // the code can be used again
+    }
+
+    [Fact]
+    public void Only_a_few_orders_may_be_open_at_once_and_unsold_plans_cannot_be_ordered()
+    {
+        var billing = Store(new MemoryBillingPersistence(), new FakeTime());
+        for (var i = 0; i < 5; i++) billing.CreateOrder("acct:a", "plus", 1, null, null);
+        Assert.Equal(ErrorCode.LimitExceeded, Refusal(() => billing.CreateOrder("acct:a", "plus", 1, null, null)).Code);
+        billing.CreateOrder("acct:b", "plus", 1, null, null);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.CreateOrder("acct:b", "free", 1, null, null)).Code);
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.CreateOrder("acct:b", "plus", 2, null, null)).Code);     // only offered lengths
+        Assert.Equal(ErrorCode.InvalidRequest, Refusal(() => billing.CreateOrder("acct:b", "plus", 1, null, "cash")).Code);
+    }
+
+    [Fact]
+    public void Orders_and_coupons_survive_a_restart_and_leave_with_the_account()
+    {
+        var persistence = new MemoryBillingPersistence();
+        var time = new FakeTime();
+        var first = Store(persistence, time);
+        first.SaveCoupon("KEEP", "percent", 15, [], null, 5, true, "launch");
+        var order = first.CreateOrder("acct:a", "office", 1, "KEEP", "bank");
+        first.Flush();
+        var second = Store(persistence, time);
+        Assert.Equal(order.DuePkr, second.OrdersFor("acct:a").Single().DuePkr);
+        Assert.Equal(1, second.Coupons().Single().Redeemed);
+        second.Forget("acct:a");
+        Assert.Empty(second.OrdersFor("acct:a"));
+    }
+
+    [Fact]
+    public void The_public_price_list_shows_dollars_with_approximate_rupees_and_follows_the_rate()
+    {
+        var billing = Store(new MemoryBillingPersistence(), new FakeTime());
+        var view = BillingViews.Public(billing);
+        Assert.Equal("USD", view.Currency);
+        Assert.False(view.LimitsEnabled);
+        var plus = view.Plans.Single(p => p.Id == "plus");
+        Assert.Equal([1, 3, 12], plus.Prices.Select(x => x.Months));
+        Assert.Equal([3.50m, 9m, 29m], plus.Prices.Select(x => x.Usd));
+        Assert.Equal([1000, 2500, 8000], plus.Prices.Select(x => x.Pkr));
+        Assert.True(plus.Prices.All(x => !x.PkrApprox));                                               // fixed by the owner
+        Assert.Empty(view.Plans.Single(p => p.Id == "free").Prices);
+        var open = PlanCatalog.Defaults().Select(p => p.Id == "plus" ? p with { Prices = [new PlanPrice(1, 4m)] } : p).ToList();
+        billing.SetPlans(open);
+        billing.SetRate(300m);
+        var again = BillingViews.Public(billing).Plans.Single(p => p.Id == "plus").Prices.Single();
+        Assert.Equal((1200, true), (again.Pkr, again.PkrApprox));                                       // derived from the rate, flagged approximate
+    }
+
+    [Fact]
+    public void Plan_edits_round_trip_through_the_billing_json_and_unknown_fields_are_refused()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(new PlansUpdate(PlanCatalog.Defaults(), "test"), BillingJson.Options);
+        var back = System.Text.Json.JsonSerializer.Deserialize<PlansUpdate>(json, BillingJson.Options)!;
+        Assert.Equal(3, back.Plans.Count);
+        Assert.Equal(PlanCatalog.Defaults()[1].Limits, back.Plans[1].Limits);
+        Assert.Throws<System.Text.Json.JsonException>(() => System.Text.Json.JsonSerializer.Deserialize<RateUpdate>("{\"pkrPerUsd\":280,\"reason\":\"x\",\"extra\":1}", BillingJson.Options));
+    }
+
+    [Fact]
+    public void The_limits_switch_is_kept_across_a_restart_and_overrides_the_start_up_setting()
+    {
+        var persistence = new MemoryBillingPersistence();
+        var time = new FakeTime();
+        var first = new BillingStore(persistence, time, null, null, limitsEnabled: false);
+        Assert.False(first.LimitsEnabled);
+        first.SetLimitsEnabled(true);
+        first.Flush();
+        Assert.True(new BillingStore(persistence, time, null, null, limitsEnabled: false).LimitsEnabled);
+    }
+
     private sealed class FlakyPersistence(MemoryBillingPersistence inner) : IBillingPersistence
     {
         public bool FailNext { get; set; }

@@ -37,7 +37,7 @@ builder.Services.AddSingleton<Store>();
 builder.Services.AddSingleton<IBillingPersistence>(sp => options.Firestore.ProjectId.Length > 0
     ? new FirestoreBillingPersistence(FirestoreSnapshotBackend.Connect(options.Firestore.ProjectId))
     : options.DataDirectory.Length > 0 ? new FileBillingPersistence(options.DataDirectory) : new MemoryBillingPersistence());
-builder.Services.AddSingleton(sp => new BillingStore(sp.GetRequiredService<IBillingPersistence>(), sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILoggerFactory>().CreateLogger("Billing"), TimeSpan.FromSeconds(2)));
+builder.Services.AddSingleton(sp => new BillingStore(sp.GetRequiredService<IBillingPersistence>(), sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILoggerFactory>().CreateLogger("Billing"), TimeSpan.FromSeconds(2), options.PlanLimitsEnabled));
 builder.Services.AddSingleton<Invitations>();
 builder.Services.AddSingleton<RateLimiter>();
 builder.Services.AddSingleton<IdempotencyStore>();
@@ -295,7 +295,7 @@ app.MapPost("/v1/pairing-requests/{id}/claim", async (HttpContext context, strin
         try { existing = store.Authorize(identity, header); } catch (ProtocolException) { /* an unknown or revoked device simply pairs as a new one */ }
     }
     var (pairing, device, deviceSecret, pc) = store.ClaimPairing(id.ToUpperInvariant(), request.Secret.ToUpperInvariant(), identity, DeviceNames.Clean(request.BrowserName), existing);
-    if (options.PlanLimitsEnabled)
+    if (billing.LimitsEnabled)
     {
         var limits = billing.EntitlementFor(BillingStore.AccountSubject(identity.Uid)).Limits;
         string? refusal = null;
@@ -404,7 +404,7 @@ app.MapPost("/v1/pcs/{pcId}/uploads", async (HttpContext context, string pcId) =
     var device = AuthorizeBrowser(context, pcId);
     Throttle(context, "upload-start:" + device.Id, options.UploadStartsPerMinute, "Too many uploads were started. Wait a moment.");
     var request = await ReadJson<StartUploadRequest>(context);
-    if (options.PlanLimitsEnabled) billing.RequireTransfer(BillingStore.AccountSubject(device.OwnerUid), request.Size);
+    if (billing.LimitsEnabled) billing.RequireTransfer(BillingStore.AccountSubject(device.OwnerUid), request.Size);
     await WriteJson(context, await hub.Get(pcId).RequestAsync<UploadStarted>(Actions.StartUpload, request with { DeviceId = device.Id }, agentTimeout, context.RequestAborted), 201);
 });
 app.MapPost("/v1/pcs/{pcId}/upload-status", async (HttpContext context, string pcId) =>
@@ -661,7 +661,7 @@ app.MapMethods("/v1/downloads/{capability}", ["GET", "HEAD"], async (HttpContext
         throw new ProtocolException(ErrorCode.LimitExceeded, "This download link already has the most transfers it allows running. Wait for one to finish.");
     }
     metrics.RequireRelayAllowance(session.OwnerUid);
-    if (options.PlanLimitsEnabled && !session.IsPreview) billing.RequireTransfer(BillingStore.AccountSubject(session.OwnerUid), session.Size);
+    if (billing.LimitsEnabled && !session.IsPreview) billing.RequireTransfer(BillingStore.AccountSubject(session.OwnerUid), session.Size);
     var (stream, uplinkToken) = streams.Create(session.OwnerUid, session.IsPreview);
     using var cancel = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, session.Revoked.Token);
     var success = false;
@@ -918,6 +918,178 @@ app.MapGet("/v1/admin/audit", (HttpContext context) =>
 {
     AuthorizeOperator(context);
     return WriteJson(context, new AuditList { Entries = adminLog.Recent(200) });
+});
+
+// ---- Plans, orders and the owner's billing tools. Prices are public; everything else needs sign-in; the owner's tools need an operator with a recent sign-in. ----
+static Task WriteBilling<T>(HttpContext context, T value, int status = 200)
+{
+    context.Response.StatusCode = status;
+    context.Response.ContentType = "application/json; charset=utf-8";
+    return context.Response.WriteAsync(JsonSerializer.Serialize(value, BillingJson.Options));
+}
+
+static async Task<T> ReadBilling<T>(HttpContext context)
+{
+    if (context.Request.ContentType?.StartsWith("application/json", StringComparison.OrdinalIgnoreCase) != true)
+        throw new ProtocolException(ErrorCode.InvalidRequest, "Content-Type must be application/json.");
+    try { return await JsonSerializer.DeserializeAsync<T>(context.Request.Body, BillingJson.Options, context.RequestAborted) ?? throw new JsonException(); }
+    catch (JsonException) { throw new ProtocolException(ErrorCode.InvalidRequest, "Malformed request body."); }
+}
+
+string SignedInSubject(HttpContext context)
+{
+    var identity = Authenticate(context);
+    if (store.IsSuspended(identity.Uid)) throw new ProtocolException(ErrorCode.Forbidden, "This account is suspended.");
+    return BillingStore.AccountSubject(identity.Uid);
+}
+
+AccountPlanView AccountPlan(string subject)
+{
+    var uid = subject["acct:".Length..];
+    return BillingViews.Account(billing, subject, DateTimeOffset.UtcNow, store.PcsOwnedBy(uid).Count, store.DevicesForOwner(uid).Count);
+}
+
+app.MapGet("/v1/plans", (HttpContext context) =>
+{
+    Throttle(context, "plans:" + ClientAddress.Of(context, options), 120, "Too many requests. Wait a moment.");
+    context.Response.Headers.CacheControl = "public, max-age=60";
+    context.Response.Headers.AccessControlAllowOrigin = "*";            // public prices, no credentials: any page may show them
+    return WriteBilling(context, BillingViews.Public(billing));
+});
+
+app.MapGet("/v1/account/plan", (HttpContext context) => WriteBilling(context, AccountPlan(SignedInSubject(context))));
+
+app.MapGet("/v1/account/orders", (HttpContext context) => WriteBilling(context, billing.OrdersFor(SignedInSubject(context))));
+
+app.MapPost("/v1/account/quote", async (HttpContext context) =>
+{
+    var subject = SignedInSubject(context);
+    Throttle(context, "quote:" + subject, 30, "Too many price checks. Wait a moment.");
+    var request = await ReadBilling<QuoteRequest>(context);
+    await WriteBilling(context, billing.QuoteFor(request.PlanId, request.Months, request.Coupon));
+});
+
+app.MapPost("/v1/account/orders", async (HttpContext context) =>
+{
+    var subject = SignedInSubject(context);
+    Throttle(context, "order:" + subject, 10, "Too many orders. Wait a moment.");
+    var request = await ReadBilling<OrderRequest>(context);
+    var order = billing.CreateOrder(subject, request.PlanId, request.Months, request.Coupon, request.Method);
+    await WriteBilling(context, order, 201);
+});
+
+app.MapPost("/v1/account/orders/{id}/proof", async (HttpContext context, string id) =>
+{
+    var subject = SignedInSubject(context);
+    Throttle(context, "proof:" + subject, 20, "Too many requests. Wait a moment.");
+    var request = await ReadBilling<ProofRequest>(context);
+    await WriteBilling(context, billing.SubmitProof(subject, id, request.Method, request.Reference));
+});
+
+app.MapPost("/v1/account/orders/{id}/cancel", async (HttpContext context, string id) =>
+{
+    var subject = SignedInSubject(context);
+    await WriteBilling(context, billing.CancelOrder(subject, id));
+});
+
+app.MapGet("/v1/admin/billing", (HttpContext context) =>
+{
+    AuthorizeOperator(context);
+    return WriteBilling(context, new AdminBillingView(BillingViews.Public(billing), billing.Plans, billing.Coupons(), billing.AllOrders(null).Count(o => o.Status is "requested" or "proof_submitted")));
+});
+
+app.MapPut("/v1/admin/billing/plans", async (HttpContext context) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    var request = await ReadBilling<PlansUpdate>(context);
+    billing.SetPlans(request.Plans);
+    adminLog.Record(operatorIdentity.Uid, "set-plans", "service", request.Reason);
+    await WriteJson(context, new Ack { Ok = true });
+});
+
+app.MapPut("/v1/admin/billing/rate", async (HttpContext context) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    var request = await ReadBilling<RateUpdate>(context);
+    billing.SetRate(request.PkrPerUsd);
+    adminLog.Record(operatorIdentity.Uid, "set-rate", "service", $"{request.PkrPerUsd} PKR per USD: {request.Reason}");
+    await WriteJson(context, new Ack { Ok = true });
+});
+
+app.MapPut("/v1/admin/billing/limits", async (HttpContext context) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    var request = await ReadBilling<LimitsUpdate>(context);
+    billing.SetLimitsEnabled(request.Enabled);
+    adminLog.Record(operatorIdentity.Uid, request.Enabled ? "limits-on" : "limits-off", "service", request.Reason);
+    await WriteJson(context, new Ack { Ok = true });
+});
+
+app.MapGet("/v1/admin/coupons", (HttpContext context) =>
+{
+    AuthorizeOperator(context);
+    return WriteBilling(context, billing.Coupons());
+});
+
+app.MapPut("/v1/admin/coupons/{code}", async (HttpContext context, string code) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    var request = await ReadBilling<CouponUpdate>(context);
+    var saved = billing.SaveCoupon(code, request.Kind, request.Value, request.PlanIds, request.ExpiresAt, request.MaxRedemptions, request.Active, request.Note);
+    adminLog.Record(operatorIdentity.Uid, "save-coupon", saved.Code, request.Reason);
+    await WriteBilling(context, saved);
+});
+
+app.MapGet("/v1/admin/orders", (HttpContext context) =>
+{
+    AuthorizeOperator(context);
+    var status = context.Request.Query["status"].ToString();
+    return WriteBilling(context, billing.AllOrders(status.Length == 0 ? null : status));
+});
+
+app.MapPost("/v1/admin/orders/{id}/verify", async (HttpContext context, string id) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    var request = await ReadBilling<DecisionRequest>(context);
+    var order = billing.VerifyOrder(id, operatorIdentity.Uid);
+    adminLog.Record(operatorIdentity.Uid, "verify-order", order.Subject, $"{order.PlanId} {order.Months}m {order.DuePkr} PKR: {request.Reason}");
+    await WriteBilling(context, order);
+});
+
+app.MapPost("/v1/admin/orders/{id}/reject", async (HttpContext context, string id) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    var request = await ReadBilling<DecisionRequest>(context);
+    var order = billing.RejectOrder(id, operatorIdentity.Uid, request.Reason);
+    adminLog.Record(operatorIdentity.Uid, "reject-order", order.Subject, request.Reason);
+    await WriteBilling(context, order);
+});
+
+app.MapGet("/v1/admin/users/{uid}/billing", (HttpContext context, string uid) =>
+{
+    AuthorizeOperator(context);
+    var subject = BillingStore.AccountSubject(CleanUid(uid));
+    return WriteBilling(context, new UserBillingView(subject["acct:".Length..], AccountPlan(subject), billing.LicencesFor(subject), billing.OrdersFor(subject)));
+});
+
+app.MapPost("/v1/admin/users/{uid}/passes", async (HttpContext context, string uid) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    var subject = BillingStore.AccountSubject(CleanUid(uid));
+    var request = await ReadBilling<PassRequest>(context);
+    var source = request.Source is "grant" or "manual" ? request.Source : "manual";
+    var pass = billing.AddPass(subject, request.PlanId, request.Months, source, request.Reason);
+    adminLog.Record(operatorIdentity.Uid, "add-pass", subject, $"{request.PlanId} {request.Months}m ({source}): {request.Reason}");
+    await WriteBilling(context, pass, 201);
+});
+
+app.MapPost("/v1/admin/passes/{id}/end", async (HttpContext context, string id) =>
+{
+    var operatorIdentity = AuthorizeOperator(context);
+    var request = await ReadBilling<EndPassRequest>(context);
+    if (!billing.EndPass(id, request.SkipGrace)) throw new ProtocolException(ErrorCode.NotFound, "That pass was not found.");
+    adminLog.Record(operatorIdentity.Uid, "end-pass", id, request.Reason);
+    await WriteJson(context, new Ack { Ok = true });
 });
 
 app.Run();
