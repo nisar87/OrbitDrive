@@ -89,6 +89,8 @@ public sealed class GatewayOptions
     public int OperatorMaxAuthAgeSeconds { get; set; } = 900;
     /// <summary>Relay bytes one account may move in a UTC day (downloads plus upload pieces). 0 = no cap.</summary>
     public long MaxRelayBytesPerOwnerPerDay { get; set; }
+    /// <summary>When true the plan limits (PCs, browsers, file size, files and data a day) are enforced. Off until the owner announces the start date; usage is counted either way.</summary>
+    public bool PlanLimitsEnabled { get; set; }
     /// <summary>When all accounts together have relayed more than this many bytes today (UTC), the operator overview raises a cost alert. 0 turns it off.</summary>
     public long RelayBytesDailyAlert { get; set; }
     /// <summary>Archive preparations one account may start per minute across all its browsers (each one makes the PC read and zip files).</summary>

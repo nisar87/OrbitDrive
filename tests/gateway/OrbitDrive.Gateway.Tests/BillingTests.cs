@@ -182,6 +182,34 @@ public class BillingTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
+    [Fact]
+    public void A_download_counts_as_one_file_only_when_every_byte_reached_the_browser_and_only_once()
+    {
+        var session = new DownloadSessionRecord
+        {
+            OwnerUid = "a", BrowserDeviceId = "d", PcId = "p", Name = "n", Size = 100, Revision = "r", ReadToken = "t", CreatedAt = DateTimeOffset.UnixEpoch, ExpiresAt = DateTimeOffset.UnixEpoch.AddDays(1),
+        };
+        session.StreamStarted();
+        session.StreamEnded(0, 40);
+        Assert.False(session.TryCountAsFile());                                   // only part of it arrived
+        session.StreamStarted();
+        session.StreamEnded(40, 60);
+        Assert.True(session.TryCountAsFile());                                    // the rest arrived on a resumed request
+        Assert.False(session.TryCountAsFile());                                   // never counted twice
+    }
+
+    [Theory]
+    [InlineData("licence/abc")]
+    [InlineData("usage/acct:u1/20424")]
+    [InlineData("config/plans")]
+    [InlineData("weird~name/with%percent")]
+    public void Firestore_document_ids_round_trip_and_never_contain_a_slash(string key)
+    {
+        var id = BillingIds.Encode(key);
+        Assert.False(id.Contains('/'));
+        Assert.Equal(key, BillingIds.Decode(id));
+    }
+
     private sealed class FlakyPersistence(MemoryBillingPersistence inner) : IBillingPersistence
     {
         public bool FailNext { get; set; }

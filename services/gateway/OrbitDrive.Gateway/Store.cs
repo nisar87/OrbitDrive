@@ -118,6 +118,10 @@ public sealed class DownloadSessionRecord
         }
     }
 
+    private int _counted;
+    /// <summary>True exactly once, when every byte of the file has reached the browser: that is when the file counts against the day's allowance.</summary>
+    public bool TryCountAsFile() => Summarize().State == DownloadState.SentToBrowser && Interlocked.Exchange(ref _counted, 1) == 0;
+
     private bool _completedEmpty;
     /// <summary>A zero-byte file has nothing to cover; a completed empty response is what "sent" means for it.</summary>
     public void EmptyFileDelivered() { lock (_progress) _completedEmpty = true; }

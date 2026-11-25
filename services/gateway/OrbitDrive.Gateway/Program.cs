@@ -34,6 +34,10 @@ if (options.Firestore.ProjectId.Length > 0)
     builder.Services.AddHostedService(sp => sp.GetRequiredService<FirestoreSnapshotBackend>());
 }
 builder.Services.AddSingleton<Store>();
+builder.Services.AddSingleton<IBillingPersistence>(sp => options.Firestore.ProjectId.Length > 0
+    ? new FirestoreBillingPersistence(FirestoreSnapshotBackend.Connect(options.Firestore.ProjectId))
+    : options.DataDirectory.Length > 0 ? new FileBillingPersistence(options.DataDirectory) : new MemoryBillingPersistence());
+builder.Services.AddSingleton(sp => new BillingStore(sp.GetRequiredService<IBillingPersistence>(), sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILoggerFactory>().CreateLogger("Billing"), TimeSpan.FromSeconds(2)));
 builder.Services.AddSingleton<Invitations>();
 builder.Services.AddSingleton<RateLimiter>();
 builder.Services.AddSingleton<IdempotencyStore>();
@@ -68,6 +72,8 @@ var idempotency = app.Services.GetRequiredService<IdempotencyStore>();
 var maintenance = new MaintenanceMode(options);
 var invitations = app.Services.GetRequiredService<Invitations>();
 var metrics = app.Services.GetRequiredService<Metrics>();
+var billing = app.Services.GetRequiredService<BillingStore>();
+var countedUploads = new System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset>();
 var adminLog = app.Services.GetRequiredService<AdminLog>();
 var hub = app.Services.GetRequiredService<AgentHub>();
 app.Lifetime.ApplicationStopping.Register(hub.Shutdown);
@@ -289,6 +295,16 @@ app.MapPost("/v1/pairing-requests/{id}/claim", async (HttpContext context, strin
         try { existing = store.Authorize(identity, header); } catch (ProtocolException) { /* an unknown or revoked device simply pairs as a new one */ }
     }
     var (pairing, device, deviceSecret, pc) = store.ClaimPairing(id.ToUpperInvariant(), request.Secret.ToUpperInvariant(), identity, DeviceNames.Clean(request.BrowserName), existing);
+    if (options.PlanLimitsEnabled)
+    {
+        var limits = billing.EntitlementFor(BillingStore.AccountSubject(identity.Uid)).Limits;
+        string? refusal = null;
+        if (limits.Pcs is { } maxPcs && pc.OwnerUid != identity.Uid && store.PcsOwnedBy(identity.Uid).Count >= maxPcs)
+            refusal = $"Your plan allows {maxPcs} PC{(maxPcs == 1 ? "" : "s")} and you already have that many. Remove one or choose a bigger plan, then create a new code on the PC.";
+        else if (limits.Devices is { } maxDevices && !(existing is not null && existing.Id == device.Id) && store.DevicesForOwner(identity.Uid).Count(d => d.Id != device.Id) >= maxDevices)
+            refusal = $"Your plan allows {maxDevices} paired device{(maxDevices == 1 ? "" : "s")} and you already have that many. Remove one or choose a bigger plan, then create a new code on the PC.";
+        if (refusal is not null) { store.AbandonClaim(pairing.Id); throw new ProtocolException(ErrorCode.LimitExceeded, refusal); }
+    }
     var code = (BitConverter.ToUInt32(Secrets.Hash($"{pairing.Id}|{identity.Uid}|{device.Id}|{pc.PcId}")) % 1_000_000).ToString("D6");
     try
     {
@@ -388,6 +404,7 @@ app.MapPost("/v1/pcs/{pcId}/uploads", async (HttpContext context, string pcId) =
     var device = AuthorizeBrowser(context, pcId);
     Throttle(context, "upload-start:" + device.Id, options.UploadStartsPerMinute, "Too many uploads were started. Wait a moment.");
     var request = await ReadJson<StartUploadRequest>(context);
+    if (options.PlanLimitsEnabled) billing.RequireTransfer(BillingStore.AccountSubject(device.OwnerUid), request.Size);
     await WriteJson(context, await hub.Get(pcId).RequestAsync<UploadStarted>(Actions.StartUpload, request with { DeviceId = device.Id }, agentTimeout, context.RequestAborted), 201);
 });
 app.MapPost("/v1/pcs/{pcId}/upload-status", async (HttpContext context, string pcId) =>
@@ -402,7 +419,13 @@ app.MapPost("/v1/pcs/{pcId}/upload-finish", async (HttpContext context, string p
     var device = AuthorizeBrowser(context, pcId);
     Throttle(context, "upload-finish:" + device.Id, 300, "Too many requests. Wait a moment.");
     var request = await ReadJson<UploadRef>(context);
-    await WriteJson(context, await hub.Get(pcId).RequestAsync<UploadStatus>(Actions.FinishUpload, request with { DeviceId = device.Id }, TimeSpan.FromSeconds(options.PrepareTimeoutSeconds), context.RequestAborted));
+    var finished = await hub.Get(pcId).RequestAsync<UploadStatus>(Actions.FinishUpload, request with { DeviceId = device.Id }, TimeSpan.FromSeconds(options.PrepareTimeoutSeconds), context.RequestAborted);
+    if (finished.State == "committed" && countedUploads.TryAdd(finished.UploadId, DateTimeOffset.UtcNow))
+    {
+        billing.RecordTransfer(BillingStore.AccountSubject(device.OwnerUid), 0, fileCompleted: true);    // a file counts once, when it is saved on the PC
+        if (countedUploads.Count > 10_000) foreach (var old in countedUploads.Where(e => DateTimeOffset.UtcNow - e.Value > TimeSpan.FromDays(1)).Select(e => e.Key).ToList()) countedUploads.TryRemove(old, out _);
+    }
+    await WriteJson(context, finished);
 });
 app.MapPost("/v1/pcs/{pcId}/upload-cancel", async (HttpContext context, string pcId) =>
 {
@@ -466,6 +489,7 @@ app.MapPut("/v1/pcs/{pcId}/uploads/{uploadId}/chunk", async (HttpContext context
     finally
     {
         metrics.PieceRelayed(device.OwnerUid, length, stored);
+        if (stored) billing.RecordTransfer(BillingStore.AccountSubject(device.OwnerUid), length, fileCompleted: false);
         streams.Remove(stream, success);
         if (!success && agentTask is not null)
         {
@@ -637,6 +661,7 @@ app.MapMethods("/v1/downloads/{capability}", ["GET", "HEAD"], async (HttpContext
         throw new ProtocolException(ErrorCode.LimitExceeded, "This download link already has the most transfers it allows running. Wait for one to finish.");
     }
     metrics.RequireRelayAllowance(session.OwnerUid);
+    if (options.PlanLimitsEnabled && !session.IsPreview) billing.RequireTransfer(BillingStore.AccountSubject(session.OwnerUid), session.Size);
     var (stream, uplinkToken) = streams.Create(session.OwnerUid, session.IsPreview);
     using var cancel = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, session.Revoked.Token);
     var success = false;
@@ -667,7 +692,11 @@ app.MapMethods("/v1/downloads/{capability}", ["GET", "HEAD"], async (HttpContext
     finally
     {
         session.StreamEnded(selected.Start, relayed);
-        if (!session.IsPreview) metrics.Downloaded(session.OwnerUid, relayed, success);
+        if (!session.IsPreview)
+        {
+            metrics.Downloaded(session.OwnerUid, relayed, success);
+            billing.RecordTransfer(BillingStore.AccountSubject(session.OwnerUid), relayed, session.TryCountAsFile());
+        }
         streams.Remove(stream, success);
         if (!success && hub.IsOnline(session.PcId))
             _ = hub.Get(session.PcId).RequestAsync<Ack>(Actions.CancelStream, new CancelStreamRequest { StreamId = stream.Id }, TimeSpan.FromSeconds(5), CancellationToken.None)
@@ -778,6 +807,7 @@ app.MapDelete("/v1/account", async (HttpContext context) =>
     var (devices, pcs) = store.DeleteAccount(current.OwnerUid);
     EndAllWork(devices);
     metrics.Forget(current.OwnerUid);
+    billing.Forget(BillingStore.AccountSubject(current.OwnerUid));
     adminLog.Record(current.OwnerUid, "account-deleted", current.OwnerUid, $"{devices.Count} browsers revoked, {pcs.Count} PCs released");
     await WriteJson(context, new Ack { Ok = true });
 });
@@ -863,6 +893,7 @@ app.MapPost("/v1/admin/users/{uid}/reset-relay-allowance", async (HttpContext co
     var operatorIdentity = AuthorizeOperator(context);
     uid = CleanUid(uid);
     var request = await ReadJson<AdminReasonRequest>(context);
+    billing.ResetToday(BillingStore.AccountSubject(uid));
     metrics.Forget(uid);                                  // an operator's way to give one account its day's allowance back before midnight UTC
     adminLog.Record(operatorIdentity.Uid, "reset-relay-allowance", uid, request.Reason);
     await WriteJson(context, new Ack { Ok = true });

@@ -292,3 +292,10 @@ public sealed class BillingStore : IDisposable
 
     public void Dispose() { _timer?.Dispose(); Flush(); }
 }
+
+/// <summary>Maps a billing entry key to a Firestore document id (slashes are not allowed in ids) and back.</summary>
+public static class BillingIds
+{
+    public static string Encode(string key) => key.Replace("%", "%25", StringComparison.Ordinal).Replace("~", "%7E", StringComparison.Ordinal).Replace("/", "~", StringComparison.Ordinal);
+    public static string Decode(string id) => id.Replace("~", "/", StringComparison.Ordinal).Replace("%7E", "~", StringComparison.Ordinal).Replace("%25", "%", StringComparison.Ordinal);
+}
