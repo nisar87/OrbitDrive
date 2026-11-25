@@ -203,25 +203,54 @@ public sealed class Store
     {
         if (_backend is null) return;
         _backend.Save(new Snapshot(1,
-            [.. _pcs.Values.Select(p => new PcDto(p.PcId, Convert.ToBase64String(p.PublicKeySpki), p.Name, p.AgentVersion, p.OwnerUid, p.LastSeen.ToUnixTimeMilliseconds()))],
+            [.. _pcs.Values.Where(p => p.OwnerUid is not null).Select(p => new PcDto(p.PcId, Convert.ToBase64String(p.PublicKeySpki), p.Name, p.AgentVersion, p.OwnerUid, p.LastSeen.ToUnixTimeMilliseconds()))],
             [.. _devices.Values.Where(d => d.Active || d.Revoked).Select(d => new DeviceDto(d.Id, d.OwnerUid, d.Name, Convert.ToBase64String(d.SecretHash), d.Active, d.Revoked, [.. d.PcIds],
                 d.CreatedAt.ToUnixTimeMilliseconds(), d.SecretIssuedAt.ToUnixTimeMilliseconds(), d.LastUsedAt.ToUnixTimeMilliseconds(),
                 d.PreviousSecretHash is null ? null : Convert.ToBase64String(d.PreviousSecretHash), d.PreviousSecretHash is null ? null : d.PreviousValidUntil.ToUnixTimeMilliseconds()))],
             [.. _suspended], [.. _prefs.Select(e => new PrefDto(e.Key, e.Value.HistoryRetentionDays, e.Value.NotifyInvitations, e.Value.DiagnosticsConsent))]));
     }
 
-    public PcRecord UpsertPc(string pcId, byte[] spki, string name, string agentVersion)
+    /// <summary>Longest agent version text the relay will accept or keep.</summary>
+    public const int MaxAgentVersionLength = 32;
+
+    /// <summary>
+    /// Records a connected PC. A PC that no account has paired is held in memory only: it is never written to the snapshot, there is a cap on how many
+    /// the relay will hold, and one that is offline and idle is forgotten (F-001). Only a paired PC is saved.
+    /// </summary>
+    /// <param name="isOnline">Says whether a PC is connected right now; an idle unpaired PC is forgotten only when it is not.</param>
+    public PcRecord UpsertPc(string pcId, byte[] spki, string name, string agentVersion, Func<string, bool>? isOnline = null)
     {
+        if (agentVersion.Length > MaxAgentVersionLength) throw new ProtocolException(ErrorCode.InvalidRequest, "The PC's version text is too long.");
         lock (_gate)
         {
             var known = _pcs.TryGetValue(pcId, out var pc);
-            if (!known) _pcs[pcId] = pc = new PcRecord { PcId = pcId, PublicKeySpki = spki };
+            if (!known)
+            {
+                ForgetIdleUnowned(isOnline ?? (_ => false));
+                if (_pcs.Values.Count(p => p.OwnerUid is null) >= options.MaxUnownedPcs)
+                    throw new ProtocolException(ErrorCode.LimitExceeded, "The service cannot take another unpaired PC right now. Try again later.");
+                _pcs[pcId] = pc = new PcRecord { PcId = pcId, PublicKeySpki = spki };
+            }
             var changed = !known || pc!.Name != name || pc.AgentVersion != agentVersion;
             pc!.Name = name; pc.AgentVersion = agentVersion; pc.LastSeen = time.GetUtcNow();
-            if (changed || pc.OwnerUid is not null) Save(); // last-seen is kept for owned PCs so "offline since" survives a restart
+            if (pc.OwnerUid is not null && (changed || known)) Save(); // last-seen is kept for owned PCs so "offline since" survives a restart; an unpaired PC is never saved
             return pc;
         }
     }
+
+    /// <summary>Drops unpaired PCs that are offline and have not been heard from for UnownedPcIdleMinutes. Called with the gate held.</summary>
+    private void ForgetIdleUnowned(Func<string, bool> isOnline)
+    {
+        var cutoff = time.GetUtcNow() - TimeSpan.FromMinutes(options.UnownedPcIdleMinutes);
+        foreach (var gone in _pcs.Values.Where(p => p.OwnerUid is null && p.LastSeen < cutoff && !isOnline(p.PcId)).Select(p => p.PcId).ToList())
+        {
+            _pcs.Remove(gone);
+            foreach (var pairing in _pairings.Values.Where(p => p.PcId == gone && p.State is PairingState.Issued or PairingState.Claimed)) pairing.State = PairingState.Expired;
+        }
+    }
+
+    /// <summary>PCs held in memory that no account has paired (tests and the operator overview).</summary>
+    public int UnownedPcCount() { lock (_gate) return _pcs.Values.Count(p => p.OwnerUid is null); }
 
     /// <summary>The key a known PC is currently bound to (null for a PC the relay has never seen).</summary>
     public byte[]? PcKey(string pcId) { lock (_gate) return _pcs.TryGetValue(pcId, out var pc) ? pc.PublicKeySpki : null; }
@@ -279,7 +308,7 @@ public sealed class Store
                 if (++pairing.FailedAttempts >= 5) pairing.State = PairingState.Expired;
                 throw new ProtocolException(ErrorCode.Forbidden, "Pairing code is not correct.");
             }
-            var pc = _pcs[pairing.PcId];
+            if (!_pcs.TryGetValue(pairing.PcId, out var pc)) throw new ProtocolException(ErrorCode.NotFound, "Pairing request not found.");
             if (pc.OwnerUid is not null && pc.OwnerUid != identity.Uid)
             {
                 pairing.State = PairingState.Expired;
@@ -324,8 +353,7 @@ public sealed class Store
             if (pairing.PcId != pcId) throw new ProtocolException(ErrorCode.NotFound, "Pairing request not found.");
             if (pairing.State == PairingState.Expired) throw new ProtocolException(ErrorCode.Expired, "The pairing request expired.");
             if (pairing.State != PairingState.Claimed) throw new ProtocolException(ErrorCode.Conflict, "Nothing is waiting for approval.");
-            var device = _devices[pairing.BrowserDeviceId!];
-            var pc = _pcs[pcId];
+            if (!_devices.TryGetValue(pairing.BrowserDeviceId!, out var device) || !_pcs.TryGetValue(pcId, out var pc)) throw new ProtocolException(ErrorCode.NotFound, "Pairing request not found.");
             if (!approve || (pc.OwnerUid is not null && pc.OwnerUid != pairing.ClaimUid))
             {
                 pairing.State = PairingState.Denied;

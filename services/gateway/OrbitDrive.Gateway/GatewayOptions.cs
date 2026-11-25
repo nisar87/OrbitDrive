@@ -98,8 +98,24 @@ public sealed class GatewayOptions
     /// <summary>PCs reporting an older OrbitDrive version are refused with an update message. Empty = no minimum. An operator can change it while running.</summary>
     public string MinAgentVersion { get; set; } = "";
     public int MaxControlMessageBytes { get; set; } = 262144;
-    /// <summary>How many control connections may be waiting to prove who they are at once (each is dropped after 10 seconds). Extra attempts are refused before the connection is accepted.</summary>
+    /// <summary>How many control connections may be waiting to prove who they are at once (each is dropped after HandshakeSeconds). Extra attempts are refused before the connection is accepted.</summary>
     public int MaxPendingHandshakes { get; set; } = 64;
+    /// <summary>How many of those waiting places one client address may hold, so one address cannot keep every PC out (F-002).</summary>
+    public int MaxPendingHandshakesPerAddress { get; set; } = 4;
+    /// <summary>How long a new control connection may stay silent before it is dropped (1 to 30 s).</summary>
+    public int HandshakeSeconds { get; set; } = 4;
+    /// <summary>Control connections one client address may open per minute (a small office with several PCs behind one address is well inside this).</summary>
+    public int AgentConnectionsPerAddressPerMinute { get; set; } = 120;
+    /// <summary>PCs the relay has never seen that one client address may introduce per minute.</summary>
+    public int NewPcRegistrationsPerAddressPerMinute { get; set; } = 30;
+    /// <summary>PCs that are not paired to an account are kept in memory only (never saved), up to this many, and forgotten after UnownedPcIdleMinutes without contact.</summary>
+    public int MaxUnownedPcs { get; set; } = 2000;
+    public int UnownedPcIdleMinutes { get; set; } = 30;
+    /// <summary>
+    /// When true an operator call is refused unless the sign-in used a second factor (the token's firebase.sign_in_second_factor claim). Off by default so
+    /// switching it on is a deliberate step after the operator account has a second factor in Firebase; see docs/operations/relay.md.
+    /// </summary>
+    public bool RequireOperatorSecondFactor { get; set; }
     /// <summary>How often a connected PC must prove it is alive, and how long silence is tolerated before it is treated as offline.</summary>
     public int AgentHeartbeatSeconds { get; set; } = 10;
     public int AgentLeaseSeconds { get; set; } = 30;
@@ -139,7 +155,8 @@ public sealed class GatewayOptions
         }
         if (OperatorUids.Any(u => u.Length is 0 or > 128 || u.Any(char.IsWhiteSpace))) throw new InvalidOperationException("OperatorUids must be non-empty user ids without spaces.");
         if (OperatorMaxAuthAgeSeconds is < 60 or > 3600) throw new InvalidOperationException("OperatorMaxAuthAgeSeconds must be 60-3600.");
-        if (MaxPendingHandshakes < 1) throw new InvalidOperationException("MaxPendingHandshakes must be at least 1.");
+        if (MaxPendingHandshakes < 1 || MaxPendingHandshakesPerAddress < 1 || HandshakeSeconds is < 1 or > 30) throw new InvalidOperationException("MaxPendingHandshakes and MaxPendingHandshakesPerAddress must be at least 1 and HandshakeSeconds 1-30.");
+        if (AgentConnectionsPerAddressPerMinute < 1 || NewPcRegistrationsPerAddressPerMinute < 1 || MaxUnownedPcs < 1 || UnownedPcIdleMinutes < 1) throw new InvalidOperationException("Agent connection limits must be at least 1.");
         if (RelayBytesDailyAlert < 0 || ArchiveStartsPerOwnerPerMinute < 1) throw new InvalidOperationException("RelayBytesDailyAlert cannot be negative and ArchiveStartsPerOwnerPerMinute must be at least 1.");
         if (MaxRelayBytesPerOwnerPerDay < 0) throw new InvalidOperationException("MaxRelayBytesPerOwnerPerDay cannot be negative.");
         if (MinAgentVersion.Length > 0 && !Version.TryParse(MinAgentVersion, out _)) throw new InvalidOperationException("MinAgentVersion must be a version such as 1.2.3.");

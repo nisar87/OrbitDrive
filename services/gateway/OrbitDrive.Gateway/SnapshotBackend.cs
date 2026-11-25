@@ -37,3 +37,40 @@ public sealed class FileSnapshotBackend : ISnapshotBackend
 
     public void QuarantineUnreadable() => File.Move(_file, _file + ".corrupt-" + _time.GetUtcNow().ToUnixTimeSeconds(), overwrite: true);
 }
+
+/// <summary>
+/// Holds an exclusive lock on a file in the data directory for as long as the process lives, so a second relay started by mistake on the same
+/// directory refuses to start instead of overwriting the first one's files (F-019). The operating system drops the lock when the process ends, however it ends.
+/// </summary>
+public sealed class DataDirectoryLock : IDisposable
+{
+    public const string FileName = "relay.lock";
+    private FileStream? _stream;
+
+    private DataDirectoryLock(FileStream stream) { _stream = stream; }
+
+    /// <summary>Takes the lock or throws <see cref="InvalidOperationException"/> naming the problem (never the directory contents).</summary>
+    public static DataDirectoryLock Acquire(string directory)
+    {
+        Directory.CreateDirectory(directory);
+        var path = Path.Join(directory, FileName);
+        try
+        {
+            var stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            try
+            {
+                stream.SetLength(0);
+                stream.Write(System.Text.Encoding.ASCII.GetBytes($"pid {Environment.ProcessId}\n"));
+                stream.Flush();
+            }
+            catch (IOException) { /* the lock is what matters; the note is only a courtesy */ }
+            return new DataDirectoryLock(stream);
+        }
+        catch (IOException e)
+        {
+            throw new InvalidOperationException($"Another OrbitDrive relay is already using the data directory ({FileName} is locked). Stop it first; two relays on one directory would overwrite each other's data.", e);
+        }
+    }
+
+    public void Dispose() { _stream?.Dispose(); _stream = null; }
+}

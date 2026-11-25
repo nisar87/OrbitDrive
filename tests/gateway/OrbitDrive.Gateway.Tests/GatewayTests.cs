@@ -114,7 +114,7 @@ public class IdentityAndConfigurationTests
     [InlineData("10.0.0.9", "", "203.0.113.5", "10.0.0.9")]                                // header ignored without a trusted proxy
     [InlineData("127.0.0.1", "127.0.0.1", "203.0.113.5", "203.0.113.5")]
     [InlineData("127.0.0.1", "127.0.0.1", "6.6.6.6, 203.0.113.5", "203.0.113.5")]          // only the proxy's own entry counts
-    [InlineData("::ffff:127.0.0.1", "127.0.0.1", "2001:db8::7", "2001:db8::7")]
+    [InlineData("::ffff:127.0.0.1", "127.0.0.1", "2001:db8::7", "2001:db8::/64")]               // an IPv6 client is limited by its /64
     [InlineData("127.0.0.1", "127.0.0.1", "not-an-address", "127.0.0.1")]
     [InlineData("127.0.0.1", "127.0.0.1", "", "127.0.0.1")]
     [InlineData("198.51.100.1", "127.0.0.1", "203.0.113.5", "198.51.100.1")]               // a direct caller cannot pose as the proxy

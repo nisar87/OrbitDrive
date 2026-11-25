@@ -66,31 +66,43 @@ public sealed class AgentConnection(WebSocket socket, string pcId, long generati
 }
 
 /// <summary>Tracks the single authoritative connection generation per PC and runs the control protocol.</summary>
-public sealed class AgentHub(Store store, Invitations invitations, GatewayOptions options, AdminLog admin, ILogger<AgentHub> logger)
+public sealed class AgentHub(Store store, Invitations invitations, GatewayOptions options, AdminLog admin, RateLimiter limiter, ILogger<AgentHub> logger)
 {
     private readonly ConcurrentDictionary<string, AgentConnection> _connections = new();
     private long _generation;
     private int _pendingHandshakes;
+    private readonly Dictionary<string, int> _pendingByAddress = [];
+    private readonly Lock _pendingGate = new();
 
     /// <summary>Control connections that have not yet proven who they are.</summary>
     public int PendingHandshakes => Volatile.Read(ref _pendingHandshakes);
 
     /// <summary>
-    /// Takes one waiting slot, or says no when <paramref name="limit"/> are already taken. The check and the increment are one atomic step, so
-    /// many connections arriving at once cannot all pass a check that only one of them should. A slot that was taken must reach
-    /// <see cref="RunAsync"/> (which gives it back) or be given back with <see cref="ReleaseHandshake"/>.
+    /// Takes one waiting place, or says no when <paramref name="limit"/> are already taken in all, or <paramref name="perAddressLimit"/> by this client address (F-002).
+    /// The check and the increment are one step, so many connections arriving at once cannot all pass a check that only some of them should. A place that was
+    /// taken must reach <see cref="RunAsync"/> (which gives it back) or be given back with <see cref="ReleaseHandshake"/>.
     /// </summary>
-    public bool TryReserveHandshake(int limit)
+    public bool TryReserveHandshake(int limit, string address = "", int perAddressLimit = int.MaxValue)
     {
-        while (true)
+        lock (_pendingGate)
         {
-            var current = Volatile.Read(ref _pendingHandshakes);
-            if (current >= limit) return false;
-            if (Interlocked.CompareExchange(ref _pendingHandshakes, current + 1, current) == current) return true;
+            if (_pendingHandshakes >= limit) return false;
+            _pendingByAddress.TryGetValue(address, out var mine);
+            if (mine >= perAddressLimit) return false;
+            _pendingHandshakes++;
+            _pendingByAddress[address] = mine + 1;
+            return true;
         }
     }
 
-    public void ReleaseHandshake() => Interlocked.Decrement(ref _pendingHandshakes);
+    public void ReleaseHandshake(string address = "")
+    {
+        lock (_pendingGate)
+        {
+            if (_pendingHandshakes > 0) _pendingHandshakes--;
+            if (_pendingByAddress.TryGetValue(address, out var mine)) { if (mine <= 1) _pendingByAddress.Remove(address); else _pendingByAddress[address] = mine - 1; }
+        }
+    }
 
     public bool IsOnline(string pcId) => _connections.ContainsKey(pcId);
 
@@ -152,7 +164,7 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
         Payload = payload is null ? null : JsonSerializer.SerializeToElement(payload, payload.GetType(), ProtocolJson.Options),
     };
 
-    public async Task RunAsync(WebSocket socket, CancellationToken cancellation)
+    public async Task RunAsync(WebSocket socket, CancellationToken cancellation, string address = "")
     {
         // 1. Challenge -> signed hello. The PC id is the hash of its public key, so it cannot be claimed by another key.
         var nonce = Secrets.Token();
@@ -166,10 +178,11 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
                 Payload = ProtocolJson.ToElement(new AgentChallenge { Nonce = nonce, MinProtocolVersion = ProtocolInfo.MinVersion, MaxProtocolVersion = ProtocolInfo.Version }),
             }, cancellation);
             using var helloTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-            helloTimeout.CancelAfter(TimeSpan.FromSeconds(10));
+            helloTimeout.CancelAfter(TimeSpan.FromSeconds(options.HandshakeSeconds));
             first = await ReceiveAsync(socket, helloTimeout.Token);
         }
-        finally { ReleaseHandshake(); }
+        catch (OperationCanceledException) when (!cancellation.IsCancellationRequested) { socket.Abort(); return; }   // stayed silent too long
+        finally { ReleaseHandshake(address); }
         if (first is not { Kind: EnvelopeKind.Req, Action: Actions.Hello, Payload: not null }) { socket.Abort(); return; }
         AgentHello agent;
         try { agent = ProtocolJson.FromElement<AgentHello>(first.Payload.Value); }
@@ -180,6 +193,8 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
         bool rotatedAlready = false, rotatedNow = false;
         if (agent.ProtocolVersion < ProtocolInfo.MinVersion || agent.ProtocolVersion > ProtocolInfo.Version)
             rejection = new ProtocolException(ErrorCode.UnsupportedVersion, $"Update required: this service speaks protocol {ProtocolInfo.MinVersion}-{ProtocolInfo.Version}.");
+        else if (agent.AgentVersion.Length > Store.MaxAgentVersionLength || agent.PublicKeySpki.Length > 512)
+            rejection = new ProtocolException(ErrorCode.InvalidRequest, "The PC's identification is not valid.");
         else if (admin.IsBelowMinimum(agent.AgentVersion))
             rejection = new ProtocolException(ErrorCode.UnsupportedVersion, $"Update required: MyOrbitDrive on this PC must be version {admin.MinAgentVersion} or newer.");
         else
@@ -190,6 +205,9 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
                 using var key = ECDsa.Create();
                 key.ImportSubjectPublicKeyInfo(spki, out _);
                 var stored = store.PcKey(agent.PcId);
+                // A PC the relay has never seen is a new registration: limited per client address, so one address cannot make the relay hold thousands of PCs.
+                if (stored is null && address.Length > 0 && limiter.Hit("register:" + address, options.NewPcRegistrationsPerAddressPerMinute, anonymous: true) != 0)
+                    throw new ProtocolException(ErrorCode.LimitExceeded, "Too many new PCs were introduced from this network. Try again in a minute.");
                 // A PC the relay has never seen must use the hash of its key as its id. A known PC must present the key the relay holds for it, or - if it is
                 // moving to a new key - prove it holds BOTH: the old key signs the hello, the new key signs the rotation statement.
                 var identity = stored is null ? agent.PcId == Base64Url.EncodeToString(SHA256.HashData(spki)) : spki.AsSpan().SequenceEqual(stored);
@@ -202,6 +220,7 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
             }
             catch (Exception e) when (e is FormatException or CryptographicException)
             { rejection = new ProtocolException(ErrorCode.Unauthenticated, "PC identity could not be verified."); }
+            catch (ProtocolException e) when (e.Code == ErrorCode.LimitExceeded) { rejection = e; }
         }
         if (rejection is not null)
         {
@@ -211,7 +230,14 @@ public sealed class AgentHub(Store store, Invitations invitations, GatewayOption
         }
 
         // 2. This connection becomes the only valid generation; any older socket is cut off.
-        var pc = store.UpsertPc(agent.PcId, spki, agent.Name, agent.AgentVersion);
+        PcRecord pc;
+        try { pc = store.UpsertPc(agent.PcId, spki, agent.Name, agent.AgentVersion, IsOnline); }
+        catch (ProtocolException e)
+        {
+            await hello.SendAsync(Reply(first, error: e), cancellation);
+            await socket.CloseOutputAsync(WebSocketCloseStatus.PolicyViolation, "rejected", cancellation);
+            return;
+        }
         var connection = new AgentConnection(socket, agent.PcId, Interlocked.Increment(ref _generation));
         _connections.AddOrUpdate(agent.PcId, connection, (_, old) => { old.FailAll(); old.Abort(); return connection; });
         logger.LogInformation("Agent connected generation {Generation}", connection.Generation);

@@ -658,6 +658,10 @@ public sealed record AdminOverview
     [JsonPropertyName("relayBytesToday")] [JsonConverter(typeof(Int64StringConverter))] public required long RelayBytesToday { get; init; }
     [JsonPropertyName("relayBytesDailyAlert")] [JsonConverter(typeof(Int64StringConverter))] public required long RelayBytesDailyAlert { get; init; }
     [JsonPropertyName("costAlert")] public required bool CostAlert { get; init; }
+    [JsonPropertyName("secondFactorRequired")] public required bool SecondFactorRequired { get; init; }
+    [JsonPropertyName("secondFactorPresent")] public required bool SecondFactorPresent { get; init; }
+    [JsonPropertyName("billingDamaged")] public required bool BillingDamaged { get; init; }
+    [JsonPropertyName("unpairedPcs")] public required int UnpairedPcs { get; init; }
 }
 
 public sealed record AdminUser
@@ -682,6 +686,7 @@ public sealed record AdminReasonRequest
 public sealed record AdminSettings
 {
     [JsonPropertyName("minAgentVersion")] public required string MinAgentVersion { get; init; }
+    [JsonPropertyName("reason")] public string? Reason { get; init; }
 }
 
 public sealed record AuditEntry

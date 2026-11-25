@@ -309,8 +309,14 @@ public class BillingTests
         first.Flush();
         var second = Store(persistence, time);
         Assert.Equal(order.DuePkr, second.OrdersFor("acct:a").Single().DuePkr);
-        Assert.Equal(1, second.Coupons().Single().Redeemed);
+        Assert.Equal(0, second.Coupons().Single().Redeemed);                                          // a use is counted when the order is verified, not when it is asked for
+        second.VerifyOrder(order.Id, "operator");
+        second.Flush();
+        Assert.Equal(1, Store(persistence, time).Coupons().Single().Redeemed);
+        var open = second.CreateOrder("acct:a", "plus", 1, null, "bank");
         second.Forget("acct:a");
+        Assert.Equal(["verified"], second.AllOrders(null).Select(o => o.Status));                   // only the paid order is kept, cut down to what accounting needs
+        Assert.True(second.AllOrders(null).Single().Subject.StartsWith("deleted:") && second.AllOrders(null).Single().Id == order.Id && second.FindOrder(open.Id) is null);
         Assert.Empty(second.OrdersFor("acct:a"));
     }
 

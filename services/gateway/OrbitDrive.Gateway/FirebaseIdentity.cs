@@ -91,7 +91,8 @@ public sealed class FirebaseIdentityVerifier(GatewayOptions options, TimeProvide
                 throw new ProtocolException(ErrorCode.Forbidden, "Verify your email address to continue. Check your inbox for the verification link.");
             var authTime = Time("auth_time");
             if (algorithm != "none") revocation?.EnsureNotRevoked(subject, authTime);   // the local Auth emulator has no accounts:lookup (Development only)
-            return new Identity(subject, email, authTime);
+            var secondFactor = claims.TryGetProperty("firebase", out var firebaseClaim) && firebaseClaim.ValueKind == JsonValueKind.Object && firebaseClaim.TryGetProperty("sign_in_second_factor", out var factor) && factor.ValueKind == JsonValueKind.String && factor.GetString()!.Length > 0;
+            return new Identity(subject, email, authTime, secondFactor);
         }
         catch (Exception e) when (e is FormatException or JsonException or KeyNotFoundException or InvalidOperationException or ArgumentOutOfRangeException or CryptographicException) { throw fail; }
     }

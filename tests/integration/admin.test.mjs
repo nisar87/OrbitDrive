@@ -165,8 +165,10 @@ describe('suspension, revocation and the audit trail', () => {
 
 describe('minimum PC version', () => {
   test('is validated, applied to PCs that connect, persisted and reversible', async () => {
-    assert.equal((await admin(operator, 'PUT', '/settings', { minAgentVersion: 'banana' })).status, 400);
-    assert.equal((await admin(operator, 'PUT', '/settings', { minAgentVersion: '99.0.0' })).status, 200);
+    assert.equal((await admin(operator, 'PUT', '/settings', { minAgentVersion: '98.0.0' })).status, 400, 'a change with no reason is refused and nothing changes');
+    assert.notEqual((await admin(operator, 'GET', '/settings')).body.minAgentVersion, '98.0.0');
+    assert.equal((await admin(operator, 'PUT', '/settings', { minAgentVersion: 'banana', reason: 'test bad value' })).status, 400);
+    assert.equal((await admin(operator, 'PUT', '/settings', { minAgentVersion: '99.0.0', reason: 'test minimum' })).status, 200);
     assert.equal((await admin(operator, 'GET', '/settings')).body.minAgentVersion, '99.0.0');
     assert.equal((await admin(operator, 'GET', '/overview')).body.minAgentVersion, '99.0.0');
     await agent.stop();
@@ -176,7 +178,7 @@ describe('minimum PC version', () => {
       assert.match(stale.log, /update/i, 'the PC was told to update');
       assert.equal((await owner.get(`/v1/pcs/${pcId}/roots`)).status, 503, 'the PC is not served while below the minimum');
     } finally { await stale.stop(); }
-    assert.equal((await admin(operator, 'PUT', '/settings', { minAgentVersion: '' })).status, 200);
+    assert.equal((await admin(operator, 'PUT', '/settings', { minAgentVersion: '', reason: 'test reset' })).status, 200);
     agent = await startAgent(gateway, state, 'Admin test PC');
     await waitFor(async () => (await owner.get(`/v1/pcs/${pcId}/roots`)).status === 200, 15000, 'the PC to be served again');
     assert.equal(JSON.parse(readFileSync(join(dataDir, 'admin-settings.json'), 'utf8')).minAgentVersion, '');

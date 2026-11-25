@@ -200,6 +200,14 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         var result = new List<EntryCheck>();
         foreach (var id in request.EntryIds)
         {
+            if (id.StartsWith(SealedNamePrefix, StringComparison.Ordinal))
+            {
+                // A sealed file name from a "send to my phone" offer: the relay asks the PC to read it back so the Inbox can show it. Nothing on disk is touched.
+                result.Add(OpenSealedName(id) is { } plain
+                    ? new EntryCheck { EntryId = id, Available = true, Reason = null, Entry = new FileEntry { EntryId = id, Name = plain, Kind = EntryKind.File, Size = 0, ModifiedUnixMs = 0, Hidden = false } }
+                    : new EntryCheck { EntryId = id, Available = false, Entry = null, Reason = "This item does not belong to this PC." });
+                continue;
+            }
             try
             {
                 var body = tokens.Unseal(id, "e");
@@ -250,7 +258,19 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
         catch { handle.Dispose(); throw; }
     }
 
-    public sealed record OneShotOffer(string Name, long Size, long ModifiedUnixMs, string Grant);
+    /// <summary>What the PC sends the relay for an offer. <paramref name="SealedName"/> is the file name sealed with this PC's key: the relay stores that, never the name.</summary>
+    public sealed record OneShotOffer(string Name, long Size, long ModifiedUnixMs, string Grant, string SealedName);
+
+    /// <summary>Marks a file name sealed by this PC (the relay keeps no file names, F-003).</summary>
+    public const string SealedNamePrefix = "sn1.";
+
+    /// <summary>Seals a file name so only this PC can read it back.</summary>
+    public string SealName(string name) => SealedNamePrefix + tokens.Seal(new TokenBody { Type = "n", RootId = OneShotRoot, Segments = [name] });
+
+    /// <summary>The name inside a sealed name, or null when it is not a genuine name sealed by this PC. A name that was never sealed (older relay data) is returned as it is.</summary>
+    public string? OpenSealedName(string value) =>
+        !value.StartsWith(SealedNamePrefix, StringComparison.Ordinal) ? value
+        : tokens.TryUnseal(value[SealedNamePrefix.Length..], "n", out var body) && body.Segments.Length == 1 ? body.Segments[0] : null;
 
     /// <summary>
     /// The owner picked this exact file (Explorer "Send to my phone"). It is sealed into a grant bound to the file's real location, size,
@@ -270,7 +290,7 @@ public sealed class FileAccessService(Func<IReadOnlyList<SharedRoot>> roots, Sea
             Type = "o", RootId = OneShotRoot, Segments = [finalPath], Size = size, ModifiedTicks = modified.Ticks,
             ChangeStamp = NativeFile.GetChangeStamp(handle), ExpiresUnixMs = _clock.GetUtcNow().Add(lifetime).ToUnixTimeMilliseconds(),
         });
-        return new OneShotOffer(name, size, new DateTimeOffset(modified).ToUnixTimeMilliseconds(), grant);
+        return new OneShotOffer(name, size, new DateTimeOffset(modified).ToUnixTimeMilliseconds(), grant, SealName(name));
     }
 
     /// <summary>

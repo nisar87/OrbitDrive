@@ -250,7 +250,7 @@ internal sealed class AgentHost : IDisposable
                 case "invitations":
                     return new JsonArray([.. (await Client.ListInvitationsAsync(cancellation)).Invitations.Select(i => (JsonNode)new JsonObject
                     {
-                        ["invitationId"] = i.InvitationId, ["name"] = i.Name, ["size"] = i.Size.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        ["invitationId"] = i.InvitationId, ["name"] = _files.OpenSealedName(i.Name) ?? "(name unavailable)", ["size"] = i.Size.ToString(System.Globalization.CultureInfo.InvariantCulture),
                         ["state"] = JsonSerializer.SerializeToNode(i.State), ["receiverName"] = i.ReceiverName, ["failure"] = i.Failure,
                         ["expiresAtUnixMs"] = i.ExpiresAtUnixMs.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     })]);
@@ -314,7 +314,7 @@ internal sealed class AgentHost : IDisposable
                 var key = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(requestId + "\n" + i + "\n" + path)))[..32];
                 var created = await Client.CreateInvitationAsync(new CreateInvitationRequest
                 {
-                    ReceiverId = receiverId, Name = offer.Name, Size = offer.Size, ModifiedUnixMs = offer.ModifiedUnixMs, Grant = offer.Grant, IdempotencyKey = key,
+                    ReceiverId = receiverId, Name = offer.SealedName, Size = offer.Size, ModifiedUnixMs = offer.ModifiedUnixMs, Grant = offer.Grant, IdempotencyKey = key,
                 }, cancellation);
                 entry["ok"] = true; entry["invitationId"] = created.InvitationId; entry["name"] = offer.Name;
                 Emit("invitation_created", new { invitationId = created.InvitationId, name = offer.Name });

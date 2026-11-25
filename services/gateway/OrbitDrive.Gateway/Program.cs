@@ -17,6 +17,14 @@ catch (InvalidOperationException e)
     return 1;
 }
 
+// One relay per data directory: a second process on the same directory would overwrite the first one's files (F-019).
+DataDirectoryLock? dataLock = null;
+if (options.DataDirectory.Length > 0)
+{
+    try { dataLock = DataDirectoryLock.Acquire(options.DataDirectory); }
+    catch (InvalidOperationException e) { Console.Error.WriteLine($"FATAL: {e.Message}"); return 1; }
+}
+
 builder.WebHost.ConfigureKestrel(kestrel =>
 {
     kestrel.AddServerHeader = false;
@@ -34,9 +42,16 @@ if (options.Firestore.ProjectId.Length > 0)
     builder.Services.AddHostedService(sp => sp.GetRequiredService<FirestoreSnapshotBackend>());
 }
 builder.Services.AddSingleton<Store>();
+if (options.Firestore.ProjectId.Length > 0)
+{
+    // The audit trail, operator settings and "send to phone" offers are kept in the database too (they were lost at every restart), in their own collections.
+    builder.Services.AddSingleton(sp => new AdminDocuments(new FirestoreBillingPersistence(FirestoreSnapshotBackend.Connect(options.Firestore.ProjectId), "admin")));
+    builder.Services.AddSingleton(sp => new InvitationDocuments(new FirestoreBillingPersistence(FirestoreSnapshotBackend.Connect(options.Firestore.ProjectId), "invitations")));
+}
 builder.Services.AddSingleton<IBillingPersistence>(sp => options.Firestore.ProjectId.Length > 0
-    ? new FirestoreBillingPersistence(FirestoreSnapshotBackend.Connect(options.Firestore.ProjectId))
-    : options.DataDirectory.Length > 0 ? new FileBillingPersistence(options.DataDirectory) : new MemoryBillingPersistence());
+    ? new ImportOnceBillingPersistence(new FirestoreBillingPersistence(FirestoreSnapshotBackend.Connect(options.Firestore.ProjectId)),
+        () => options.Firestore.ImportFromDataDirectory.Length > 0 ? FileBillingPersistence.ReadOnly(options.Firestore.ImportFromDataDirectory) : [], sp.GetRequiredService<ILoggerFactory>().CreateLogger("Billing"))
+    : options.DataDirectory.Length > 0 ? new FileBillingPersistence(options.DataDirectory, sp.GetRequiredService<TimeProvider>()) : new MemoryBillingPersistence());
 builder.Services.AddSingleton(sp => new BillingStore(sp.GetRequiredService<IBillingPersistence>(), sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILoggerFactory>().CreateLogger("Billing"), TimeSpan.FromSeconds(2), options.PlanLimitsEnabled));
 builder.Services.AddSingleton<Invitations>();
 builder.Services.AddSingleton<RateLimiter>();
@@ -122,9 +137,9 @@ Identity Authenticate(HttpContext context)
 }
 
 // Refuses with 429 + Retry-After once a key has used up its attempts for the current minute.
-void Throttle(HttpContext context, string key, int perMinute, string message)
+void Throttle(HttpContext context, string key, int perMinute, string message, bool anonymous = false)
 {
-    var wait = limiter.Hit(key, perMinute);
+    var wait = limiter.Hit(key, perMinute, anonymous);
     if (wait == 0) return;
     context.Response.Headers.RetryAfter = wait.ToString();
     throw new ProtocolException(ErrorCode.LimitExceeded, message);
@@ -254,7 +269,7 @@ if (options.DevIdentity.Enabled)
         if (request.Email.Length is < 3 or > 200 || !request.Email.Contains('@')) throw new ProtocolException(ErrorCode.InvalidRequest, "Enter an email address.");
         // Test control: pretend the person signed in this many seconds ago (a long-lived refreshed token), to exercise recent-sign-in checks.
         var ago = int.TryParse(context.Request.Query["signedInAgoSeconds"], out var seconds) && seconds is > 0 and < 86400 * 30 ? TimeSpan.FromSeconds(seconds) : (TimeSpan?)null;
-        var token = dev.Issue(request.Email, TimeSpan.FromHours(8), ago);
+        var token = dev.Issue(request.Email, TimeSpan.FromHours(8), ago, secondFactor: context.Request.Query["secondFactor"] == "true");   // test control: pretend the sign-in used a second factor
         await WriteJson(context, new DevSignInResponse { IdToken = token, Uid = DevIdentityVerifier.UidFor(token) });
     });
 }
@@ -264,15 +279,18 @@ app.Map("/v1/agent-control", async (HttpContext context) =>
 {
     if (!context.WebSockets.IsWebSocketRequest || context.Request.Headers.ContainsKey("Origin"))
         throw new ProtocolException(ErrorCode.InvalidRequest, "Agent WebSocket connections only.");
-    if (!hub.TryReserveHandshake(options.MaxPendingHandshakes))      // atomic: concurrent arrivals cannot overshoot the limit
+    var address = ClientAddress.Of(context, options);
+    // Per client address first (cheap, and an address that opens connections endlessly never reaches the shared places), then the shared limit.
+    Throttle(context, "agent-conn:" + address, options.AgentConnectionsPerAddressPerMinute, "Too many connections from this network. Try again in a minute.", anonymous: true);
+    if (!hub.TryReserveHandshake(options.MaxPendingHandshakes, address, options.MaxPendingHandshakesPerAddress))      // atomic: concurrent arrivals cannot overshoot the limit
     {
-        context.Response.Headers.RetryAfter = "10";
+        context.Response.Headers.RetryAfter = "5";
         throw new ProtocolException(ErrorCode.LimitExceeded, "Too many connections are waiting to identify themselves. Try again shortly.");
     }
     WebSocket socket;
     try { socket = await context.WebSockets.AcceptWebSocketAsync(); }
-    catch { hub.ReleaseHandshake(); throw; }                           // never accepted, so RunAsync will not give the slot back
-    using (socket) await hub.RunAsync(socket, context.RequestAborted);
+    catch { hub.ReleaseHandshake(address); throw; }                    // never accepted, so RunAsync will not give the place back
+    using (socket) await hub.RunAsync(socket, context.RequestAborted, address);
 });
 
 // The web app address the claim came from. Browsers always send it and CORS has already limited it to the allowed web origins; the PC shows it so the owner can see which site is asking.
@@ -284,7 +302,7 @@ app.MapPost("/v1/pairing-requests/{id}/claim", async (HttpContext context, strin
     // Guessing defence in depth: each code dies after 5 wrong secrets (Store), and every attempt - right or wrong -
     // is also counted per client address and per account, so cycling through codes or accounts does not help.
     const string slowDown = "Too many pairing attempts. Wait a minute, then create a new code on the PC.";
-    Throttle(context, "claim-ip:" + ClientAddress.Of(context, options), options.PairingClaimsPerMinute, slowDown);
+    Throttle(context, "claim-ip:" + ClientAddress.Of(context, options), options.PairingClaimsPerMinute, slowDown, anonymous: true);
     var identity = Authenticate(context);
     Throttle(context, "claim-uid:" + identity.Uid, options.PairingClaimsPerMinute, slowDown);
     var request = await ReadJson<ClaimPairingRequest>(context);
@@ -569,10 +587,33 @@ app.MapPost("/v1/download-sessions", async (HttpContext context) =>
 });
 
 // "Send to my phone": the Inbox of this browser (never another browser's, never the PC's grant), and its decisions.
-app.MapGet("/v1/invitations", (HttpContext context) =>
+// The relay keeps no file names (F-003): each offer holds a name sealed by the PC. When the Inbox is shown the relay asks the PC to open them, so a name exists
+// here only in this response. A PC that is offline shows its offers without names until it is back.
+async Task<Dictionary<string, string>> ResolveNames(IEnumerable<InvitationRecord> items, CancellationToken cancellation)
+{
+    var names = new Dictionary<string, string>();
+    foreach (var group in items.Where(i => i.SealedName.Length > 0).GroupBy(i => i.PcId))
+    {
+        if (!hub.IsOnline(group.Key)) continue;
+        foreach (var chunk in group.Chunk(50))
+        {
+            try
+            {
+                var answer = await hub.Get(group.Key).RequestAsync<CheckEntriesResult>(Actions.CheckEntries, new CheckEntriesRequest { EntryIds = [.. chunk.Select(i => i.SealedName)] }, TimeSpan.FromSeconds(Math.Min(agentTimeout.TotalSeconds, 8)), cancellation);
+                foreach (var check in answer.Entries.Where(c => c.Available && c.Entry is not null)) names[check.EntryId] = check.Entry!.Name;
+            }
+            catch (ProtocolException) { /* the PC went away or is busy: those offers show without names */ }
+        }
+    }
+    return names;
+}
+
+app.MapGet("/v1/invitations", async (HttpContext context) =>
 {
     var device = AuthorizeBrowser(context);
-    return WriteJson(context, new InvitationList { Invitations = [.. invitations.ForReceiver(device.Id).Where(i => device.PcIds.Contains(i.PcId)).Select(i => invitations.Summarize(i, hub.IsOnline(i.PcId)))] });
+    var mine = invitations.ForReceiver(device.Id).Where(i => device.PcIds.Contains(i.PcId)).ToList();
+    var names = await ResolveNames(mine, context.RequestAborted);
+    await WriteJson(context, new InvitationList { Invitations = [.. mine.Select(i => invitations.Summarize(i, hub.IsOnline(i.PcId), names.GetValueOrDefault(i.SealedName) ?? i.LegacyName ?? ""))] });
 });
 
 app.MapPost("/v1/invitations/{id}/accept", async (HttpContext context, string id) =>
@@ -662,7 +703,11 @@ app.MapMethods("/v1/downloads/{capability}", ["GET", "HEAD"], async (HttpContext
         throw new ProtocolException(ErrorCode.LimitExceeded, "This download link already has the most transfers it allows running. Wait for one to finish.");
     }
     metrics.RequireRelayAllowance(session.OwnerUid);
-    if (billing.LimitsEnabled && !session.IsPreview) billing.RequireTransferFor(session.OwnerUid, session.Size);
+    // Thumbnails are free. Opening a file to view it returns the original bytes, so it counts like a download towards the day's data, the relay cap and the
+    // per-file size limit (it does not use up one of the day's files: only a finished download does). F-004.
+    var isThumbnail = session.Variant is { } v && v.StartsWith("thumb:", StringComparison.Ordinal);
+    var isView = session.IsPreview && !isThumbnail;
+    if (billing.LimitsEnabled && !isThumbnail) billing.RequireTransferFor(session.OwnerUid, session.Size, countsAsFile: !isView);
     var (stream, uplinkToken) = streams.Create(session.OwnerUid, session.IsPreview);
     using var cancel = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, session.Revoked.Token);
     var success = false;
@@ -696,7 +741,14 @@ app.MapMethods("/v1/downloads/{capability}", ["GET", "HEAD"], async (HttpContext
         if (!session.IsPreview)
         {
             metrics.Downloaded(session.OwnerUid, relayed, success);
-            billing.RecordTransferFor(session.OwnerUid, relayed, session.TryCountAsFile());
+            // A file counts once per account, revision and day when the bytes delivered over ALL its links cover it, so splitting a download cannot avoid the count (F-014).
+            var fileKey = $"{session.PcId}|{session.Revision}|{session.Size}|{session.Name}";
+            billing.RecordTransferFor(session.OwnerUid, relayed, billing.NoteDelivery(session.OwnerUid, fileKey, session.Size, selected.Start, relayed, emptyDelivered: success && session.Size == 0));
+        }
+        else if (isView)
+        {
+            metrics.Viewed(session.OwnerUid, relayed);
+            billing.RecordTransferFor(session.OwnerUid, relayed, fileCompleted: false);
         }
         streams.Remove(stream, success);
         if (!success && hub.IsOnline(session.PcId))
@@ -757,19 +809,20 @@ app.MapDelete("/v1/browser-devices/{deviceId}", (HttpContext context, string dev
 });
 
 // ---- Owner controls: the signed-in person's own browsers, PCs and choices. Every call needs an approved browser. ----
-AccountSummary Summarize(Identity identity, BrowserDeviceRecord current) => new()
+AccountSummary Summarize(Identity identity, string ownerUid, string? currentDeviceId) => new()
 {
-    Devices = [.. store.DevicesForOwner(current.OwnerUid).Select(d => new BrowserDeviceSummary { DeviceId = d.Id, Name = d.Name, Current = d.Id == current.Id, PcIds = [.. d.PcIds], LastSeenUnixMs = d.LastSeenUnixMs })],
-    Pcs = [.. store.PcsOwnedBy(current.OwnerUid).Select(p => new AccountPc { PcId = p.PcId, Name = p.Name, AgentVersion = p.AgentVersion, Online = hub.IsOnline(p.PcId), LastSeenUnixMs = p.LastSeen.ToUnixTimeMilliseconds() })],
-    Preferences = store.Preferences(current.OwnerUid),
+    Devices = [.. store.DevicesForOwner(ownerUid).Select(d => new BrowserDeviceSummary { DeviceId = d.Id, Name = d.Name, Current = d.Id == currentDeviceId, PcIds = [.. d.PcIds], LastSeenUnixMs = d.LastSeenUnixMs })],
+    Pcs = [.. store.PcsOwnedBy(ownerUid).Select(p => new AccountPc { PcId = p.PcId, Name = p.Name, AgentVersion = p.AgentVersion, Online = hub.IsOnline(p.PcId), LastSeenUnixMs = p.LastSeen.ToUnixTimeMilliseconds() })],
+    Preferences = store.Preferences(ownerUid),
     IsOperator = IsOperator(identity),
-    RetentionNote = "The service keeps a transfer in memory for at most an hour after it is prepared, so this choice can only shorten how long finished transfers stay listed. It never keeps file contents or paths.",
+    RetentionNote = "The service keeps a transfer in memory for at most an hour after it is prepared, so this choice can only shorten how long finished transfers stay listed. It never saves file contents, file names or paths to disk.",
 };
 
 app.MapGet("/v1/account", (HttpContext context) =>
 {
     var identity = Authenticate(context);
-    return WriteJson(context, Summarize(identity, store.Authorize(identity, context.Request.Headers["X-OrbitDrive-Device"].ToString())));
+    var current = store.Authorize(identity, context.Request.Headers["X-OrbitDrive-Device"].ToString());
+    return WriteJson(context, Summarize(identity, current.OwnerUid, current.Id));
 });
 
 app.MapPut("/v1/account/preferences", async (HttpContext context) =>
@@ -789,27 +842,40 @@ app.MapPost("/v1/account/revoke-all", (HttpContext context) =>
     return WriteJson(context, new AccountRevokeResult { DevicesRevoked = revoked.Count });
 });
 
-// What the service holds about this account, as a file the person keeps. Never includes secrets, file names or file contents.
-app.MapGet("/v1/account/export", (HttpContext context) =>
+// What the service holds about this account, as a file the person keeps. Never includes secrets, file names or file contents. It needs only a sign-in that is
+// recent (no paired browser): a person who has lost their browsers can still see and take what the service holds (F-012).
+app.MapGet("/v1/account/export", async (HttpContext context) =>
 {
     var identity = Authenticate(context);
-    var current = store.Authorize(identity, context.Request.Headers["X-OrbitDrive-Device"].ToString());
+    RequireRecentSignIn(identity, "Sign out and sign in again before exporting your account data.");
+    Throttle(context, "export:" + identity.Uid, 10, "Too many requests. Wait a moment.");
+    // The account summary stays at the top level (as before), with the billing records and a note added beside it.
+    var export = System.Text.Json.Nodes.JsonNode.Parse(ProtocolJson.Serialize(Summarize(identity, identity.Uid, null)))!.AsObject();
+    export["exportedAt"] = DateTimeOffset.UtcNow.ToString("O");
+    export["email"] = identity.Email;
+    export["billing"] = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(billing.ExportFor(identity.Uid), BillingJson.Options));
+    export["note"] = "Paid orders are kept after an account is deleted, cut down to the order id, plan, length, amounts, payment method and reference, and dates. Operator audit records name the account by id only.";
     context.Response.Headers.ContentDisposition = "attachment; filename=\"orbitdrive-account.json\"";
-    return WriteJson(context, Summarize(identity, current));
+    context.Response.StatusCode = 200;
+    context.Response.ContentType = "application/json; charset=utf-8";
+    await context.Response.WriteAsync(export.ToJsonString());
 });
 
+// Deleting needs only a recent sign-in (no paired browser), because the service already holds this account's orders and payment references.
 app.MapDelete("/v1/account", async (HttpContext context) =>
 {
     var identity = Authenticate(context);
-    var current = store.Authorize(identity, context.Request.Headers["X-OrbitDrive-Device"].ToString());
     RequireRecentSignIn(identity, "Sign out and sign in again before deleting your account.");
     var request = await ReadJson<DeleteAccountRequest>(context);
     if (request.Confirm != "delete my account") throw new ProtocolException(ErrorCode.InvalidRequest, "Type the confirmation phrase exactly to delete your account.");
-    var (devices, pcs) = store.DeleteAccount(current.OwnerUid);
+    var uid = identity.Uid;
+    var (devices, pcs) = store.DeleteAccount(uid);
     EndAllWork(devices);
-    metrics.Forget(current.OwnerUid);
-    billing.Forget(BillingStore.AccountSubject(current.OwnerUid));
-    adminLog.Record(current.OwnerUid, "account-deleted", current.OwnerUid, $"{devices.Count} browsers revoked, {pcs.Count} PCs released");
+    invitations.ForgetOwner(uid);
+    metrics.Forget(uid);
+    billing.Forget(BillingStore.AccountSubject(uid));
+    try { adminLog.Record(uid, "account-deleted", uid, $"{devices.Count} browsers revoked, {pcs.Count} PCs released"); }
+    catch (ProtocolException) { /* the person's own deletion is done; the note is best effort */ }
     await WriteJson(context, new Ack { Ok = true });
 });
 
@@ -828,13 +894,35 @@ Identity AuthorizeOperator(HttpContext context)
     var identity = Authenticate(context);
     if (!IsOperator(identity)) throw new ProtocolException(ErrorCode.Forbidden, "This area is for the people who run the service.");
     RequireRecentSignIn(identity, "Sign in again to use administration. It needs a recent sign-in.");
+    // When the owner has switched it on, administration needs a sign-in that used a second factor (F-005). Off by default; see docs/operations/relay.md.
+    if (options.RequireOperatorSecondFactor && !identity.SecondFactor)
+        throw new ProtocolException(ErrorCode.Forbidden, "Administration needs a sign-in with your second factor. Turn on two-step sign-in for this account, then sign in again.");
     Throttle(context, "admin:" + identity.Uid, 120, "Too many administration requests. Wait a moment.");
     return identity;
 }
 
+// One operator change, in the order the audit asks for: the reason is checked first (3 to 200 characters), the audit record is written BEFORE the change and the change
+// does not happen when the record cannot be written, and a change that then fails leaves a second record saying so (F-006).
+async Task Changing(Identity operatorIdentity, string action, string target, string? reason, Func<Task> change, string detail = "")
+{
+    var text = AdminLog.RequireReason(reason);
+    adminLog.Record(operatorIdentity.Uid, action, target, detail.Length > 0 ? $"{detail}: {text}" : text);
+    try { await change(); }
+    catch (Exception)
+    {
+        try { adminLog.Record(operatorIdentity.Uid, action + "-failed", target, "the change was refused or failed"); } catch (ProtocolException) { /* the first record already stands */ }
+        throw;
+    }
+}
+
+void RequireOrderingOpen()
+{
+    if (!billing.LimitsEnabled) throw new ProtocolException(ErrorCode.Conflict, "Ordering is not open yet. It opens on the start date.");
+}
+
 app.MapGet("/v1/admin/overview", (HttpContext context) =>
 {
-    AuthorizeOperator(context);
+    var identity = AuthorizeOperator(context);
     var owners = store.Owners();
     return WriteJson(context, new AdminOverview
     {
@@ -845,6 +933,7 @@ app.MapGet("/v1/admin/overview", (HttpContext context) =>
         UploadPiecesRelayed = metrics.PiecesRelayed, UploadPiecesFailed = metrics.PiecesFailed, QuotaRefusals = metrics.QuotaRefusals,
         MinAgentVersion = adminLog.MinAgentVersion, RelayBytesPerOwnerPerDay = options.MaxRelayBytesPerOwnerPerDay,
         RelayBytesToday = metrics.RelayBytesTodayAll, RelayBytesDailyAlert = options.RelayBytesDailyAlert, CostAlert = metrics.CostAlert,
+        SecondFactorRequired = options.RequireOperatorSecondFactor, SecondFactorPresent = identity.SecondFactor, BillingDamaged = billing.Damaged, UnpairedPcs = store.UnownedPcCount(),
     });
 });
 
@@ -862,9 +951,7 @@ app.MapPost("/v1/admin/users/{uid}/suspend", async (HttpContext context, string 
     uid = CleanUid(uid);
     if (options.OperatorUids.Contains(uid, StringComparer.Ordinal)) throw new ProtocolException(ErrorCode.Conflict, "An operator account cannot be suspended here. Remove it from the operator list first.");
     var request = await ReadJson<AdminReasonRequest>(context);
-    var affected = store.SetSuspended(uid, true);
-    EndAllWork(affected);
-    adminLog.Record(operatorIdentity.Uid, "suspend", uid, request.Reason);
+    await Changing(operatorIdentity, "suspend", uid, request.Reason, () => { EndAllWork(store.SetSuspended(uid, true)); return Task.CompletedTask; });
     await WriteJson(context, new Ack { Ok = true });
 });
 
@@ -873,8 +960,7 @@ app.MapPost("/v1/admin/users/{uid}/unsuspend", async (HttpContext context, strin
     var operatorIdentity = AuthorizeOperator(context);
     uid = CleanUid(uid);
     var request = await ReadJson<AdminReasonRequest>(context);
-    store.SetSuspended(uid, false);
-    adminLog.Record(operatorIdentity.Uid, "unsuspend", uid, request.Reason);
+    await Changing(operatorIdentity, "unsuspend", uid, request.Reason, () => { store.SetSuspended(uid, false); return Task.CompletedTask; });
     await WriteJson(context, new Ack { Ok = true });
 });
 
@@ -883,10 +969,9 @@ app.MapPost("/v1/admin/users/{uid}/revoke-all", async (HttpContext context, stri
     var operatorIdentity = AuthorizeOperator(context);
     uid = CleanUid(uid);
     var request = await ReadJson<AdminReasonRequest>(context);
-    var revoked = store.RevokeAllDevices(uid);
-    EndAllWork(revoked);
-    adminLog.Record(operatorIdentity.Uid, "revoke-all", uid, request.Reason);
-    await WriteJson(context, new AccountRevokeResult { DevicesRevoked = revoked.Count });
+    var count = 0;
+    await Changing(operatorIdentity, "revoke-all", uid, request.Reason, () => { var revoked = store.RevokeAllDevices(uid); EndAllWork(revoked); count = revoked.Count; return Task.CompletedTask; });
+    await WriteJson(context, new AccountRevokeResult { DevicesRevoked = count });
 });
 
 app.MapPost("/v1/admin/users/{uid}/reset-relay-allowance", async (HttpContext context, string uid) =>
@@ -894,9 +979,12 @@ app.MapPost("/v1/admin/users/{uid}/reset-relay-allowance", async (HttpContext co
     var operatorIdentity = AuthorizeOperator(context);
     uid = CleanUid(uid);
     var request = await ReadJson<AdminReasonRequest>(context);
-    billing.ResetToday(BillingStore.AccountSubject(uid));
-    metrics.Forget(uid);                                  // an operator's way to give one account its day's allowance back before midnight UTC
-    adminLog.Record(operatorIdentity.Uid, "reset-relay-allowance", uid, request.Reason);
+    await Changing(operatorIdentity, "reset-relay-allowance", uid, request.Reason, () =>
+    {
+        billing.ResetToday(BillingStore.AccountSubject(uid));
+        metrics.Forget(uid);                              // an operator's way to give one account its day's allowance back before midnight UTC
+        return Task.CompletedTask;
+    });
     await WriteJson(context, new Ack { Ok = true });
 });
 
@@ -910,8 +998,9 @@ app.MapPut("/v1/admin/settings", async (HttpContext context) =>
 {
     var operatorIdentity = AuthorizeOperator(context);
     var request = await ReadJson<AdminSettings>(context);
-    adminLog.SetMinAgentVersion(request.MinAgentVersion);
-    adminLog.Record(operatorIdentity.Uid, "set-min-agent-version", "service", request.MinAgentVersion.Length == 0 ? "none" : request.MinAgentVersion);
+    if (!AdminLog.IsValidVersion(request.MinAgentVersion ?? "")) throw new ProtocolException(ErrorCode.InvalidRequest, "The minimum version must look like 1.2.3, or be empty for no minimum.");
+    var version = request.MinAgentVersion ?? "";
+    await Changing(operatorIdentity, "set-min-agent-version", "service", request.Reason, () => { adminLog.SetMinAgentVersion(version); return Task.CompletedTask; }, version.Length == 0 ? "none" : version);
     await WriteJson(context, new Ack { Ok = true });
 });
 
@@ -952,7 +1041,7 @@ AccountPlanView AccountPlan(string subject)
 
 app.MapGet("/v1/plans", (HttpContext context) =>
 {
-    Throttle(context, "plans:" + ClientAddress.Of(context, options), 120, "Too many requests. Wait a moment.");
+    Throttle(context, "plans:" + ClientAddress.Of(context, options), 120, "Too many requests. Wait a moment.", anonymous: true);
     context.Response.Headers.CacheControl = "public, max-age=60";
     context.Response.Headers.AccessControlAllowOrigin = "*";            // public prices, no credentials: any page may show them
     return WriteBilling(context, BillingViews.Public(billing));
@@ -968,14 +1057,16 @@ app.MapPost("/v1/account/quote", async (HttpContext context) =>
 {
     var subject = SignedInSubject(context);
     Throttle(context, "quote:" + subject, 30, "Too many price checks. Wait a moment.");
+    RequireOrderingOpen();
     var request = await ReadBilling<QuoteRequest>(context);
-    await WriteBilling(context, billing.QuoteFor(request.PlanId, request.Months, request.Coupon));
+    await WriteBilling(context, billing.QuoteFor(request.PlanId, request.Months, request.Coupon, subject));
 });
 
 app.MapPost("/v1/account/orders", async (HttpContext context) =>
 {
     var subject = SignedInSubject(context);
     Throttle(context, "order:" + subject, 10, "Too many orders. Wait a moment.");
+    RequireOrderingOpen();
     var request = await ReadBilling<OrderRequest>(context);
     var order = billing.CreateOrder(subject, request.PlanId, request.Months, request.Coupon, request.Method);
     await WriteBilling(context, order, 201);
@@ -985,6 +1076,7 @@ app.MapPost("/v1/account/orders/{id}/proof", async (HttpContext context, string 
 {
     var subject = SignedInSubject(context);
     Throttle(context, "proof:" + subject, 20, "Too many requests. Wait a moment.");
+    RequireOrderingOpen();
     var request = await ReadBilling<ProofRequest>(context);
     await WriteBilling(context, billing.SubmitProof(subject, id, request.Method, request.Reference));
 });
@@ -1136,8 +1228,8 @@ app.MapPost("/v1/admin/orgs/{id}/suspend", async (HttpContext context, string id
 {
     var operatorIdentity = AuthorizeOperator(context);
     var request = await ReadJson<AdminReasonRequest>(context);
-    if (!billing.SetOrgSuspended(id, true)) throw new ProtocolException(ErrorCode.NotFound, "Organisation not found.");
-    adminLog.Record(operatorIdentity.Uid, "org-suspend", id, request.Reason);
+    if (billing.FindOrg(id) is null) throw new ProtocolException(ErrorCode.NotFound, "Organisation not found.");
+    await Changing(operatorIdentity, "org-suspend", id, request.Reason, () => { if (!billing.SetOrgSuspended(id, true)) throw new ProtocolException(ErrorCode.NotFound, "Organisation not found."); return Task.CompletedTask; });
     await WriteJson(context, new Ack { Ok = true });
 });
 
@@ -1145,8 +1237,8 @@ app.MapPost("/v1/admin/orgs/{id}/unsuspend", async (HttpContext context, string 
 {
     var operatorIdentity = AuthorizeOperator(context);
     var request = await ReadJson<AdminReasonRequest>(context);
-    if (!billing.SetOrgSuspended(id, false)) throw new ProtocolException(ErrorCode.NotFound, "Organisation not found.");
-    adminLog.Record(operatorIdentity.Uid, "org-unsuspend", id, request.Reason);
+    if (billing.FindOrg(id) is null) throw new ProtocolException(ErrorCode.NotFound, "Organisation not found.");
+    await Changing(operatorIdentity, "org-unsuspend", id, request.Reason, () => { if (!billing.SetOrgSuspended(id, false)) throw new ProtocolException(ErrorCode.NotFound, "Organisation not found."); return Task.CompletedTask; });
     await WriteJson(context, new Ack { Ok = true });
 });
 
@@ -1154,8 +1246,8 @@ app.MapPost("/v1/admin/orgs/{id}/delete", async (HttpContext context, string id)
 {
     var operatorIdentity = AuthorizeOperator(context);
     var request = await ReadJson<AdminReasonRequest>(context);
-    if (!billing.DeleteOrgByOperator(id)) throw new ProtocolException(ErrorCode.NotFound, "Organisation not found.");
-    adminLog.Record(operatorIdentity.Uid, "org-delete", id, request.Reason);
+    if (billing.FindOrg(id) is null) throw new ProtocolException(ErrorCode.NotFound, "Organisation not found.");
+    await Changing(operatorIdentity, "org-delete", id, request.Reason, () => { if (!billing.DeleteOrgByOperator(id)) throw new ProtocolException(ErrorCode.NotFound, "Organisation not found."); return Task.CompletedTask; });
     await WriteJson(context, new Ack { Ok = true });
 });
 
@@ -1193,8 +1285,7 @@ app.MapPut("/v1/admin/billing/plans", async (HttpContext context) =>
 {
     var operatorIdentity = AuthorizeOperator(context);
     var request = await ReadBilling<PlansUpdate>(context);
-    billing.SetPlans(request.Plans);
-    adminLog.Record(operatorIdentity.Uid, "set-plans", "service", request.Reason);
+    await Changing(operatorIdentity, "set-plans", "service", request.Reason, () => { billing.SetPlans(request.Plans); return Task.CompletedTask; });
     await WriteJson(context, new Ack { Ok = true });
 });
 
@@ -1202,8 +1293,7 @@ app.MapPut("/v1/admin/billing/rate", async (HttpContext context) =>
 {
     var operatorIdentity = AuthorizeOperator(context);
     var request = await ReadBilling<RateUpdate>(context);
-    billing.SetRate(request.PkrPerUsd);
-    adminLog.Record(operatorIdentity.Uid, "set-rate", "service", $"{request.PkrPerUsd} PKR per USD: {request.Reason}");
+    await Changing(operatorIdentity, "set-rate", "service", request.Reason, () => { billing.SetRate(request.PkrPerUsd); return Task.CompletedTask; }, $"{request.PkrPerUsd} PKR per USD");
     await WriteJson(context, new Ack { Ok = true });
 });
 
@@ -1211,8 +1301,7 @@ app.MapPut("/v1/admin/billing/limits", async (HttpContext context) =>
 {
     var operatorIdentity = AuthorizeOperator(context);
     var request = await ReadBilling<LimitsUpdate>(context);
-    billing.SetLimitsEnabled(request.Enabled);
-    adminLog.Record(operatorIdentity.Uid, request.Enabled ? "limits-on" : "limits-off", "service", request.Reason);
+    await Changing(operatorIdentity, request.Enabled ? "limits-on" : "limits-off", "service", request.Reason, () => { billing.SetLimitsEnabled(request.Enabled); return Task.CompletedTask; });
     await WriteJson(context, new Ack { Ok = true });
 });
 
@@ -1220,8 +1309,7 @@ app.MapPut("/v1/admin/billing/instructions", async (HttpContext context) =>
 {
     var operatorIdentity = AuthorizeOperator(context);
     var request = await ReadBilling<InstructionsUpdate>(context);
-    billing.SetPaymentInstructions(request.Text);
-    adminLog.Record(operatorIdentity.Uid, "set-payment-instructions", "service", request.Reason);
+    await Changing(operatorIdentity, "set-payment-instructions", "service", request.Reason, () => { billing.SetPaymentInstructions(request.Text); return Task.CompletedTask; });
     await WriteJson(context, new Ack { Ok = true });
 });
 
@@ -1235,8 +1323,9 @@ app.MapPut("/v1/admin/coupons/{code}", async (HttpContext context, string code) 
 {
     var operatorIdentity = AuthorizeOperator(context);
     var request = await ReadBilling<CouponUpdate>(context);
-    var saved = billing.SaveCoupon(code, request.Kind, request.Value, request.PlanIds, request.ExpiresAt, request.MaxRedemptions, request.Active, request.Note);
-    adminLog.Record(operatorIdentity.Uid, "save-coupon", saved.Code, request.Reason);
+    var clean = BillingStore.CleanCode(code);
+    Coupon? saved = null;
+    await Changing(operatorIdentity, "save-coupon", clean, request.Reason, () => { saved = billing.SaveCoupon(clean, request.Kind, request.Value, request.PlanIds, request.ExpiresAt, request.MaxRedemptions, request.Active, request.Note); return Task.CompletedTask; });
     await WriteBilling(context, saved);
 });
 
@@ -1251,8 +1340,9 @@ app.MapPost("/v1/admin/orders/{id}/verify", async (HttpContext context, string i
 {
     var operatorIdentity = AuthorizeOperator(context);
     var request = await ReadBilling<DecisionRequest>(context);
-    var order = billing.VerifyOrder(id, operatorIdentity.Uid);
-    adminLog.Record(operatorIdentity.Uid, "verify-order", order.Subject, $"{order.PlanId} {order.Months}m {order.DuePkr} PKR: {request.Reason}");
+    var before = billing.FindOrder(id) ?? throw new ProtocolException(ErrorCode.NotFound, "That order was not found.");
+    Order? order = null;
+    await Changing(operatorIdentity, "verify-order", before.Subject, request.Reason, () => { order = billing.VerifyOrder(id, operatorIdentity.Uid); return Task.CompletedTask; }, $"{before.PlanId} {before.Months}m {before.DuePkr} PKR");
     await WriteBilling(context, order);
 });
 
@@ -1260,8 +1350,9 @@ app.MapPost("/v1/admin/orders/{id}/reject", async (HttpContext context, string i
 {
     var operatorIdentity = AuthorizeOperator(context);
     var request = await ReadBilling<DecisionRequest>(context);
-    var order = billing.RejectOrder(id, operatorIdentity.Uid, request.Reason);
-    adminLog.Record(operatorIdentity.Uid, "reject-order", order.Subject, request.Reason);
+    var before = billing.FindOrder(id) ?? throw new ProtocolException(ErrorCode.NotFound, "That order was not found.");
+    Order? order = null;
+    await Changing(operatorIdentity, "reject-order", before.Subject, request.Reason, () => { order = billing.RejectOrder(id, operatorIdentity.Uid, AdminLog.RequireReason(request.Reason)); return Task.CompletedTask; });
     await WriteBilling(context, order);
 });
 
@@ -1278,8 +1369,8 @@ app.MapPost("/v1/admin/users/{uid}/passes", async (HttpContext context, string u
     var subject = BillingStore.AccountSubject(CleanUid(uid));
     var request = await ReadBilling<PassRequest>(context);
     var source = request.Source is "grant" or "manual" ? request.Source : "manual";
-    var pass = billing.AddPass(subject, request.PlanId, request.Months, source, request.Reason);
-    adminLog.Record(operatorIdentity.Uid, "add-pass", subject, $"{request.PlanId} {request.Months}m ({source}): {request.Reason}");
+    Licence? pass = null;
+    await Changing(operatorIdentity, "add-pass", subject, request.Reason, () => { pass = billing.AddPass(subject, request.PlanId, request.Months, source, AdminLog.RequireReason(request.Reason)); return Task.CompletedTask; }, $"{request.PlanId} {request.Months}m ({source})");
     await WriteBilling(context, pass, 201);
 });
 
@@ -1287,12 +1378,12 @@ app.MapPost("/v1/admin/passes/{id}/end", async (HttpContext context, string id) 
 {
     var operatorIdentity = AuthorizeOperator(context);
     var request = await ReadBilling<EndPassRequest>(context);
-    if (!billing.EndPass(id, request.SkipGrace)) throw new ProtocolException(ErrorCode.NotFound, "That pass was not found.");
-    adminLog.Record(operatorIdentity.Uid, "end-pass", id, request.Reason);
+    await Changing(operatorIdentity, "end-pass", id, request.Reason, () => { if (!billing.EndPass(id, request.SkipGrace)) throw new ProtocolException(ErrorCode.NotFound, "That pass was not found."); return Task.CompletedTask; });
     await WriteJson(context, new Ack { Ok = true });
 });
 
 app.Run();
+GC.KeepAlive(dataLock);
 return 0;
 
 public partial class Program;

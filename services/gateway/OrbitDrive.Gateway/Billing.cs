@@ -12,6 +12,8 @@ public interface IBillingPersistence
 {
     IReadOnlyList<KeyValuePair<string, string>> LoadAll();
     void Write(IReadOnlyList<KeyValuePair<string, string?>> changes);
+    /// <summary>Set when what was stored could not be read and was set aside: says where. The store then starts empty and says so loudly (F-009).</summary>
+    string? SetAsideNote => null;
 }
 
 /// <summary>One atomically replaced JSON file (owner-only on Linux): the development relay's billing backend.</summary>
@@ -21,11 +23,34 @@ public sealed class FileBillingPersistence : IBillingPersistence
     private readonly Lock _gate = new();
     private readonly Dictionary<string, string> _all;
 
-    public FileBillingPersistence(string directory)
+    public string? SetAsideNote { get; private set; }
+
+    /// <summary>
+    /// Reads billing.json. A file that cannot be read (a disk fault, a full disk, a hand edit) is moved aside to billing.json.damaged-&lt;time&gt; and the
+    /// relay starts with empty billing instead of failing to start: everyone, including people with no billing at all, stays online (F-009).
+    /// </summary>
+    public FileBillingPersistence(string directory, TimeProvider? time = null)
     {
         Directory.CreateDirectory(directory);
         _file = Path.Join(directory, "billing.json");
-        _all = File.Exists(_file) ? JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(_file)) ?? [] : [];
+        _all = [];
+        if (!File.Exists(_file)) return;
+        try { _all = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(_file)) ?? throw new JsonException("empty"); }
+        catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            var aside = _file + ".damaged-" + (time ?? TimeProvider.System).GetUtcNow().ToUnixTimeSeconds();
+            try { File.Move(_file, aside, overwrite: true); SetAsideNote = $"billing.json could not be read and was moved to {Path.GetFileName(aside)}"; }
+            catch (Exception) { SetAsideNote = "billing.json could not be read and could not be moved aside"; }
+            _all = [];
+        }
+    }
+
+    /// <summary>The entries of a billing.json, read without ever changing the file (used once when switching to Firestore). Empty when absent or unreadable.</summary>
+    public static IReadOnlyList<KeyValuePair<string, string>> ReadOnly(string directory)
+    {
+        var file = Path.Join(directory, "billing.json");
+        try { return File.Exists(file) ? [.. JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(file)) ?? []] : []; }
+        catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException) { return []; }
     }
 
     public IReadOnlyList<KeyValuePair<string, string>> LoadAll() { lock (_gate) return [.. _all]; }
@@ -41,6 +66,32 @@ public sealed class FileBillingPersistence : IBillingPersistence
             File.Move(temp, _file, overwrite: true);
         }
     }
+}
+
+/// <summary>
+/// Used once when the relay moves from the file store to Firestore: if the database holds no billing entries yet, the old file's entries are copied in, so
+/// passes, orders, coupons, usage and organisations are not left behind (F-020). The old file is only read.
+/// </summary>
+public sealed class ImportOnceBillingPersistence(IBillingPersistence primary, Func<IReadOnlyList<KeyValuePair<string, string>>> legacy, ILogger? log = null) : IBillingPersistence
+{
+    private bool _checked;
+    public int Imported { get; private set; }
+
+    public IReadOnlyList<KeyValuePair<string, string>> LoadAll()
+    {
+        var current = primary.LoadAll();
+        if (_checked || current.Count > 0) { _checked = true; return current; }
+        _checked = true;
+        var old = legacy();
+        if (old.Count == 0) return current;
+        primary.Write([.. old.Select(e => new KeyValuePair<string, string?>(e.Key, e.Value))]);
+        Imported = old.Count;
+        log?.LogWarning("Firestore holds no billing data yet: imported {Count} entries from the previous billing.json", old.Count);
+        return old;
+    }
+
+    public void Write(IReadOnlyList<KeyValuePair<string, string?>> changes) => primary.Write(changes);
+    public string? SetAsideNote => primary.SetAsideNote;
 }
 
 /// <summary>Keeps everything in memory only (tests, and a relay run without a data directory).</summary>
@@ -60,11 +111,12 @@ public sealed class MemoryBillingPersistence : IBillingPersistence
 public sealed record Coupon(string Code, string Kind, decimal Value, IReadOnlyList<string> PlanIds, DateTimeOffset? ExpiresAt, int? MaxRedemptions, int Redeemed, bool Active, string? Note);
 
 /// <summary>
-/// A request to buy a pass, with the price locked when it was made. Status: requested, proof_submitted, verified, rejected, cancelled.
+/// A request to buy a pass, with the price locked when it was made. Status: requested, proof_submitted, verified, rejected, cancelled, expired (never paid within a few days).
+/// SameReferenceAs is not stored: the owner's list fills it with the ids of other orders that carry the same payment reference.
 /// Payment is checked by a person in v1 (bank transfer, JazzCash, Easypaisa); an online gateway later calls the same verify step.
 /// </summary>
 public sealed record Order(string Id, string Subject, string PlanId, int Months, decimal ListUsd, decimal DueUsd, int DuePkr, string? CouponCode, string Status,
-    DateTimeOffset CreatedAt, string? Method, string? Reference, string? LicenceId, string? DecidedBy, DateTimeOffset? DecidedAt, string? Reason);
+    DateTimeOffset CreatedAt, string? Method, string? Reference, string? LicenceId, string? DecidedBy, DateTimeOffset? DecidedAt, string? Reason, IReadOnlyList<string>? SameReferenceAs = null);
 
 public sealed record Quote(string PlanId, string PlanName, int Months, decimal ListUsd, decimal DueUsd, int ListPkr, int DuePkr, string? CouponCode, decimal DiscountUsd);
 
@@ -75,6 +127,10 @@ public sealed record OrgMember(string OrgId, string Uid, string Role, DateTimeOf
 public sealed record OrgInvite(string Code, string OrgId, DateTimeOffset ExpiresAt);
 /// <summary>What an organisation's admins did: who, what, when. Never file or folder names.</summary>
 public sealed record OrgEvent(string Id, string OrgId, DateTimeOffset At, string By, string Action, string Detail);
+
+public sealed record ExportOrg(string Name, string Role, string Label, DateTimeOffset JoinedAt);
+/// <summary>What the account export holds about plan and money: plan in force, passes, orders, 30 days of counts, organisation membership.</summary>
+public sealed record AccountBillingExport(string PlanId, IReadOnlyList<Licence> Passes, IReadOnlyList<Order> Orders, IReadOnlyList<BillingStore.UsageDayView> Usage, ExportOrg? Organisation);
 
 /// <summary>What the gateway tells a caller about today's allowance (counts only, never names).</summary>
 public sealed record Allowance(string PlanId, string PlanName, EntitlementState State, DateTimeOffset? EndsAt, PlanLimits Limits, int FilesToday, long BytesToday, DateTimeOffset ResetsAt);
@@ -106,17 +162,31 @@ public sealed class BillingStore : IDisposable
     private readonly Timer? _timer;
     private bool _limitsEnabled;
     private string _instructions = "";
+    private readonly Dictionary<string, long> _relay = [];                        // key: uid|utcDay, bytes relayed that UTC day (the daily relay cap)
+    private readonly DeliveryLedger _deliveries;
+    private readonly bool _damaged;
 
     public BillingStore(IBillingPersistence persistence, TimeProvider time, ILogger? log = null, TimeSpan? flushEvery = null, bool limitsEnabled = false)
     {
         _persistence = persistence; _time = time; _log = log; _limitsEnabled = limitsEnabled;
+        _deliveries = new DeliveryLedger(time);
         foreach (var (key, json) in persistence.LoadAll())
         {
             try { LoadEntry(key, json); }
             catch (Exception e) when (e is JsonException or FormatException or InvalidOperationException) { _log?.LogError("Skipped an unreadable billing entry ({Kind})", key.Split('/')[0]); }
         }
+        if (persistence.SetAsideNote is { } note)
+        {
+            // Deliberate choice for paid customers (F-009): the relay keeps serving, with empty billing, and the plan limits are NOT enforced while this lasts, so nobody
+            // is held to the Free plan because a file was damaged. Ordering stays closed too (the web app and CreateOrder both check LimitsEnabled).
+            _damaged = true;
+            _log?.LogCritical("BILLING DATA COULD NOT BE READ: {Note}. Starting with empty billing; plan limits are switched off until the owner restores it from a backup.", note);
+        }
         if (flushEvery is { } every) _timer = new Timer(_ => Flush(), null, every, every);
     }
+
+    /// <summary>True when the stored billing data was unreadable at start and was set aside (the operator overview and the host monitor report it).</summary>
+    public bool Damaged => _damaged;
 
     private void LoadEntry(string key, string json)
     {
@@ -130,6 +200,7 @@ public sealed class BillingStore : IDisposable
             case "orgmember" when JsonSerializer.Deserialize<OrgMember>(json) is { } member: _members[member.OrgId + "|" + member.Uid] = member; break;
             case "orginvite" when JsonSerializer.Deserialize<OrgInvite>(json) is { } invite: _invites[invite.Code] = invite; break;
             case "orgevent" when JsonSerializer.Deserialize<OrgEvent>(json) is { } evt: (_orgEvents.TryGetValue(evt.OrgId, out var list) ? list : _orgEvents[evt.OrgId] = []).Add(evt); break;
+            case "relay" when parts.Length == 3 && JsonSerializer.Deserialize<long>(json) is var relayBytes: _relay[parts[1] + "|" + parts[2]] = relayBytes; break;
             case "coupon" when JsonSerializer.Deserialize<Coupon>(json) is { } coupon: _coupons[coupon.Code] = coupon; break;
             case "order" when JsonSerializer.Deserialize<Order>(json) is { } order: _orders[order.Id] = order; break;
             case "usage" when parts.Length == 3 && JsonSerializer.Deserialize<UsageDay>(json) is { } day: _usage[parts[1] + "|" + parts[2]] = (day.Files, day.Bytes); break;
@@ -143,7 +214,7 @@ public sealed class BillingStore : IDisposable
     // ---- plans and rate ------------------------------------------------------------------------------------------------------------------------
 
     /// <summary>Whether the plan limits are enforced. Counting always happens; this is the owner's "start date" switch (set in the panel, kept across restarts).</summary>
-    public bool LimitsEnabled { get { lock (_gate) return _limitsEnabled; } }
+    public bool LimitsEnabled { get { lock (_gate) return _limitsEnabled && !_damaged; } }
 
     /// <summary>How to pay (account title, number, steps), written by the owner and shown only to signed-in customers placing an order.</summary>
     public string PaymentInstructions { get { lock (_gate) return _instructions; } }
@@ -235,6 +306,36 @@ public sealed class BillingStore : IDisposable
         }
     }
 
+    // ---- the daily relay cap (kept here so a restart does not hand every account its allowance back, F-018) --------------------------------------
+
+    public long RelayBytesToday(string uid, int utcDay) { lock (_gate) return _relay.GetValueOrDefault(uid + "|" + utcDay); }
+
+    public long RelayBytesAllToday(int utcDay) { lock (_gate) { var suffix = "|" + utcDay; return _relay.Where(e => e.Key.EndsWith(suffix, StringComparison.Ordinal)).Sum(e => e.Value); } }
+
+    public void AddRelayBytes(string uid, int utcDay, long bytes)
+    {
+        if (bytes <= 0) return;
+        lock (_gate)
+        {
+            var key = uid + "|" + utcDay;
+            var total = _relay.GetValueOrDefault(key);
+            total = long.MaxValue - total < bytes ? long.MaxValue : total + bytes;
+            _relay[key] = total;
+            Mark($"relay/{uid}/{utcDay}", JsonSerializer.Serialize(total));
+        }
+    }
+
+    public void ForgetRelayToday(string uid, int utcDay)
+    {
+        lock (_gate) if (_relay.Remove(uid + "|" + utcDay)) Mark($"relay/{uid}/{utcDay}", null);
+    }
+
+    /// <summary>
+    /// Says how much of a file one account has now received across ALL its download links today, and whether this call completed it. Returns true exactly once per
+    /// file (revision) and account and day: that is when the file counts against "files a day". Splitting a download over several links cannot avoid the count (F-014).
+    /// </summary>
+    public bool NoteDelivery(string uid, string fileKey, long size, long start, long written, bool emptyDelivered = false) => _deliveries.Note(uid, fileKey, size, start, written, emptyDelivered);
+
     // ---- usage ---------------------------------------------------------------------------------------------------------------------------------
 
     /// <summary>The Pakistan calendar day number (days since 1970-01-01 in UTC+5).</summary>
@@ -260,13 +361,13 @@ public sealed class BillingStore : IDisposable
     /// Refuses a transfer that would break the plan: a file larger than the per-file limit, or no files / bytes left today. Called before the work starts.
     /// <paramref name="size"/> is the file's size when known (0 when not known yet). The check is before the work, so one transfer may run slightly past the daily bytes.
     /// </summary>
-    public void RequireTransfer(string subject, long size)
+    public void RequireTransfer(string subject, long size, bool countsAsFile = true)
     {
         var a = AllowanceFor(subject);
         var l = a.Limits;
         if (l.BytesPerFile is { } perFile && size > perFile)
             throw new ProtocolException(ErrorCode.LimitExceeded, $"This file is larger than the {Describe(perFile)} per-file limit of the {a.PlanName} plan.");
-        if (l.FilesPerDay is { } files && a.FilesToday >= files)
+        if (countsAsFile && l.FilesPerDay is { } files && a.FilesToday >= files)
             throw new ProtocolException(ErrorCode.LimitExceeded, $"The {a.PlanName} plan allows {files} files a day and today's are used. It resets at midnight Pakistan time.");
         if (l.BytesPerDay is { } bytes && a.BytesToday >= bytes)
             throw new ProtocolException(ErrorCode.LimitExceeded, $"The {a.PlanName} plan's data allowance for today is used. It resets at midnight Pakistan time.");
@@ -299,7 +400,11 @@ public sealed class BillingStore : IDisposable
         }
     }
 
-    /// <summary>Removes everything held for an account (account deletion): passes and usage.</summary>
+    /// <summary>
+    /// Removes what is held for an account (account deletion): passes, usage, relay counts, organisation membership and every order that never became a paid
+    /// order. A verified (paid) order is kept as an accounting record, cut down to what a payment dispute or a tax return needs: its id, plan, length, amounts,
+    /// coupon, payment method and reference, and its dates. The account id is replaced by a one-way label, and the free-text reason is dropped.
+    /// </summary>
     public void Forget(string subject)
     {
         lock (_gate)
@@ -309,12 +414,42 @@ public sealed class BillingStore : IDisposable
                 if (mine.Role == "owner") RemoveOrgLocked(mine.OrgId); else DropMember(mine);
             }
             foreach (var id in _licences.Where(l => l.Value.Subject == subject).Select(l => l.Key).ToList()) { _licences.Remove(id); Mark("licence/" + id, null); }
-            foreach (var id in _orders.Where(o => o.Value.Subject == subject).Select(o => o.Key).ToList()) { _orders.Remove(id); Mark("order/" + id, null); }
+            var label = "deleted:" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(subject)))[..12];
+            foreach (var order in _orders.Values.Where(o => o.Subject == subject).ToList())
+            {
+                if (order.Status == "verified")
+                {
+                    var kept = order with { Subject = label, LicenceId = null, Reason = null, SameReferenceAs = null };
+                    _orders[order.Id] = kept; Mark("order/" + order.Id, JsonSerializer.Serialize(kept));
+                }
+                else { _orders.Remove(order.Id); Mark("order/" + order.Id, null); }
+            }
             foreach (var key in _usage.Keys.Where(k => k.StartsWith(subject + "|", StringComparison.Ordinal)).ToList())
             {
                 _usage.Remove(key);
                 Mark($"usage/{subject}/{key[(subject.Length + 1)..]}", null);
             }
+            if (subject.StartsWith("acct:", StringComparison.Ordinal))
+            {
+                var uid = subject[5..];
+                foreach (var key in _relay.Keys.Where(k => k.StartsWith(uid + "|", StringComparison.Ordinal)).ToList())
+                {
+                    _relay.Remove(key);
+                    Mark($"relay/{uid}/{key[(uid.Length + 1)..]}", null);
+                }
+            }
+        }
+    }
+
+    /// <summary>Everything the service holds about an account's money and plan, for the account export (F-012). Never other people's data.</summary>
+    public AccountBillingExport ExportFor(string uid, int usageDays = 30)
+    {
+        var subject = AccountSubject(uid);
+        lock (_gate)
+        {
+            var org = MembershipLocked(uid) is { } me && _orgs.TryGetValue(me.OrgId, out var o) ? new ExportOrg(o.Name, me.Role, me.Label, me.JoinedAt) : null;
+            return new AccountBillingExport(EntitlementFor(subject).PlanId, [.. _licences.Values.Where(l => l.Subject == subject).OrderBy(l => l.StartsAt)],
+                [.. _orders.Values.Where(x => x.Subject == subject).OrderByDescending(x => x.CreatedAt).Select(x => x with { SameReferenceAs = null })], UsageHistory(subject, usageDays), org);
         }
     }
 
@@ -353,12 +488,15 @@ public sealed class BillingStore : IDisposable
     }
 
     /// <summary>The price for a plan and length, with an optional coupon. Throws when the plan or length is not for sale or the code cannot be used now.</summary>
-    public Quote QuoteFor(string planId, int months, string? couponCode)
+    public Quote QuoteFor(string planId, int months, string? couponCode, string? subject = null)
     {
-        lock (_gate) return QuoteLocked(planId, months, couponCode);
+        lock (_gate) return QuoteLocked(planId, months, couponCode, subject);
     }
 
-    private Quote QuoteLocked(string planId, int months, string? couponCode)
+    /// <summary>Orders that still count against a coupon or the open-order limit: asked for or paid-for-and-waiting, or already verified.</summary>
+    private static bool IsLive(Order o) => o.Status is "requested" or "proof_submitted" or "verified";
+
+    private Quote QuoteLocked(string planId, int months, string? couponCode, string? subject = null)
     {
         var plan = _plans.FirstOrDefault(p => p.Id == planId && p.Purchasable) ?? throw new ProtocolException(ErrorCode.InvalidRequest, "That plan is not for sale.");
         var price = plan.Prices.FirstOrDefault(p => p.Months == months) ?? throw new ProtocolException(ErrorCode.InvalidRequest, "That pass length is not offered.");
@@ -366,12 +504,33 @@ public sealed class BillingStore : IDisposable
         if (string.IsNullOrWhiteSpace(couponCode)) return new Quote(plan.Id, plan.Name, months, price.Usd, price.Usd, listPkr, listPkr, null, 0);
         var code = CleanCode(couponCode);
         var now = _time.GetUtcNow();
-        if (!_coupons.TryGetValue(code, out var coupon) || !coupon.Active || (coupon.ExpiresAt is { } end && now >= end) || (coupon.MaxRedemptions is { } max && coupon.Redeemed >= max)
+        if (!_coupons.TryGetValue(code, out var coupon) || !coupon.Active || (coupon.ExpiresAt is { } end && now >= end)
             || (coupon.PlanIds.Count > 0 && !coupon.PlanIds.Contains(planId)))
             throw new ProtocolException(ErrorCode.InvalidRequest, "That code is not valid for this plan.");
+        // A use is counted when an order is VERIFIED (the money arrived), not when it is asked for. Accounts with an order still open also hold one use each, so a
+        // limited code cannot be over-sold; unpaid orders lapse after a few days (ExpireStale), and one account holds at most one use (F-016).
+        if (coupon.MaxRedemptions is { } max)
+        {
+            ExpireStale();
+            var holders = _orders.Values.Where(o => o.CouponCode == code && o.Status is "requested" or "proof_submitted").Select(o => o.Subject).Distinct().Count();
+            if (coupon.Redeemed + holders >= max) throw new ProtocolException(ErrorCode.InvalidRequest, "That code is not valid for this plan.");
+        }
+        if (subject is not null && _orders.Values.Any(o => o.Subject == subject && o.CouponCode == code && IsLive(o)))
+            throw new ProtocolException(ErrorCode.InvalidRequest, "You have already used this code. Each code can be used once per account.");
         var due = coupon.Kind == "percent" ? Math.Round(price.Usd * (100 - coupon.Value) / 100m, 2, MidpointRounding.AwayFromZero) : Math.Max(0m, price.Usd - coupon.Value);
         var duePkr = price.Usd == 0 ? 0 : (int)(Math.Round(listPkr * due / price.Usd / 50m, MidpointRounding.AwayFromZero) * 50m);
         return new Quote(plan.Id, plan.Name, months, price.Usd, due, listPkr, duePkr, code, price.Usd - due);
+    }
+
+    /// <summary>How long an order that was asked for but never paid stays open.</summary>
+    public static readonly TimeSpan UnpaidOrderLife = TimeSpan.FromDays(3);
+
+    /// <summary>Closes orders nobody paid within <see cref="UnpaidOrderLife"/> ("expired"). An order with a payment reference waits for the owner's check and never expires. Called with the gate held.</summary>
+    private void ExpireStale()
+    {
+        var cutoff = _time.GetUtcNow() - UnpaidOrderLife;
+        foreach (var order in _orders.Values.Where(o => o.Status == "requested" && o.CreatedAt <= cutoff).ToList())
+            Close(order, "expired", null, "not paid within " + (int)UnpaidOrderLife.TotalDays + " days");
     }
 
     public Order CreateOrder(string subject, string planId, int months, string? couponCode, string? method)
@@ -379,10 +538,10 @@ public sealed class BillingStore : IDisposable
         if (method is not null && !Methods.Contains(method)) throw new ProtocolException(ErrorCode.InvalidRequest, "Choose bank, jazzcash, easypaisa, raast or other.");
         lock (_gate)
         {
+            ExpireStale();
             if (_orders.Values.Count(o => o.Subject == subject && o.Status is ("requested" or "proof_submitted")) >= MaxOpenOrders)
                 throw new ProtocolException(ErrorCode.LimitExceeded, "You already have several open orders. Cancel one or wait for it to be checked.");
-            var quote = QuoteLocked(planId, months, couponCode);
-            if (quote.CouponCode is { } code) { var c = _coupons[code]; var used = c with { Redeemed = c.Redeemed + 1 }; _coupons[code] = used; Mark("coupon/" + code, JsonSerializer.Serialize(used)); }
+            var quote = QuoteLocked(planId, months, couponCode, subject);
             var order = new Order(Guid.NewGuid().ToString("N")[..12], subject, quote.PlanId, months, quote.ListUsd, quote.DueUsd, quote.DuePkr, quote.CouponCode, "requested", _time.GetUtcNow(), method, null, null, null, null, null);
             _orders[order.Id] = order;
             Mark("order/" + order.Id, JsonSerializer.Serialize(order));
@@ -390,11 +549,24 @@ public sealed class BillingStore : IDisposable
         }
     }
 
-    public IReadOnlyList<Order> OrdersFor(string subject) { lock (_gate) return [.. _orders.Values.Where(o => o.Subject == subject).OrderByDescending(o => o.CreatedAt)]; }
+    public IReadOnlyList<Order> OrdersFor(string subject) { lock (_gate) { ExpireStale(); return [.. _orders.Values.Where(o => o.Subject == subject).OrderByDescending(o => o.CreatedAt).Select(o => o with { SameReferenceAs = null })]; } }
 
-    public IReadOnlyList<Order> AllOrders(string? status) { lock (_gate) return [.. _orders.Values.Where(o => status is null || o.Status == status).OrderByDescending(o => o.CreatedAt).Take(500)]; }
+    /// <summary>The owner's list. Each order that carries a payment reference also used on another order names those other orders in SameReferenceAs.</summary>
+    public IReadOnlyList<Order> AllOrders(string? status)
+    {
+        lock (_gate)
+        {
+            ExpireStale();
+            var byReference = _orders.Values.Where(o => !string.IsNullOrEmpty(o.Reference)).GroupBy(o => NormalizeReference(o.Reference!)).Where(g => g.Count() > 1).ToDictionary(g => g.Key, g => g.Select(o => o.Id).ToList());
+            return [.. _orders.Values.Where(o => status is null || o.Status == status).OrderByDescending(o => o.CreatedAt).Take(500)
+                .Select(o => o.Reference is { Length: > 0 } r && byReference.TryGetValue(NormalizeReference(r), out var same) ? o with { SameReferenceAs = [.. same.Where(id => id != o.Id)] } : o with { SameReferenceAs = null })];
+        }
+    }
 
-    public Order? FindOrder(string id) { lock (_gate) return _orders.GetValueOrDefault(id); }
+    public Order? FindOrder(string id) { lock (_gate) return _orders.GetValueOrDefault(id) is { } o ? o with { SameReferenceAs = null } : null; }
+
+    /// <summary>A payment reference compared without regard to case, spaces or separators: "txn 778-899" and "TXN778899" are the same reference.</summary>
+    public static string NormalizeReference(string reference) => new([.. reference.Where(char.IsLetterOrDigit).Select(char.ToUpperInvariant)]);
 
     /// <summary>The customer says they paid and gives the payment reference (a transaction id or the last digits). Text only; no screenshots are stored.</summary>
     public Order SubmitProof(string subject, string orderId, string method, string reference)
@@ -402,9 +574,15 @@ public sealed class BillingStore : IDisposable
         reference = (reference ?? "").Trim();
         if (!Methods.Contains(method ?? "")) throw new ProtocolException(ErrorCode.InvalidRequest, "Choose bank, jazzcash, easypaisa, raast or other.");
         if (reference.Length is < 4 or > 80 || reference.Any(char.IsControl)) throw new ProtocolException(ErrorCode.InvalidRequest, "Enter the payment reference (4 to 80 characters).");
+        var normalized = NormalizeReference(reference);
+        if (normalized.Length < 4) throw new ProtocolException(ErrorCode.InvalidRequest, "Enter the payment reference (4 to 80 characters).");
         lock (_gate)
         {
             var order = OwnOpenOrder(subject, orderId);
+            // The same payment cannot pay for two orders. Rejected and cancelled orders do not hold a reference (a customer may be asked to try again); the owner's
+            // list still flags any shared reference.
+            if (_orders.Values.Any(o => o.Id != orderId && o.Status is "proof_submitted" or "verified" && o.Reference is { Length: > 0 } r && NormalizeReference(r) == normalized))
+                throw new ProtocolException(ErrorCode.Conflict, "This payment reference is already used on another order. Check the reference, or contact support if you paid once for both.");
             var updated = order with { Status = "proof_submitted", Method = method, Reference = reference };
             _orders[orderId] = updated;
             Mark("order/" + orderId, JsonSerializer.Serialize(updated));
@@ -414,6 +592,7 @@ public sealed class BillingStore : IDisposable
 
     private Order OwnOpenOrder(string subject, string orderId)
     {
+        ExpireStale();
         if (!_orders.TryGetValue(orderId, out var order) || order.Subject != subject) throw new ProtocolException(ErrorCode.NotFound, "That order was not found.");
         if (order.Status is not ("requested" or "proof_submitted")) throw new ProtocolException(ErrorCode.Conflict, "That order is already closed.");
         return order;
@@ -424,7 +603,7 @@ public sealed class BillingStore : IDisposable
         lock (_gate) return Close(OwnOpenOrder(subject, orderId), "cancelled", null, "cancelled by the customer");
     }
 
-    /// <summary>The owner confirms the money arrived: closes the order and adds the pass (stacking after any running pass of that plan).</summary>
+    /// <summary>The owner confirms the money arrived: closes the order, adds the pass (stacking after any running pass of that plan) and counts the coupon use.</summary>
     public Order VerifyOrder(string orderId, string by)
     {
         lock (_gate)
@@ -432,6 +611,7 @@ public sealed class BillingStore : IDisposable
             if (!_orders.TryGetValue(orderId, out var order)) throw new ProtocolException(ErrorCode.NotFound, "That order was not found.");
             if (order.Status is not ("requested" or "proof_submitted")) throw new ProtocolException(ErrorCode.Conflict, "That order is already closed.");
             var licence = AddPass(order.Subject, order.PlanId, order.Months, "order", "order " + order.Id);
+            if (order.CouponCode is { } code && _coupons.TryGetValue(code, out var c)) { var used = c with { Redeemed = c.Redeemed + 1 }; _coupons[code] = used; Mark("coupon/" + code, JsonSerializer.Serialize(used)); }
             var done = order with { Status = "verified", LicenceId = licence.Id, DecidedBy = by, DecidedAt = _time.GetUtcNow() };
             _orders[orderId] = done;
             Mark("order/" + orderId, JsonSerializer.Serialize(done));
@@ -445,18 +625,12 @@ public sealed class BillingStore : IDisposable
         {
             if (!_orders.TryGetValue(orderId, out var order)) throw new ProtocolException(ErrorCode.NotFound, "That order was not found.");
             if (order.Status is not ("requested" or "proof_submitted")) throw new ProtocolException(ErrorCode.Conflict, "That order is already closed.");
-            return Close(order, "rejected", by, reason);
+            return Close(order, "rejected", by, reason ?? "");
         }
     }
 
     private Order Close(Order order, string status, string? by, string reason)
     {
-        if (order.CouponCode is { } code && _coupons.TryGetValue(code, out var c) && c.Redeemed > 0)
-        {
-            var back = c with { Redeemed = c.Redeemed - 1 };
-            _coupons[code] = back;
-            Mark("coupon/" + code, JsonSerializer.Serialize(back));
-        }
         var closed = order with { Status = status, DecidedBy = by, DecidedAt = _time.GetUtcNow(), Reason = reason.Length > 200 ? reason[..200] : reason };
         _orders[order.Id] = closed;
         Mark("order/" + order.Id, JsonSerializer.Serialize(closed));
@@ -661,7 +835,7 @@ public sealed class BillingStore : IDisposable
         if (subject != AccountSubject(uid)) RecordTransfer(AccountSubject(uid), bytes, fileCompleted);
     }
 
-    public void RequireTransferFor(string uid, long size) => RequireTransfer(SubjectFor(uid), size);
+    public void RequireTransferFor(string uid, long size, bool countsAsFile = true) => RequireTransfer(SubjectFor(uid), size, countsAsFile);
 
     // ---- usage history and operator views (counts only: days, files, bytes; never names or times of transfers) ----------------------------------
 
@@ -753,6 +927,12 @@ public sealed class BillingStore : IDisposable
                 _usage.Remove(key);
                 _dirty[$"usage/{key[..key.LastIndexOf('|')]}/{key[(key.LastIndexOf('|') + 1)..]}"] = null;
             }
+            var utcDay = (int)(_time.GetUtcNow().ToUnixTimeSeconds() / 86400);
+            foreach (var key in _relay.Keys.Where(k => int.TryParse(k[(k.LastIndexOf('|') + 1)..], out var d) && d < utcDay - 2).ToList())
+            {
+                _relay.Remove(key);
+                _dirty[$"relay/{key[..key.LastIndexOf('|')]}/{key[(key.LastIndexOf('|') + 1)..]}"] = null;
+            }
             if (_dirty.Count == 0) return;
             batch = [.. _dirty];
         }
@@ -768,6 +948,48 @@ public sealed class BillingStore : IDisposable
     }
 
     public void Dispose() { _timer?.Dispose(); Flush(); }
+}
+
+/// <summary>
+/// Remembers, in memory, which bytes of which file each account has received today across all its download links, so a file counts once when it is whole
+/// (F-014). Bounded; entries from earlier days are dropped. After a restart the memory is empty, which can only make a file count again (the safe direction).
+/// </summary>
+public sealed class DeliveryLedger(TimeProvider time)
+{
+    private const int MaxEntries = 20_000;
+    private readonly Lock _gate = new();
+    private readonly Dictionary<string, Entry> _files = [];
+
+    private sealed class Entry { public int Day; public bool Counted; public readonly List<(long Start, long End)> Covered = []; }
+
+    public bool Note(string uid, string fileKey, long size, long start, long written, bool emptyDelivered)
+    {
+        var day = BillingStore.DayOf(time.GetUtcNow());
+        var key = uid + "|" + day + "|" + fileKey;
+        lock (_gate)
+        {
+            if (_files.Count >= MaxEntries) foreach (var old in _files.Where(e => e.Value.Day != day).Select(e => e.Key).ToList()) _files.Remove(old);
+            if (_files.Count >= MaxEntries) return false;                     // too many files tracked at once: never invent a count
+            if (!_files.TryGetValue(key, out var entry)) _files[key] = entry = new Entry { Day = day };
+            if (entry.Counted) return false;
+            if (size == 0) { if (!emptyDelivered) return false; entry.Counted = true; return true; }
+            if (written > 0 && start >= 0)
+            {
+                entry.Covered.Add((start, Math.Min(size, start + written)));
+                entry.Covered.Sort();
+                var merged = new List<(long Start, long End)>();
+                foreach (var range in entry.Covered)
+                {
+                    if (merged.Count > 0 && range.Start <= merged[^1].End) merged[^1] = (merged[^1].Start, Math.Max(merged[^1].End, range.End));
+                    else merged.Add(range);
+                }
+                entry.Covered.Clear();
+                entry.Covered.AddRange(merged.Count > 64 ? merged.OrderByDescending(r => r.End - r.Start).Take(64).OrderBy(r => r.Start) : merged);
+            }
+            if (entry.Covered.Sum(r => r.End - r.Start) >= size) { entry.Counted = true; return true; }
+            return false;
+        }
+    }
 }
 
 /// <summary>Maps a billing entry key to a Firestore document id (slashes are not allowed in ids) and back.</summary>

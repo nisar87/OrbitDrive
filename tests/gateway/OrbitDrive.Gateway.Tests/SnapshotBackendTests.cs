@@ -26,7 +26,7 @@ public sealed class SnapshotBackendTests
         var (id, secret, _) = first.CreatePairing("pc1");
         var (_, device, _, _) = first.ClaimPairing(id, secret, alice, "phone");
         first.ConfirmPairing(id, "pc1", approve: true);
-        Assert.True(backend.Saves >= 2);
+        Assert.True(backend.Saves >= 1);                              // an unpaired PC is not saved; pairing it is
 
         var second = Open(backend);                                   // a new process reading the same backend
         Assert.Contains(second.DevicesForOwner("alice"), d => d.Id == device.Id && d.PcIds.Contains("pc1"));

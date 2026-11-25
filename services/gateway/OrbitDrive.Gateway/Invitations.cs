@@ -9,7 +9,10 @@ public sealed class InvitationRecord
     public required string OwnerUid { get; init; }
     public required string PcId { get; init; }
     public required string ReceiverId { get; init; }
-    public required string Name { get; init; }
+    /// <summary>The file's name, SEALED by the PC (prefix <see cref="SealedPrefix"/>): opaque to the relay, so the relay keeps no file name. Only the PC can read it.</summary>
+    public required string SealedName { get; init; }
+    /// <summary>A name sent in the clear by an older PC. Kept in memory only: never saved, never in a backup, gone at restart.</summary>
+    public string? LegacyName { get; set; }
     public required long Size { get; init; }
     public required long ModifiedUnixMs { get; init; }
     /// <summary>Opaque to everyone but the PC that issued it (sealed there). Never returned to a browser.</summary>
@@ -24,10 +27,16 @@ public sealed class InvitationRecord
 /// <summary>
 /// Durable "send to my phone" invitations. An invitation is an offer: it names one receiver (a paired browser), one file and an
 /// expiry. It never contains file bytes and never claims a transfer happened; the file stays on the PC until the receiver accepts.
-/// Stored in OrbitDrive:DataDirectory/invitations.json (atomically replaced) so a restart or reconnect shows the same Inbox.
+/// Stored in OrbitDrive:DataDirectory/invitations.json (atomically replaced), or in the database in Firestore mode, so a restart or reconnect shows the same Inbox.
+/// The relay keeps NO file name: the PC seals the name and only the PC can open it. The Inbox asks the PC for the names when it is shown (F-003).
 /// </summary>
+public sealed record InvitationDocuments(IBillingPersistence Store);
+
 public sealed class Invitations
 {
+    /// <summary>Marks a name the PC sealed. A request whose name does not start with this came from an older PC and is treated as a clear name that must not be kept.</summary>
+    public const string SealedPrefix = "sn1.";
+
     private static readonly TimeSpan KeepFinished = TimeSpan.FromDays(7);
     private readonly GatewayOptions _options;
     private readonly TimeProvider _time;
@@ -35,23 +44,37 @@ public sealed class Invitations
     private readonly string? _file;
     private readonly Lock _gate = new();
     private readonly Dictionary<string, InvitationRecord> _items = [];
+    private readonly IBillingPersistence? _documents;
+    private readonly Dictionary<string, string> _written = [];       // document mode: what the database holds now, so only changes are written
 
-    public Invitations(GatewayOptions options, TimeProvider time, Store store)
+    public Invitations(GatewayOptions options, TimeProvider time, Store store, InvitationDocuments? documents = null)
     {
-        _options = options; _time = time; _store = store;
+        _options = options; _time = time; _store = store; _documents = documents?.Store;
+        if (_documents is not null)
+        {
+            foreach (var (key, json) in _documents.LoadAll())
+            {
+                try
+                {
+                    if (!key.StartsWith("invitation/", StringComparison.Ordinal) || JsonSerializer.Deserialize<Dto>(json) is not { } dto) continue;
+                    _items[dto.Id] = FromDto(dto); _written[key] = json;
+                }
+                catch (Exception e) when (e is JsonException or ArgumentException or NullReferenceException) { /* an unreadable offer is skipped */ }
+            }
+            return;
+        }
         if (options.DataDirectory.Length == 0) return;
         _file = Path.Join(options.DataDirectory, "invitations.json");
         if (!File.Exists(_file)) return;
         try
         {
+            var legacy = false;
             foreach (var dto in JsonSerializer.Deserialize<Dto[]>(File.ReadAllText(_file)) ?? throw new JsonException("empty"))
-                _items[dto.Id] = new InvitationRecord
-                {
-                    Id = dto.Id, OwnerUid = dto.OwnerUid, PcId = dto.PcId, ReceiverId = dto.ReceiverId, Name = dto.Name, Size = dto.Size,
-                    ModifiedUnixMs = dto.ModifiedUnixMs, Grant = dto.Grant, IdempotencyKey = dto.IdempotencyKey,
-                    CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(dto.CreatedUnixMs), ExpiresAt = DateTimeOffset.FromUnixTimeMilliseconds(dto.ExpiresUnixMs),
-                    State = Enum.Parse<InvitationState>(dto.State), Failure = dto.Failure,
-                };
+            {
+                _items[dto.Id] = FromDto(dto);
+                legacy |= !string.IsNullOrEmpty(dto.Name);
+            }
+            if (legacy) Save();      // an older file held clear names: rewrite it without them now
         }
         catch (Exception e) when (e is JsonException or ArgumentException or NullReferenceException)
         {
@@ -60,19 +83,52 @@ public sealed class Invitations
         }
     }
 
-    private sealed record Dto(string Id, string OwnerUid, string PcId, string ReceiverId, string Name, long Size, long ModifiedUnixMs, string Grant,
-        string IdempotencyKey, long CreatedUnixMs, long ExpiresUnixMs, string State, string? Failure);
+    // Name is read from files written before names were sealed (so they can be wiped); it is never written.
+    private sealed record Dto(string Id, string OwnerUid, string PcId, string ReceiverId, string? Name, long Size, long ModifiedUnixMs, string Grant,
+        string IdempotencyKey, long CreatedUnixMs, long ExpiresUnixMs, string State, string? Failure, string? SealedName = null);
+
+    private static InvitationRecord FromDto(Dto dto) => new()
+    {
+        Id = dto.Id, OwnerUid = dto.OwnerUid, PcId = dto.PcId, ReceiverId = dto.ReceiverId, SealedName = dto.SealedName ?? "", Size = dto.Size,
+        ModifiedUnixMs = dto.ModifiedUnixMs, Grant = dto.Grant, IdempotencyKey = dto.IdempotencyKey,
+        CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(dto.CreatedUnixMs), ExpiresAt = DateTimeOffset.FromUnixTimeMilliseconds(dto.ExpiresUnixMs),
+        State = Enum.Parse<InvitationState>(dto.State), Failure = dto.Failure,
+    };
+
+    private static Dto ToDto(InvitationRecord i) => new(i.Id, i.OwnerUid, i.PcId, i.ReceiverId, null, i.Size, i.ModifiedUnixMs, i.Grant,
+        i.IdempotencyKey, i.CreatedAt.ToUnixTimeMilliseconds(), i.ExpiresAt.ToUnixTimeMilliseconds(), i.State.ToString(), i.Failure, i.SealedName);
 
     private void Save()
     {
-        if (_file is null) return;
+        if (_file is null && _documents is null) return;
         var cutoff = _time.GetUtcNow() - KeepFinished;
         foreach (var gone in _items.Values.Where(i => i.State != InvitationState.Pending && i.ExpiresAt < cutoff).ToList()) _items.Remove(gone.Id);
+        if (_documents is not null)
+        {
+            var wanted = _items.Values.ToDictionary(i => "invitation/" + i.Id, i => JsonSerializer.Serialize(ToDto(i)));
+            var changes = new List<KeyValuePair<string, string?>>();
+            foreach (var (key, json) in wanted) if (!_written.TryGetValue(key, out var held) || held != json) changes.Add(new(key, json));
+            foreach (var key in _written.Keys.Where(k => !wanted.ContainsKey(k))) changes.Add(new(key, null));
+            if (changes.Count == 0) return;
+            try { _documents.Write(changes); }
+            catch (Exception) { return; }          // the next change retries; an Inbox that cannot be saved must not stop the PC offering files
+            _written.Clear(); foreach (var (key, json) in wanted) _written[key] = json;
+            return;
+        }
         var temp = _file + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(_items.Values.Select(i => new Dto(i.Id, i.OwnerUid, i.PcId, i.ReceiverId, i.Name, i.Size, i.ModifiedUnixMs, i.Grant,
-            i.IdempotencyKey, i.CreatedAt.ToUnixTimeMilliseconds(), i.ExpiresAt.ToUnixTimeMilliseconds(), i.State.ToString(), i.Failure))));
+        File.WriteAllText(temp, JsonSerializer.Serialize(_items.Values.Select(ToDto)));
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temp, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-        File.Move(temp, _file, overwrite: true);
+        File.Move(temp, _file!, overwrite: true);
+    }
+
+    /// <summary>Account deletion: every offer made to this account's browsers is dropped.</summary>
+    public void ForgetOwner(string ownerUid)
+    {
+        lock (_gate)
+        {
+            foreach (var gone in _items.Values.Where(i => i.OwnerUid == ownerUid).Select(i => i.Id).ToList()) _items.Remove(gone);
+            Save();
+        }
     }
 
     /// <summary>Applies the passage of time and a withdrawn receiver. Called with the gate held.</summary>
@@ -87,7 +143,7 @@ public sealed class Invitations
     /// <summary>The PC offers one file to one of its paired browsers. A retry with the same key returns the same invitation.</summary>
     public InvitationRecord Create(string pcId, CreateInvitationRequest request)
     {
-        if (request.Name.Length is 0 or > 255 || request.Size < 0 || request.Grant.Length is 0 or > 8192 || request.IdempotencyKey.Length is 0 or > 64)
+        if (request.Name.Length is 0 or > 2048 || request.Size < 0 || request.Grant.Length is 0 or > 8192 || request.IdempotencyKey.Length is 0 or > 64)
             throw new ProtocolException(ErrorCode.InvalidRequest, "The invitation is not valid.");
         lock (_gate)
         {
@@ -101,7 +157,9 @@ public sealed class Invitations
             var now = _time.GetUtcNow();
             var created = new InvitationRecord
             {
-                Id = Secrets.Token(12), OwnerUid = receiver.OwnerUid, PcId = pcId, ReceiverId = receiver.Id, Name = request.Name, Size = request.Size,
+                Id = Secrets.Token(12), OwnerUid = receiver.OwnerUid, PcId = pcId, ReceiverId = receiver.Id, Size = request.Size,
+                SealedName = request.Name.StartsWith(SealedPrefix, StringComparison.Ordinal) ? request.Name : "",
+                LegacyName = request.Name.StartsWith(SealedPrefix, StringComparison.Ordinal) ? null : request.Name,
                 ModifiedUnixMs = request.ModifiedUnixMs, Grant = request.Grant, IdempotencyKey = request.IdempotencyKey, CreatedAt = now,
                 ExpiresAt = now.AddSeconds(_options.InvitationTtlSeconds),
             };
@@ -171,11 +229,15 @@ public sealed class Invitations
         }
     }
 
-    public InvitationSummary Summarize(InvitationRecord item, bool sourceOnline) => new()
+    /// <summary>
+    /// For the PC that made the offer: the name field carries the sealed name, which that PC (and only it) can open.
+    /// For a browser, pass the name the PC resolved (or "" when the PC is offline); the relay itself never holds a readable name.
+    /// </summary>
+    public InvitationSummary Summarize(InvitationRecord item, bool sourceOnline, string? resolvedName = null) => new()
     {
         InvitationId = item.Id, PcId = item.PcId, PcName = _store.PcName(item.PcId), ReceiverId = item.ReceiverId,
         ReceiverName = _store.DevicesForPc(item.PcId).FirstOrDefault(d => d.Id == item.ReceiverId)?.Name ?? "",
-        Name = item.Name, Size = item.Size, ModifiedUnixMs = item.ModifiedUnixMs, State = item.State, SourceOnline = sourceOnline,
+        Name = resolvedName ?? (item.SealedName.Length > 0 ? item.SealedName : item.LegacyName ?? ""), Size = item.Size, ModifiedUnixMs = item.ModifiedUnixMs, State = item.State, SourceOnline = sourceOnline,
         CreatedAtUnixMs = item.CreatedAt.ToUnixTimeMilliseconds(), ExpiresAtUnixMs = item.ExpiresAt.ToUnixTimeMilliseconds(), Failure = item.Failure,
     };
 }

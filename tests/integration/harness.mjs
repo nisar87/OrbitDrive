@@ -56,6 +56,10 @@ export async function startGateway(overrides = {}, fixedPort = 0) {
     // Every suite shares one client address and a few accounts; the real limits are exercised in pairing-limits.test.mjs.
     OrbitDrive__PairingClaimsPerMinute: '600',
     OrbitDrive__PairingPollsPerMinute: '6000',
+    // The same goes for the per-address limits on agent connections; relay-edge.test.mjs exercises the real defaults.
+    OrbitDrive__AgentConnectionsPerAddressPerMinute: '100000',
+    OrbitDrive__NewPcRegistrationsPerAddressPerMinute: '100000',
+    OrbitDrive__MaxPendingHandshakesPerAddress: '1000',
     ...overrides,
   };
   const child = spawn('dotnet', [gatewayDll, '--urls', url], { cwd: dirname(gatewayDll), env, stdio: ['ignore', 'pipe', 'pipe'] });

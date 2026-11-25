@@ -485,6 +485,10 @@ export interface AdminOverview {
   relayBytesToday: Int64String;
   relayBytesDailyAlert: Int64String;
   costAlert: boolean;
+  secondFactorRequired: boolean;
+  secondFactorPresent: boolean;
+  billingDamaged: boolean;
+  unpairedPcs: number;
 }
 
 export interface AdminUser {
@@ -505,6 +509,7 @@ export interface AdminReasonRequest {
 
 export interface AdminSettings {
   minAgentVersion: string;
+  reason?: string | null;
 }
 
 export interface AuditEntry {
@@ -1061,7 +1066,11 @@ export const SCHEMA = {
       "relayBytesPerOwnerPerDay": "int64",
       "relayBytesToday": "int64",
       "relayBytesDailyAlert": "int64",
-      "costAlert": "bool"
+      "costAlert": "bool",
+      "secondFactorRequired": "bool",
+      "secondFactorPresent": "bool",
+      "billingDamaged": "bool",
+      "unpairedPcs": "int32"
     },
     "AdminUser": {
       "uid": "string",
@@ -1077,7 +1086,8 @@ export const SCHEMA = {
       "reason": "string"
     },
     "AdminSettings": {
-      "minAgentVersion": "string"
+      "minAgentVersion": "string",
+      "reason": "string?"
     },
     "AuditEntry": {
       "atUnixMs": "int64",

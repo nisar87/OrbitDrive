@@ -4,34 +4,47 @@ using OrbitDrive.Protocol;
 namespace OrbitDrive.Gateway;
 
 /// <summary>
-/// Fixed-window attempt counter for guessable or expensive operations (pairing claims and polls). Memory is bounded:
-/// expired windows are swept and, if the table is still full, new keys are refused rather than tracked without limit.
+/// Fixed-window attempt counter for guessable or expensive operations (pairing claims and polls). Memory is bounded: expired windows are swept and,
+/// if a table is still full, new keys are refused rather than tracked without limit. There are two tables: one for keys anyone on the internet can
+/// create (a client address, before any sign-in) and one for keys only a signed-in account can create. A flood of made-up addresses can therefore fill
+/// only the first and never refuses a signed-in person (F-017).
 /// </summary>
 public sealed class RateLimiter(TimeProvider time)
 {
     private const int MaxKeys = 50_000;
     private static readonly TimeSpan Window = TimeSpan.FromMinutes(1);
-    private readonly Lock _gate = new();
-    private readonly Dictionary<string, (DateTimeOffset Start, int Count)> _windows = [];
+    private readonly Table _anonymous = new(), _signedIn = new();
 
-    /// <summary>Counts one attempt. Returns 0 when allowed, otherwise the number of seconds until the window reopens.</summary>
-    public int Hit(string key, int limitPerMinute)
+    private sealed class Table
+    {
+        public readonly Lock Gate = new();
+        public readonly Dictionary<string, (DateTimeOffset Start, int Count)> Windows = [];
+    }
+
+    /// <summary>Counts one attempt. Returns 0 when allowed, otherwise the number of seconds until the window reopens. <paramref name="anonymous"/> marks a key made from a client address (no sign-in needed to create it).</summary>
+    public int Hit(string key, int limitPerMinute, bool anonymous = false) => Hit(anonymous ? _anonymous : _signedIn, key, limitPerMinute);
+
+    /// <summary>Entries in each table (tests and diagnostics).</summary>
+    public (int Anonymous, int SignedIn) Counts { get { lock (_anonymous.Gate) lock (_signedIn.Gate) return (_anonymous.Windows.Count, _signedIn.Windows.Count); } }
+
+    private int Hit(Table table, string key, int limitPerMinute)
     {
         var now = time.GetUtcNow();
-        lock (_gate)
+        lock (table.Gate)
         {
-            if (_windows.TryGetValue(key, out var window) && now - window.Start < Window)
+            var windows = table.Windows;
+            if (windows.TryGetValue(key, out var window) && now - window.Start < Window)
             {
                 if (window.Count >= limitPerMinute) return Math.Max(1, (int)Math.Ceiling((window.Start + Window - now).TotalSeconds));
-                _windows[key] = (window.Start, window.Count + 1);
+                windows[key] = (window.Start, window.Count + 1);
                 return 0;
             }
-            if (_windows.Count >= MaxKeys)
+            if (windows.Count >= MaxKeys)
             {
-                foreach (var stale in _windows.Where(w => now - w.Value.Start >= Window).Select(w => w.Key).ToList()) _windows.Remove(stale);
-                if (_windows.Count >= MaxKeys) return (int)Window.TotalSeconds;
+                foreach (var stale in windows.Where(w => now - w.Value.Start >= Window).Select(w => w.Key).ToList()) windows.Remove(stale);
+                if (windows.Count >= MaxKeys) return (int)Window.TotalSeconds;
             }
-            _windows[key] = (now, 1);
+            windows[key] = (now, 1);
             return 0;
         }
     }
@@ -52,9 +65,22 @@ public static class ClientAddress
         {
             var forwarded = context.Request.Headers["X-Forwarded-For"].ToString();
             var last = forwarded[(forwarded.LastIndexOf(',') + 1)..].Trim();
-            if (IPAddress.TryParse(last, out var client)) return (client.IsIPv4MappedToIPv6 ? client.MapToIPv4() : client).ToString();
+            if (IPAddress.TryParse(last, out var client)) return Normalize(client);
         }
-        return peer.ToString();
+        return Normalize(peer);
+    }
+
+    /// <summary>
+    /// The key an address is limited by: an IPv4 address as it is; an IPv6 address by its /64 (one household or network holds a whole /64, so
+    /// limiting single IPv6 addresses would let one client use billions of keys).
+    /// </summary>
+    public static string Normalize(IPAddress address)
+    {
+        if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
+        if (address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6) return address.ToString();
+        var bytes = address.GetAddressBytes();
+        Array.Clear(bytes, 8, 8);
+        return new IPAddress(bytes).ToString() + "/64";
     }
 }
 
