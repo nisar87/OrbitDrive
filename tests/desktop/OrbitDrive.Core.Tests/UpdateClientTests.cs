@@ -123,6 +123,21 @@ public sealed class UpdateClientTests : IDisposable
     }
 
     [Fact]
+    public async Task A_version_replaced_by_a_newer_one_says_so_and_a_dropped_connection_says_what_to_check()
+    {
+        var (replaced, _) = Client(r => r.RequestUri == Feed ? Ok(Sign(Manifest())) : new HttpResponseMessage(HttpStatusCode.NotFound));
+        var gone = await Assert.ThrowsAsync<UpdateRejectedException>(async () => await replaced.DownloadAsync((await replaced.CheckAsync(Running, default)).Update!, default));
+        Assert.Equal(UpdateRejection.Interrupted, gone.Reason);
+        Assert.Contains("newer version", gone.Message);
+        Assert.Contains("Nothing was installed", gone.Message);
+
+        var (offline, _) = Client(r => r.RequestUri == Feed ? Ok(Sign(Manifest())) : throw new HttpRequestException("offline"));
+        var down = await Assert.ThrowsAsync<UpdateRejectedException>(async () => await offline.DownloadAsync((await offline.CheckAsync(Running, default)).Update!, default));
+        Assert.Contains("internet connection", down.Message);
+        Assert.Contains("Nothing was installed", down.Message);
+    }
+
+    [Fact]
     public async Task A_replayed_older_signed_manifest_is_refused_after_a_newer_one_was_seen()
     {
         var (client, _) = Client(r => r.RequestUri == Feed ? Ok(Sign(Manifest())) : Ok(Zip));
