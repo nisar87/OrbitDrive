@@ -113,6 +113,15 @@ Honest status of the controls added after the AI-assisted review of 2026-11-25 (
 | Encrypted off-host backup (F-010) | **Ready but off** | see "Off-host backup and the restore drill" |
 | Signed relay releases (F-011) | **Ready but off** | see "Signed releases" |
 
+## Account emails in the operator console (R65)
+
+The gateway saves each account's email and display name (from the verified sign-in token) in the billing store, under `account/<uid>`: in `billing.json` for the file store, in the `billing` Firestore collection otherwise. Accounts that signed in before this change have no email until their next sign-in; the console says "Email not known yet (shows after their next sign-in)". Only `/v1/admin/*` returns it. Operations to know:
+
+- The email is **in `billing.json`, so it is in the daily backups and any off-host copy**. Deleting an account removes it from the live record only; old backups keep it until they are replaced (seven days locally).
+- Audit entries (`admin-audit.jsonl` or the `admin` collection) keep the email as it was at the time, including for `account-deleted`. To honour a removal request, edit that file or document by hand; the console cannot.
+- Emails never appear in URLs or log lines. If you see one in a log, that is a bug: report it.
+- Nothing to configure. To check after deploying: sign in as an operator, open Accounts, and confirm the emails of accounts that have used the service since the deploy.
+
 ## Operators (`--operator-uid`)
 
 The people who may use the owner console are listed in `gateway.env`. Give each Firebase user id once on the bootstrap command line (repeat the flag for more than one):

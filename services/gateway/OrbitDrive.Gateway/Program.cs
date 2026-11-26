@@ -858,7 +858,7 @@ app.MapGet("/v1/account/export", async (HttpContext context) =>
     export["exportedAt"] = DateTimeOffset.UtcNow.ToString("O");
     export["email"] = identity.Email;
     export["billing"] = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(billing.ExportFor(identity.Uid), BillingJson.Options));
-    export["note"] = "Paid orders are kept after an account is deleted, cut down to the order id, plan, length, amounts, payment method and reference, and dates. Operator audit records name the account by id only.";
+    export["note"] = "Paid orders are kept after an account is deleted, cut down to the order id, plan, length, amounts, payment method and reference, and dates. Operator audit records name the account by its id and the email address it had at the time.";
     context.Response.Headers.ContentDisposition = "attachment; filename=\"orbitdrive-account.json\"";
     context.Response.StatusCode = 200;
     context.Response.ContentType = "application/json; charset=utf-8";

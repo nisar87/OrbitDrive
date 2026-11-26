@@ -93,8 +93,8 @@ Action dialog (all risky actions): title naming the action and account, one sent
 ## 7. Safety and privacy (unchanged by the redesign)
 
 - The console is offered only to accounts the relay names as operators; every request is re-checked, and changes need a sign-in from the last 15 minutes.
-- No file or folder names, paths or contents exist in any console data. Organisation views show counts and settings only.
-- Accounts appear as opaque ids (with a copy button). Whether operators should see email addresses is an open owner decision; the default stays "no".
+- No file or folder names, paths or contents exist in any console data. Organisation views show counts and settings only (and, for operators, each member's account email).
+- **Accounts are named by email (R65, owner decision of 2026-11-26, reversing the earlier "opaque ids only" default).** Every place that lists or names an account shows the email (and the display name, if the sign-in provides one) with a short id: Overview attention list, Accounts table, search and drawer title, Organisations owner and members, Billing orders, Audit log actor and target, and the reason dialogs (which name the email, so the operator knows exactly whom a change affects). An account that has not signed in since this was added shows "Email not known yet (shows after their next sign-in)". The email is account identity only: it comes from the verified sign-in token, is stored in the billing record, is returned only by `/v1/admin/*` (operator list and fresh sign-in re-checked), never appears in a URL or a log, and is erased from the billing record when the account is deleted. The audit log keeps the email as it was at the time, so entries stay readable after deletion. Ordinary accounts and organisation admins never receive another account's email (an organisation still shows the label each member chose). File and folder names, paths and what a member moved are still never held or shown.
 - Reasons are required in the interface and by the service; the audit log is read-only.
 - The operator code is a separate download; ordinary accounts never receive it (an existing test checks this).
 

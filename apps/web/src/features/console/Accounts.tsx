@@ -15,7 +15,7 @@ export function Accounts({ ctx, rows }: { ctx: Ctx; rows: AdminAccountRow[] }) {
   const [open, setOpen] = useState<string | null>(null);
   const columns = useMemo<Column<AdminAccountRow>[]>(() => [
     { key: 'uid', header: 'Account', text: (r) => `${searchText(ctx.people, r.uid)} ${r.orgName ?? ''}`, sort: (a, b) => (lookup(ctx.people, a.uid).email ?? a.uid).localeCompare(lookup(ctx.people, b.uid).email ?? b.uid),
-      cell: (r) => <button type="button" className="rowlink who-link" onClick={() => setOpen(r.uid)} aria-label={`Open account ${lookup(ctx.people, r.uid).email ?? shortUid(r.uid)}`}><Who uid={r.uid} people={ctx.people} /></button> },
+      cell: (r) => <button type="button" className="rowlink who-link" onClick={() => setOpen(r.uid)}><span className="sr-only">Open account </span><Who uid={r.uid} people={ctx.people} /></button> },
     { key: 'status', header: 'Status', sort: (a, b) => Number(a.suspended) - Number(b.suspended), cell: statusBadge },
     { key: 'plan', header: 'Plan', sort: (a, b) => a.planName.localeCompare(b.planName), cell: planCell },
     { key: 'org', header: 'Organisation', text: (r) => r.orgName ?? '', sort: (a, b) => (a.orgName ?? '').localeCompare(b.orgName ?? ''), cell: (r) => r.orgName ? <bdi>{r.orgName}</bdi> : <span className="hint">None</span> },

@@ -35,7 +35,7 @@ export function DataControls({ session, onAuthLost, onDeleted }: Props) {
   return (
     <section aria-labelledby="your-data-title" data-testid="data-controls">
       <h3 id="your-data-title">Your data</h3>
-      <p className="hint">The service holds your email address, your approved browsers, your PCs, your choices and, if you have ordered anything, your orders and payment references.</p>
+      <p className="hint">The service holds your email address (and display name, if your sign-in gives one; only the operator of the service can see it), your approved browsers, your PCs, your choices and, if you have ordered anything, your orders and payment references.</p>
       <p className="actions">
         <button type="button" className="secondary" onClick={async () => {
           setMessage(null);
@@ -50,7 +50,7 @@ export function DataControls({ session, onAuthLost, onDeleted }: Props) {
 
       <h3>Delete my account</h3>
       <p className="hint">This disconnects every PC, removes every browser and setting the service holds for you, and then deletes your sign-in (your email address and password). It never deletes anything on your PCs.
-        Paid orders are kept, cut down to the order, plan, length, amounts, payment method and reference, and dates, because they are payment records. A short record that the account was deleted (its id and the time, no email address) is kept in the service's audit log.</p>
+        Paid orders are kept, cut down to the order, plan, length, amounts, payment method and reference, and dates, because they are payment records. A short record that the account was deleted (its id, the email address it had and the time) is kept in the service's audit log, so the operator can still tell whose account it was. Ask us if you want that record removed.</p>
       <label className="stack" htmlFor="delete-phrase">Type “{DELETE_PHRASE}” to confirm</label>
       <input id="delete-phrase" value={phrase} autoComplete="off" onChange={(e) => setPhrase(e.target.value)} />
       <p className="actions">

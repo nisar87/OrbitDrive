@@ -103,3 +103,34 @@ ever exposing a secret. That is a larger change to pairing and is not scheduled.
 ### Review
 
 Re-review at the expiry, and earlier if the web app gains any way to render text from another person as markup, or loads any third-party script.
+
+## AR-3 — R65, operators see account emails; audit entries and backups keep them after deletion — OPEN, accepted by the owner (2026-11-26)
+
+Documentation only (not in `security/audit-exceptions.json`).
+
+| | |
+|---|---|
+| Source | Owner request of 2026-11-26: the operator console must show whom each account is |
+| Scope | Gateway: `account/<uid>` billing entry, `/v1/admin/*` responses, audit entries (`operatorEmail`, `targetEmail`), daily backups of the data directory |
+| Status | Implemented; the privacy page, the account page and `docs/design/ADMIN_CONSOLE_REDESIGN.md` say so |
+
+### What is accepted
+
+- Anyone on the operator list (a recent sign-in, optionally a second factor) can read every known account's email address and display name. That is personal data
+  the console did not show before. It is account identity only: no file or folder name, path or content.
+- The audit log keeps the email as it was when a change was made, without an end date, so it **stays after the account is deleted** (the owner asked for entries to
+  stay readable). The privacy page says so and offers removal on request; there is no console feature to edit the log.
+- The billing record held the email until the account was deleted, and seven days of local backups (and the optional off-host copy, once configured) may hold it
+  until they are replaced.
+
+### Why the risk is limited
+
+- Only `/v1/admin/*` returns it, and each call re-checks the operator list and a recent sign-in. A test signs in as a plain member, a stranger and an
+  organisation admin and checks that no ordinary endpoint returns another account's email.
+- It is never put in a URL or a log line. The organisation panel for customers is unchanged (it shows the label a member chose, never their email).
+- Deleting an account removes the billing copy (unit, emulator and integration tests).
+
+### What would reduce it
+
+Turn on the operator second factor (F-005), keep the operator list short, and consider hashing or truncating the email in audit entries after a retention period.
+
