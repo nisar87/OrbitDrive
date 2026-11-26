@@ -623,7 +623,7 @@ public class BillingTests
         Assert.Null(billing.AccountFor("gone"));
         Assert.DoesNotContain(persistence.LoadAll(), e => e.Value.Contains("gone@example.test") || e.Value.Contains("Gone Person"));
         Assert.Equal("stays@example.test", Store(persistence, new FakeTime()).AccountFor("stays")!.Email);
-        Assert.Empty(Store(persistence, new FakeTime()).KnownAccounts().Where(a => a.Uid == "gone"));
+        Assert.DoesNotContain(Store(persistence, new FakeTime()).KnownAccounts(), a => a.Uid == "gone");
     }
 
     [Fact]

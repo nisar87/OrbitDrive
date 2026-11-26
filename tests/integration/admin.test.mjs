@@ -261,7 +261,8 @@ describe('account deletion', () => {
     const trail = (await admin(operator, 'GET', '/audit')).body.entries.find((e) => e.action === 'account-deleted');
     assert.ok(trail, 'the deletion is in the audit trail, which is the one retained record');
     assert.equal(trail.target, uidOf(OWNER));
-    assert.ok(!JSON.stringify(trail).includes(OWNER), 'the trail has the account id, not the email address');
+    // Owner decision (R65): an audit entry keeps the address as it was at the time, so it stays readable after the account is gone. The service's own record of the account does not (checked after the next save in operator-emails.test.mjs).
+    assert.equal(trail.targetEmail, OWNER, 'the trail names the account by the email it had');
   });
 
   test('the PC can be paired again by a new account afterwards', async () => {

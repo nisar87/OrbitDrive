@@ -88,7 +88,9 @@ describe('who can see it', () => {
 
   test('no ordinary account endpoint returns another account\'s email, for a plain member, a stranger or an organisation admin', async () => {
     // alice owns an organisation; bob joins as a member and carol joins and is made an admin. Dave stays outside.
-    assert.equal((await alice.call('POST', '/v1/account/org', { name: 'Email Test Office' })).status, 201);
+    assert.equal((await op.call('POST', `/v1/admin/users/${alice.uid}/passes`, { planId: 'office', months: 1, reason: 'office pass for the test', source: 'grant' })).status, 201);
+    const created = await alice.call('POST', '/v1/account/org', { name: 'Email Test Office' });
+    assert.equal(created.status, 201, created.text);
     const invite = async () => (await alice.call('POST', '/v1/account/org/invite', {})).body.code;
     assert.equal((await bob.call('POST', '/v1/account/org/join', { code: await invite(), label: 'Bobby' })).status, 200);
     assert.equal((await carol.call('POST', '/v1/account/org/join', { code: await invite(), label: 'Caz' })).status, 200);
