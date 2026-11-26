@@ -30,10 +30,15 @@ export interface UsageDay { date: string; files: number; bytes: number }
 export interface AdminUserDetail {
   uid: string; suspended: boolean; plan: AccountPlan; orgName: string | null; orgRole: string | null; history: UsageDay[];
   pcs: { name: string; agentVersion: string; lastSeen: string }[]; devices: { name: string; createdAt: string; lastUsedAt: string }[];
+  /** From the account's verified sign-in; operators only. Null until the account's next sign-in after this was added. */
+  email: string | null; name: string | null;
 }
-export interface AdminAccountRow { uid: string; suspended: boolean; planId: string; planName: string; state: 'free' | 'active' | 'grace'; endsAt: string | null; orgName: string | null; pcs: number; devices: number; filesToday: number; bytesToday: number }
-export interface AdminOrgRow { id: string; name: string; ownerUid: string; members: number; planId: string; filesToday: number; bytesToday: number; suspended: boolean; createdAt: string }
-export interface AdminOrgDetail { org: AdminOrgRow; members: OrgMember[]; history: UsageDay[]; events: OrgEvent[] }
+export interface AdminAccountRow { uid: string; suspended: boolean; planId: string; planName: string; state: 'free' | 'active' | 'grace'; endsAt: string | null; orgName: string | null; pcs: number; devices: number; filesToday: number; bytesToday: number; email: string | null; name: string | null }
+export interface AdminOrgRow { id: string; name: string; ownerUid: string; members: number; planId: string; filesToday: number; bytesToday: number; suspended: boolean; createdAt: string; ownerEmail: string | null; ownerName: string | null }
+/** An organisation member as the operator sees them. Members themselves and their organisation's admins never get the email (OrgMember has none). */
+export interface AdminOrgMember extends OrgMember { email: string | null; name: string | null }
+export interface AdminDirectory { people: { uid: string; email: string; name: string | null }[] }
+export interface AdminOrgDetail { org: AdminOrgRow; members: AdminOrgMember[]; history: UsageDay[]; events: OrgEvent[] }
 
 export const MIB = 1024 * 1024;
 export const GIB = 1024 * MIB;
@@ -57,6 +62,7 @@ export function limitText(value: number | null, kind: 'count' | 'bytes'): string
 export function percentUsed(used: number, limit: number | null): number | null { return limit === null || limit <= 0 ? null : Math.min(100, Math.round((used / limit) * 100)); }
 
 export const adminApi = {
+  directory: (s: Session) => callJson<AdminDirectory>(s, 'GET', '/v1/admin/directory'),
   accounts: (s: Session) => callJson<AdminAccountRow[]>(s, 'GET', '/v1/admin/accounts'),
   userDetail: (s: Session, uid: string) => callJson<AdminUserDetail>(s, 'GET', `/v1/admin/users/${encodeURIComponent(uid)}/detail`),
   orgs: (s: Session) => callJson<AdminOrgRow[]>(s, 'GET', '/v1/admin/orgs'),

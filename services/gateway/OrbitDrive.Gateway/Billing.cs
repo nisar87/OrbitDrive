@@ -118,6 +118,12 @@ public sealed record Coupon(string Code, string Kind, decimal Value, IReadOnlyLi
 public sealed record Order(string Id, string Subject, string PlanId, int Months, decimal ListUsd, decimal DueUsd, int DuePkr, string? CouponCode, string Status,
     DateTimeOffset CreatedAt, string? Method, string? Reference, string? LicenceId, string? DecidedBy, DateTimeOffset? DecidedAt, string? Reason, IReadOnlyList<string>? SameReferenceAs = null);
 
+/// <summary>
+/// Who an account is, for the operators of the service: the email address (and display name, if the sign-in provides one) from the verified sign-in token, as of the last time the
+/// person used the service. Account identity only: never a file name, a path or anything a person moved. Removed when the account is deleted. Only the operator endpoints return it.
+/// </summary>
+public sealed record AccountRecord(string Uid, string Email, string? Name, DateTimeOffset UpdatedAt);
+
 public sealed record Quote(string PlanId, string PlanName, int Months, decimal ListUsd, decimal DueUsd, int ListPkr, int DuePkr, string? CouponCode, decimal DiscountUsd);
 
 /// <summary>An organisation (a company or office) sharing the owner's Office pass. Members keep their own sign-in; the owner and admins manage who belongs.</summary>
@@ -149,6 +155,7 @@ public sealed class BillingStore : IDisposable
     private readonly ILogger? _log;
     private readonly Lock _gate = new();
     private readonly Dictionary<string, Licence> _licences = [];
+    private readonly Dictionary<string, AccountRecord> _accounts = [];            // key: uid; email and display name from the verified sign-in (operators only)
     private readonly Dictionary<string, (int Files, long Bytes)> _usage = [];     // key: subject|day
     private readonly Dictionary<string, Coupon> _coupons = [];
     private readonly Dictionary<string, Order> _orders = [];
@@ -193,6 +200,7 @@ public sealed class BillingStore : IDisposable
         var parts = key.Split('/');
         switch (parts[0])
         {
+            case "account" when parts.Length == 2 && JsonSerializer.Deserialize<AccountRecord>(json) is { Uid.Length: > 0, Email.Length: > 0 } account: _accounts[account.Uid] = account; break;
             case "licence" when JsonSerializer.Deserialize<Licence>(json) is { } licence: _licences[licence.Id] = licence; break;
             case "config" when parts.Length == 2 && parts[1] == "instructions" && JsonSerializer.Deserialize<string>(json) is { } text: _instructions = text; break;
             case "config" when parts.Length == 2 && parts[1] == "limits" && JsonSerializer.Deserialize<bool>(json) is var enabled: _limitsEnabled = enabled; break;
@@ -258,6 +266,45 @@ public sealed class BillingStore : IDisposable
                 if (price.Months is < 1 or > 36 || price.Usd <= 0 || price.Usd > 100_000 || price.PkrOverride is <= 0) throw new ProtocolException(ErrorCode.InvalidRequest, "Prices must be positive and passes 1 to 36 months.");
             if (plan.Prices.Select(p => p.Months).Distinct().Count() != plan.Prices.Count) throw new ProtocolException(ErrorCode.InvalidRequest, "Each pass length may be priced once.");
         }
+    }
+
+    // ---- who an account is (operators only) ------------------------------------------------------------------------------------------------------
+
+    public const int MaxEmailLength = 254, MaxNameLength = 100;
+
+    /// <summary>
+    /// Remembers the email and display name from a verified sign-in so the operator console can say whom an action affects. Cheap when nothing changed (no write); a change is
+    /// saved with the next flush. Values that do not look like an email or a name are ignored, never stored. Returns true when the stored record changed.
+    /// </summary>
+    public bool NoteAccount(string uid, string? email, string? name)
+    {
+        email = (email ?? "").Trim();
+        if (uid.Length is 0 or > 128 || email.Length is < 3 or > MaxEmailLength || !email.Contains('@') || email.Any(c => char.IsControl(c) || char.IsWhiteSpace(c))) return false;
+        name = (name ?? "").Trim();
+        var cleanName = name.Length is > 0 and <= MaxNameLength && !name.Any(char.IsControl) ? name : null;
+        lock (_gate)
+        {
+            if (_accounts.TryGetValue(uid, out var held) && held.Email == email && held.Name == cleanName) return false;
+            var record = new AccountRecord(uid, email, cleanName, _time.GetUtcNow());
+            _accounts[uid] = record;
+            Mark("account/" + uid, JsonSerializer.Serialize(record));
+            return true;
+        }
+    }
+
+    public AccountRecord? AccountFor(string uid) { lock (_gate) return _accounts.GetValueOrDefault(uid); }
+
+    /// <summary>Every known account's email and name, for the operator console's directory. Never call this from an endpoint an ordinary account can reach.</summary>
+    public IReadOnlyList<AccountRecord> KnownAccounts() { lock (_gate) return [.. _accounts.Values.OrderBy(a => a.Email, StringComparer.OrdinalIgnoreCase)]; }
+
+    /// <summary>The account a pass belongs to, when it belongs to one (for the audit trail).</summary>
+    public string? SubjectOfLicence(string licenceId) { lock (_gate) return _licences.GetValueOrDefault(licenceId)?.Subject; }
+
+    /// <summary>Email for an audit entry's target: accepts a bare account id or an "acct:" subject; null for anything else (organisations, orders, the service).</summary>
+    public string? EmailForTarget(string target)
+    {
+        var uid = target.StartsWith("acct:", StringComparison.Ordinal) ? target[5..] : target;
+        lock (_gate) return _accounts.GetValueOrDefault(uid)?.Email;
     }
 
     // ---- passes --------------------------------------------------------------------------------------------------------------------------------
@@ -432,6 +479,7 @@ public sealed class BillingStore : IDisposable
             if (subject.StartsWith("acct:", StringComparison.Ordinal))
             {
                 var uid = subject[5..];
+                if (_accounts.Remove(uid)) Mark("account/" + uid, null);          // the stored email and name go with the account
                 foreach (var key in _relay.Keys.Where(k => k.StartsWith(uid + "|", StringComparison.Ordinal)).ToList())
                 {
                     _relay.Remove(key);

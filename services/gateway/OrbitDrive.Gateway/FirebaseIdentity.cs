@@ -92,7 +92,8 @@ public sealed class FirebaseIdentityVerifier(GatewayOptions options, TimeProvide
             var authTime = Time("auth_time");
             if (algorithm != "none") revocation?.EnsureNotRevoked(subject, authTime);   // the local Auth emulator has no accounts:lookup (Development only)
             var secondFactor = claims.TryGetProperty("firebase", out var firebaseClaim) && firebaseClaim.ValueKind == JsonValueKind.Object && firebaseClaim.TryGetProperty("sign_in_second_factor", out var factor) && factor.ValueKind == JsonValueKind.String && factor.GetString()!.Length > 0;
-            return new Identity(subject, email, authTime, secondFactor);
+            var displayName = claims.TryGetProperty("name", out var nameClaim) && nameClaim.ValueKind == JsonValueKind.String ? nameClaim.GetString() : null;
+            return new Identity(subject, email, authTime, secondFactor, displayName);
         }
         catch (Exception e) when (e is FormatException or JsonException or KeyNotFoundException or InvalidOperationException or ArgumentOutOfRangeException or CryptographicException) { throw fail; }
     }

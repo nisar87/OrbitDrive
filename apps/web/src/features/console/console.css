@@ -37,3 +37,9 @@
 .banners li { margin: 6px 0; }
 .con .banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .con .banners { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.who { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; max-width: 100%; }
+.who.stacked { flex-direction: column; align-items: flex-start; gap: 0; }
+.who-email { font-weight: 600; overflow-wrap: anywhere; }
+.who-missing { color: var(--muted); font-size: 0.85rem; }
+.who-id { color: var(--muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.kit .rowlink.who-link { max-width: 22rem; white-space: normal; overflow: visible; }

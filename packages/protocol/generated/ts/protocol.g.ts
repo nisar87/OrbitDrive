@@ -518,6 +518,8 @@ export interface AuditEntry {
   action: string;
   target: string;
   detail: string;
+  operatorEmail?: string | null;
+  targetEmail?: string | null;
 }
 
 export interface AuditList {
@@ -1094,7 +1096,9 @@ export const SCHEMA = {
       "operator": "string",
       "action": "string",
       "target": "string",
-      "detail": "string"
+      "detail": "string",
+      "operatorEmail": "string?",
+      "targetEmail": "string?"
     },
     "AuditList": {
       "entries": "AuditEntry[]"

@@ -347,4 +347,28 @@ public sealed class FirestoreBackendTests
         // The same process id with a different start time is a reused id, i.e. the old process is gone.
         Assert.True(FirestoreSnapshotBackend.HolderIsGone($"{Environment.MachineName}|{me.Id}|{me.StartTime.ToUniversalTime().Ticks + 1}|x"));
     }
+
+    [Fact]
+    public async Task An_accounts_email_is_stored_in_billing_survives_a_restart_and_is_erased_with_the_account()
+    {
+        if (EmulatorMissing()) return;
+        var db = NewProject();
+        var first = new BillingStore(new FirestoreBillingPersistence(db), TimeProvider.System);
+        first.NoteAccount("emailacct", "someone@example.test", "Some One");
+        first.NoteAccount("otheracct", "other@example.test", null);
+        first.Flush();
+        var stored = (await db.Collection("billing").GetSnapshotAsync()).Documents.Select(d => d.GetValue<string>("json")).ToList();
+        Assert.Contains(stored, j => j.Contains("someone@example.test"));
+
+        var second = new BillingStore(new FirestoreBillingPersistence(db), TimeProvider.System);   // a new process reading the same database
+        Assert.Equal("someone@example.test", second.AccountFor("emailacct")!.Email);
+        Assert.Equal("Some One", second.AccountFor("emailacct")!.Name);
+
+        second.Forget(BillingStore.AccountSubject("emailacct"));                                   // account deletion
+        second.Flush();
+        var after = (await db.Collection("billing").GetSnapshotAsync()).Documents.Select(d => d.GetValue<string>("json")).ToList();
+        Assert.DoesNotContain(after, j => j.Contains("someone@example.test") || j.Contains("Some One"));
+        Assert.Contains(after, j => j.Contains("other@example.test"));
+        Assert.Null(new BillingStore(new FirestoreBillingPersistence(db), TimeProvider.System).AccountFor("emailacct"));
+    }
 }

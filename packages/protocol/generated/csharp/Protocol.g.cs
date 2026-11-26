@@ -696,6 +696,8 @@ public sealed record AuditEntry
     [JsonPropertyName("action")] public required string Action { get; init; }
     [JsonPropertyName("target")] public required string Target { get; init; }
     [JsonPropertyName("detail")] public required string Detail { get; init; }
+    [JsonPropertyName("operatorEmail")] public string? OperatorEmail { get; init; }
+    [JsonPropertyName("targetEmail")] public string? TargetEmail { get; init; }
 }
 
 public sealed record AuditList

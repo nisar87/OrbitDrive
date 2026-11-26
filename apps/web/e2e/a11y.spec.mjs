@@ -193,6 +193,7 @@ test('Upload (confirmation and finished) and Administration have no automaticall
   await page.getByTestId('admin-account-detail').getByRole('tab', { name: 'Actions' }).click();
   await page.getByTestId('admin-account-detail').getByRole('button', { name: 'Sign out all browsers' }).click();
   await expect(page.getByTestId('admin-confirm')).toBeVisible();
+  await expect(page.getByTestId('admin-confirm')).toContainText('@');   // the dialog names the account by its email
   for (const theme of ['light', 'dark']) { await setTheme(page, theme); await expectAccessible(page, `Administration reason dialog, ${theme}`); }
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('admin-confirm')).toHaveCount(0);

@@ -62,9 +62,14 @@ public sealed record OrgRoleRequest(string Role);
 public sealed record AdminPcView(string Name, string AgentVersion, DateTimeOffset LastSeen);
 public sealed record AdminDeviceView(string Name, DateTimeOffset CreatedAt, DateTimeOffset LastUsedAt);
 /// <summary>What the operator sees of one account: plan, 30 days of counts, and which PCs and browsers belong to it. No file or folder names exist in this view.</summary>
-public sealed record AdminUserDetail(string Uid, bool Suspended, AccountPlanView Plan, string? OrgName, string? OrgRole, IReadOnlyList<BillingStore.UsageDayView> History, IReadOnlyList<AdminPcView> Pcs, IReadOnlyList<AdminDeviceView> Devices);
+public sealed record AdminUserDetail(string Uid, bool Suspended, AccountPlanView Plan, string? OrgName, string? OrgRole, IReadOnlyList<BillingStore.UsageDayView> History, IReadOnlyList<AdminPcView> Pcs, IReadOnlyList<AdminDeviceView> Devices, string? Email = null, string? Name = null);
 /// <summary>One line of the operator's accounts table: plan and today's counts. Counts only; no names of anything the account holds.</summary>
-public sealed record AdminAccountRow(string Uid, bool Suspended, string PlanId, string PlanName, string State, DateTimeOffset? EndsAt, string? OrgName, int Pcs, int Devices, int FilesToday, long BytesToday);
-public sealed record AdminOrgRow(string Id, string Name, string OwnerUid, int Members, string PlanId, int FilesToday, long BytesToday, bool Suspended, DateTimeOffset CreatedAt);
-public sealed record AdminOrgDetail(AdminOrgRow Org, IReadOnlyList<OrgMemberView> Members, IReadOnlyList<BillingStore.UsageDayView> History, IReadOnlyList<OrgEventView> Events);
+public sealed record AdminAccountRow(string Uid, bool Suspended, string PlanId, string PlanName, string State, DateTimeOffset? EndsAt, string? OrgName, int Pcs, int Devices, int FilesToday, long BytesToday, string? Email = null, string? Name = null);
+public sealed record AdminOrgRow(string Id, string Name, string OwnerUid, int Members, string PlanId, int FilesToday, long BytesToday, bool Suspended, DateTimeOffset CreatedAt, string? OwnerEmail = null, string? OwnerName = null);
+/// <summary>An organisation member as the operator sees them: the member's label plus the account's email and display name. Only the operator endpoints use this; an organisation's own admins get <see cref="OrgMemberView"/>, which has no email.</summary>
+public sealed record AdminOrgMemberView(string Uid, string Label, string Role, DateTimeOffset JoinedAt, int Pcs, int Devices, int FilesToday, long BytesToday, string? Email, string? Name);
+/// <summary>One known account in the operator directory. Email and name come from the account's verified sign-in; accounts that have not signed in since this was added are not listed.</summary>
+public sealed record AdminPerson(string Uid, string Email, string? Name);
+public sealed record AdminDirectory(IReadOnlyList<AdminPerson> People);
+public sealed record AdminOrgDetail(AdminOrgRow Org, IReadOnlyList<AdminOrgMemberView> Members, IReadOnlyList<BillingStore.UsageDayView> History, IReadOnlyList<OrgEventView> Events);
 public sealed record MemberHistoryView(string Label, IReadOnlyList<BillingStore.UsageDayView> History);

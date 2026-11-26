@@ -1,15 +1,24 @@
 import type { AdminOverview } from '../../protocol';
 import { formatBytes, formatTime } from '../../format';
 import { Kpi, PageHead } from './ui';
+import type { AdminAccountRow, Order } from '../../billing';
 import { plural, type PageId } from './shared';
+import { lookup, shortUid, uidOfSubject, type People } from './people';
+
+/** Up to three accounts named by email (or short id when the email is not known yet), then "and N more". */
+function names(uids: string[], people: People): string {
+  const named = [...new Set(uids)].map((u) => lookup(people, u).email ?? shortUid(u));
+  return named.length <= 3 ? named.join(', ') : `${named.slice(0, 3).join(', ')} and ${named.length - 3} more`;
+}
 
 /** The first screen: what needs the operator, then the numbers that say whether the service is healthy. */
-export function Overview({ overview, waiting, unpaid, go, refresh }: { overview: AdminOverview | null; waiting: number; unpaid: number; go: (p: PageId) => void; refresh: () => void }) {
+export function Overview({ overview, waiting, unpaid, go, refresh, people, accounts, orders }: { overview: AdminOverview | null; waiting: number; unpaid: number; go: (p: PageId) => void; refresh: () => void; people: People; accounts: AdminAccountRow[]; orders: Order[] }) {
   if (!overview) return <><PageHead title="Overview" /><p className="empty" role="status">Loading…</p></>;
   const items: { key: string; text: string; action: string; to: PageId; tone?: 'bad' }[] = [];
-  if (waiting > 0) items.push({ key: 'orders', text: `${plural(waiting, 'order')} paid and waiting for you to check the money`, action: 'Review orders', to: 'billing' });
+  if (waiting > 0) items.push({ key: 'orders', text: `${plural(waiting, 'order')} paid and waiting for you to check the money, from ${names(orders.filter((o) => o.status === 'proof_submitted').map((o) => uidOfSubject(o.subject) ?? o.subject), people)}`, action: 'Review orders', to: 'billing' });
   if (overview.costAlert) items.push({ key: 'cost', text: `Relayed data today is over the daily alert (${formatBytes(overview.relayBytesToday)} of ${formatBytes(overview.relayBytesDailyAlert)})`, action: 'See accounts', to: 'accounts', tone: 'bad' });
-  if (overview.suspendedUsers > 0) items.push({ key: 'suspended', text: `${plural(overview.suspendedUsers, 'account')} suspended`, action: 'View accounts', to: 'accounts' });
+  const suspendedNames = names(accounts.filter((a) => a.suspended).map((a) => a.uid), people);
+  if (overview.suspendedUsers > 0) items.push({ key: 'suspended', text: `${plural(overview.suspendedUsers, 'account')} suspended${suspendedNames ? `: ${suspendedNames}` : ''}`, action: 'View accounts', to: 'accounts' });
   if (Number(overview.quotaRefusals) > 0) items.push({ key: 'refused', text: `${plural(Number(overview.quotaRefusals), 'transfer')} refused for the daily allowance since the relay started`, action: 'See accounts', to: 'accounts' });
   const banners: { key: string; tone: 'bad' | 'warn'; text: string; action?: string }[] = [];
   if (overview.billingDamaged) banners.push({ key: 'damaged', tone: 'bad', text: 'The billing file could not be read and was set aside. Plans and ordering stay off until it is restored.', action: 'What to do' });

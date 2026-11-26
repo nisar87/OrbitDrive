@@ -130,10 +130,14 @@ static async Task<T> ReadJson<T>(HttpContext context)
     catch (JsonException) { throw new ProtocolException(ErrorCode.InvalidRequest, "Malformed request body."); }
 }
 
-Identity Authenticate(HttpContext context)
+// Who is asking. A verified sign-in also refreshes what the operators see of the account (email and display name from the token; saved in the background, never in a URL or a log).
+// Account deletion passes noteAccount: false, so the request that erases the account cannot write the email again.
+Identity Authenticate(HttpContext context, bool noteAccount = true)
 {
     var header = context.Request.Headers.Authorization.ToString();
-    return verifier.Verify(header.StartsWith("Bearer ", StringComparison.Ordinal) ? header[7..] : null);
+    var identity = verifier.Verify(header.StartsWith("Bearer ", StringComparison.Ordinal) ? header[7..] : null);
+    if (noteAccount) billing.NoteAccount(identity.Uid, identity.Email, identity.Name);
+    return identity;
 }
 
 // Refuses with 429 + Retry-After once a key has used up its attempts for the current minute.
@@ -269,7 +273,7 @@ if (options.DevIdentity.Enabled)
         if (request.Email.Length is < 3 or > 200 || !request.Email.Contains('@')) throw new ProtocolException(ErrorCode.InvalidRequest, "Enter an email address.");
         // Test control: pretend the person signed in this many seconds ago (a long-lived refreshed token), to exercise recent-sign-in checks.
         var ago = int.TryParse(context.Request.Query["signedInAgoSeconds"], out var seconds) && seconds is > 0 and < 86400 * 30 ? TimeSpan.FromSeconds(seconds) : (TimeSpan?)null;
-        var token = dev.Issue(request.Email, TimeSpan.FromHours(8), ago, secondFactor: context.Request.Query["secondFactor"] == "true");   // test control: pretend the sign-in used a second factor
+        var token = dev.Issue(request.Email, TimeSpan.FromHours(8), ago, secondFactor: context.Request.Query["secondFactor"] == "true", name: context.Request.Query["name"].ToString() is { Length: > 0 } devName ? devName : null);   // test control: pretend the sign-in used a second factor
         await WriteJson(context, new DevSignInResponse { IdToken = token, Uid = DevIdentityVerifier.UidFor(token) });
     });
 }
@@ -864,17 +868,18 @@ app.MapGet("/v1/account/export", async (HttpContext context) =>
 // Deleting needs only a recent sign-in (no paired browser), because the service already holds this account's orders and payment references.
 app.MapDelete("/v1/account", async (HttpContext context) =>
 {
-    var identity = Authenticate(context);
+    var identity = Authenticate(context, noteAccount: false);
     RequireRecentSignIn(identity, "Sign out and sign in again before deleting your account.");
     var request = await ReadJson<DeleteAccountRequest>(context);
     if (request.Confirm != "delete my account") throw new ProtocolException(ErrorCode.InvalidRequest, "Type the confirmation phrase exactly to delete your account.");
     var uid = identity.Uid;
+    var emailAtDeletion = billing.AccountFor(uid)?.Email ?? (identity.Email.Length > 0 ? identity.Email : null);   // for the audit note below: it keeps the address as it was, so the entry stays readable
     var (devices, pcs) = store.DeleteAccount(uid);
     EndAllWork(devices);
     invitations.ForgetOwner(uid);
     metrics.Forget(uid);
     billing.Forget(BillingStore.AccountSubject(uid));
-    try { adminLog.Record(uid, "account-deleted", uid, $"{devices.Count} browsers revoked, {pcs.Count} PCs released"); }
+    try { adminLog.Record(uid, "account-deleted", uid, $"{devices.Count} browsers revoked, {pcs.Count} PCs released", emailAtDeletion, emailAtDeletion); }
     catch (ProtocolException) { /* the person's own deletion is done; the note is best effort */ }
     await WriteJson(context, new Ack { Ok = true });
 });
@@ -901,16 +906,21 @@ Identity AuthorizeOperator(HttpContext context)
     return identity;
 }
 
+string? TargetEmail(string target) => billing.EmailForTarget(target) ?? (billing.SubjectOfLicence(target) is { } owner ? billing.EmailForTarget(owner) : null);
+
 // One operator change, in the order the audit asks for: the reason is checked first (3 to 200 characters), the audit record is written BEFORE the change and the change
 // does not happen when the record cannot be written, and a change that then fails leaves a second record saying so (F-006).
 async Task Changing(Identity operatorIdentity, string action, string target, string? reason, Func<Task> change, string detail = "")
 {
     var text = AdminLog.RequireReason(reason);
-    adminLog.Record(operatorIdentity.Uid, action, target, detail.Length > 0 ? $"{detail}: {text}" : text);
+    // The audit entry keeps the operator's and the target account's email as they are now, so it stays readable later (even after the account is deleted).
+    var operatorEmail = operatorIdentity.Email.Length > 0 ? operatorIdentity.Email : null;
+    var targetEmail = TargetEmail(target);
+    adminLog.Record(operatorIdentity.Uid, action, target, detail.Length > 0 ? $"{detail}: {text}" : text, operatorEmail, targetEmail);
     try { await change(); }
     catch (Exception)
     {
-        try { adminLog.Record(operatorIdentity.Uid, action + "-failed", target, "the change was refused or failed"); } catch (ProtocolException) { /* the first record already stands */ }
+        try { adminLog.Record(operatorIdentity.Uid, action + "-failed", target, "the change was refused or failed", operatorEmail, targetEmail); } catch (ProtocolException) { /* the first record already stands */ }
         throw;
     }
 }
@@ -1179,7 +1189,8 @@ app.MapGet("/v1/account/org/audit", (HttpContext context) =>
 AdminOrgRow OrgRow(Organisation o)
 {
     var (files, bytes) = billing.UsageToday("org:" + o.Id);
-    return new AdminOrgRow(o.Id, o.Name, o.OwnerUid, billing.MembersUnchecked(o.Id).Count, billing.EntitlementFor(BillingStore.AccountSubject(o.OwnerUid)).PlanId, files, bytes, o.Suspended, o.CreatedAt);
+    var owner = billing.AccountFor(o.OwnerUid);
+    return new AdminOrgRow(o.Id, o.Name, o.OwnerUid, billing.MembersUnchecked(o.Id).Count, billing.EntitlementFor(BillingStore.AccountSubject(o.OwnerUid)).PlanId, files, bytes, o.Suspended, o.CreatedAt, owner?.Email, owner?.Name);
 }
 
 app.MapGet("/v1/admin/accounts", (HttpContext context) =>
@@ -1188,9 +1199,17 @@ app.MapGet("/v1/admin/accounts", (HttpContext context) =>
     var rows = store.Owners().Take(500).Select(o =>
     {
         var plan = AccountPlan(BillingStore.AccountSubject(o.Uid));
-        return new AdminAccountRow(o.Uid, o.Suspended, plan.PlanId, plan.PlanName, plan.State, plan.EndsAt, billing.OrgOf(o.Uid)?.Org.Name, o.Pcs, o.Devices, plan.FilesToday, plan.BytesToday);
+        var who = billing.AccountFor(o.Uid);
+        return new AdminAccountRow(o.Uid, o.Suspended, plan.PlanId, plan.PlanName, plan.State, plan.EndsAt, billing.OrgOf(o.Uid)?.Org.Name, o.Pcs, o.Devices, plan.FilesToday, plan.BytesToday, who?.Email, who?.Name);
     }).ToList();
     return WriteBilling(context, rows);
+});
+
+// Who is who, for every place the console names an account (orders, passes, audit log, organisation members). Operators only: AuthorizeOperator re-checks the operator list and a fresh sign-in.
+app.MapGet("/v1/admin/directory", (HttpContext context) =>
+{
+    AuthorizeOperator(context);
+    return WriteBilling(context, new AdminDirectory([.. billing.KnownAccounts().Take(5000).Select(a => new AdminPerson(a.Uid, a.Email, a.Name))]));
 });
 
 app.MapGet("/v1/admin/users/{uid}/detail", (HttpContext context, string uid) =>
@@ -1199,9 +1218,10 @@ app.MapGet("/v1/admin/users/{uid}/detail", (HttpContext context, string uid) =>
     uid = CleanUid(uid);
     var subject = BillingStore.AccountSubject(uid);
     var org = billing.OrgOf(uid);
+    var who = billing.AccountFor(uid);
     var detail = new AdminUserDetail(uid, store.IsSuspended(uid), AccountPlan(subject), org?.Org.Name, org?.Me.Role, billing.UsageHistory(subject, 30),
         [.. store.PcsOwnedBy(uid).Select(p => new AdminPcView(p.Name, p.AgentVersion, p.LastSeen))],
-        [.. store.DevicesForOwner(uid).Select(d => new AdminDeviceView(d.Name, d.CreatedAt, d.LastUsedAt))]);
+        [.. store.DevicesForOwner(uid).Select(d => new AdminDeviceView(d.Name, d.CreatedAt, d.LastUsedAt))], who?.Email, who?.Name);
     return WriteBilling(context, detail);
 });
 
@@ -1218,7 +1238,8 @@ app.MapGet("/v1/admin/orgs/{id}", (HttpContext context, string id) =>
     var members = billing.MembersUnchecked(id).Select(m =>
     {
         var (files, bytes) = billing.UsageToday("acct:" + m.Uid);
-        return new OrgMemberView(m.Uid, m.Label, m.Role, m.JoinedAt, store.PcsOwnedBy(m.Uid).Count, store.DevicesForOwner(m.Uid).Count, files, bytes);
+        var who = billing.AccountFor(m.Uid);
+        return new AdminOrgMemberView(m.Uid, m.Label, m.Role, m.JoinedAt, store.PcsOwnedBy(m.Uid).Count, store.DevicesForOwner(m.Uid).Count, files, bytes, who?.Email, who?.Name);
     }).ToList();
     var events = billing.OrgEventsUnchecked(id).Select(e => new OrgEventView(e.At, e.Action, e.Detail, e.By)).ToList();
     return WriteBilling(context, new AdminOrgDetail(OrgRow(org), members, billing.UsageHistory("org:" + id, 30), events));

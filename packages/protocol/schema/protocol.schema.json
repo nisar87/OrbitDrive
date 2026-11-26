@@ -81,7 +81,7 @@
     "AdminUserList": { "users": "AdminUser[]" },
     "AdminReasonRequest": { "reason": "string" },
     "AdminSettings": { "minAgentVersion": "string", "reason": "string?" },
-    "AuditEntry": { "atUnixMs": "int64", "operator": "string", "action": "string", "target": "string", "detail": "string" },
+    "AuditEntry": { "atUnixMs": "int64", "operator": "string", "action": "string", "target": "string", "detail": "string", "operatorEmail": "string?", "targetEmail": "string?" },
     "AuditList": { "entries": "AuditEntry[]" }
   }
 }

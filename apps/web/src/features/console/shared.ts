@@ -1,5 +1,6 @@
 import type { Session } from '../../api';
 import type { ReactNode } from 'react';
+import type { People } from './people';
 
 /** What every console page gets from the shell: the session, a way to report the result of a change, and a way to refresh the shared lists. */
 export interface Ctx {
@@ -10,6 +11,8 @@ export interface Ctx {
   fail: (e: unknown) => void;
   reload: () => Promise<void>;
   go: (page: PageId) => void;
+  /** Who each account is (email and name, from their sign-in). Operators only: the service sends it to nobody else. */
+  people: People;
 }
 export interface AskSpec { title: string; effect: ReactNode; confirmLabel: string; danger?: boolean; done: string; run: (reason: string) => Promise<unknown> }
 export type PageId = 'overview' | 'accounts' | 'orgs' | 'billing' | 'audit' | 'settings';

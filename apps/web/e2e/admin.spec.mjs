@@ -72,17 +72,24 @@ test('an operator sees the administration area, with measured numbers, and can s
   }
   if (original) await page.setViewportSize(original);
   await admin.getByRole('button', { name: 'Accounts', exact: true }).click();
-  const row = admin.getByTestId('admin-users').getByRole('row').filter({ hasText: uidOf(TARGET) });
+  const row = admin.getByTestId('admin-users').getByRole('row').filter({ hasText: TARGET });
   await expect(row).toBeVisible();
   const text = await admin.innerText();
-  for (const secret of [TARGET, 'Target phone', 'Target PC', 'Target files', 'Operator files']) expect(text).not.toContain(secret);
+  // The operator sees whom each account is (R65): the email address, with a short id beside it. Names of PCs, browsers and files stay out of the console.
+  expect(text).toContain(TARGET);
+  expect(text).toContain(uidOf(TARGET).slice(0, 6));
+  expect(text).not.toContain(uidOf(TARGET));                       // only the short form of the id is drawn in the table
+  for (const secret of ['Target phone', 'Target PC', 'Target files', 'Operator files']) expect(text).not.toContain(secret);
   await page.screenshot({ path: join(shots, `admin-overview-${info.project.name}.png`) });
 
   // Search finds the account, and a search that matches nothing says so.
   await admin.getByRole('searchbox').fill('no-such-account-zzz');
   await expect(admin.getByText('Nothing matches.')).toBeVisible();
-  await admin.getByRole('searchbox').fill(uidOf(TARGET).slice(0, 8));
+  await admin.getByRole('searchbox').fill(uidOf(TARGET).slice(0, 8));       // by id
   await expect(row).toBeVisible();
+  await admin.getByRole('searchbox').fill('TARGET@example');                  // by email, whatever the case
+  await expect(row).toBeVisible();
+  await expect(admin.getByTestId('admin-users').getByRole('row').filter({ hasText: OWNER })).toHaveCount(0);
 
   const openActions = async () => {
     await row.getByRole('button', { name: /^Open account/ }).click();
@@ -93,6 +100,7 @@ test('an operator sees the administration area, with measured numbers, and can s
   let drawer = await openActions();
   await drawer.getByRole('button', { name: 'Suspend', exact: true }).click();
   const confirm = page.getByTestId('admin-confirm');
+  await expect(confirm).toContainText(TARGET);                                                  // the dialog names exactly whom this affects
   await expect(confirm.getByRole('button', { name: 'Suspend account' })).toBeDisabled();       // a reason is required
   await confirm.getByRole('button', { name: 'Cancel' }).click();
   await expect(confirm).toHaveCount(0);
@@ -107,12 +115,15 @@ test('an operator sees the administration area, with measured numbers, and can s
   const newest = admin.getByTestId('admin-audit').getByRole('row').nth(1);
   await expect(newest).toContainText('suspend');
   await expect(newest).toContainText('abuse report 7');
+  await expect(newest).toContainText(TARGET);                                                   // target
+  await expect(newest).toContainText(OPERATOR);                                                 // and who did it, as they were at the time
   expect((await target.get('/v1/pcs')).status).toBe(403);
   await page.screenshot({ path: join(shots, `admin-suspended-${info.project.name}.png`) });
 
   await admin.getByRole('button', { name: 'Accounts', exact: true }).click();
-  await admin.getByRole('searchbox').fill(uidOf(TARGET).slice(0, 8));
+  await admin.getByRole('searchbox').fill(TARGET);
   drawer = await openActions();
+  await expect(drawer).toContainText(TARGET);
   await drawer.getByRole('button', { name: 'Lift suspension' }).click();
   await page.getByTestId('admin-confirm').getByLabel('Reason (required)').fill('resolved');
   await page.getByTestId('admin-confirm').getByRole('button', { name: 'Lift suspension' }).click();

@@ -84,7 +84,7 @@ public sealed record AdminDocuments(IBillingPersistence Store);
 
 /// <summary>
 /// Operator-set values that must survive a restart (the minimum PC version) and the audit trail of privileged actions. The trail names the
-/// operator and the account acted on (by id, never by file or path) and is the only operator history kept; it is retained until the operator
+/// operator and the account acted on (by id and by the email address as it was at that moment, never by file or path) and is the only operator history kept; it is retained until the operator
 /// deletes the data (data directory or the "admin" collection), even after an account is deleted. A record is written BEFORE the change it describes,
 /// and when it cannot be written the change must not happen (<see cref="Record"/> throws).
 /// </summary>
@@ -177,10 +177,10 @@ public sealed class AdminLog
     /// Writes one audit entry. Throws <see cref="ProtocolException"/> (Unavailable) when it cannot be stored; the caller has not changed anything yet, so
     /// the operator action does not happen without a record.
     /// </summary>
-    public void Record(string operatorUid, string action, string target, string detail)
+    public void Record(string operatorUid, string action, string target, string detail, string? operatorEmail = null, string? targetEmail = null)
     {
         detail ??= "";
-        var entry = new AuditEntry { AtUnixMs = _time.GetUtcNow().ToUnixTimeMilliseconds(), Operator = operatorUid, Action = action, Target = target, Detail = detail.Length > 200 ? detail[..200] : detail };
+        var entry = new AuditEntry { AtUnixMs = _time.GetUtcNow().ToUnixTimeMilliseconds(), Operator = operatorUid, Action = action, Target = target, Detail = detail.Length > 200 ? detail[..200] : detail, OperatorEmail = operatorEmail, TargetEmail = targetEmail };
         lock (_gate)
         {
             try

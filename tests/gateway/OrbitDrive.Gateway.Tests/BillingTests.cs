@@ -570,4 +570,69 @@ public class BillingTests
             inner.Write(changes);
         }
     }
+
+    // ---- account identity for operators (R65) ----
+
+    [Fact]
+    public void An_accounts_email_and_name_are_remembered_across_a_restart_and_only_written_when_they_change()
+    {
+        var persistence = new MemoryBillingPersistence();
+        var billing = Store(persistence, new FakeTime());
+        Assert.True(billing.NoteAccount("u1", "  Sam@Example.test ", "Sam Example"));
+        Assert.False(billing.NoteAccount("u1", "Sam@Example.test", "Sam Example"));          // nothing changed: nothing to write
+        billing.Flush();
+        var writes = persistence.Writes;
+        billing.NoteAccount("u1", "Sam@Example.test", "Sam Example");
+        billing.Flush();
+        Assert.Equal(writes, persistence.Writes);
+        var again = Store(persistence, new FakeTime());                                       // the relay restarted
+        Assert.Equal("Sam@Example.test", again.AccountFor("u1")!.Email);
+        Assert.Equal("Sam Example", again.AccountFor("u1")!.Name);
+        Assert.True(again.NoteAccount("u1", "sam@new.test", null));                           // the person changed their address
+        Assert.Equal("sam@new.test", again.AccountFor("u1")!.Email);
+        Assert.Null(again.AccountFor("u1")!.Name);
+        Assert.Equal("sam@new.test", again.EmailForTarget("acct:u1"));
+        Assert.Equal("sam@new.test", again.EmailForTarget("u1"));
+        Assert.Null(again.EmailForTarget("someone-else"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("no-at-sign")]
+    [InlineData("a b@example.test")]
+    [InlineData("a@example.test\nX-Injected: 1")]
+    public void Values_that_are_not_an_email_address_are_never_stored(string email)
+    {
+        var billing = Store(new MemoryBillingPersistence(), new FakeTime());
+        Assert.False(billing.NoteAccount("u1", email, "Name"));
+        Assert.Null(billing.AccountFor("u1"));
+        Assert.False(billing.NoteAccount("u1", new string('a', 250) + "@example.test", null));   // longer than an address can be
+    }
+
+    [Fact]
+    public void Deleting_an_account_removes_the_stored_email_and_name_but_leaves_other_accounts_alone()
+    {
+        var persistence = new MemoryBillingPersistence();
+        var billing = Store(persistence, new FakeTime());
+        billing.NoteAccount("gone", "gone@example.test", "Gone Person");
+        billing.NoteAccount("stays", "stays@example.test", null);
+        billing.Flush();
+        Assert.Contains(persistence.LoadAll(), e => e.Value.Contains("gone@example.test"));
+        billing.Forget(BillingStore.AccountSubject("gone"));
+        billing.Flush();
+        Assert.Null(billing.AccountFor("gone"));
+        Assert.DoesNotContain(persistence.LoadAll(), e => e.Value.Contains("gone@example.test") || e.Value.Contains("Gone Person"));
+        Assert.Equal("stays@example.test", Store(persistence, new FakeTime()).AccountFor("stays")!.Email);
+        Assert.Empty(Store(persistence, new FakeTime()).KnownAccounts().Where(a => a.Uid == "gone"));
+    }
+
+    [Fact]
+    public void The_audit_trail_keeps_the_address_as_it_was_at_the_time()
+    {
+        var log = new AdminLog(new GatewayOptions(), new FakeTime());
+        log.Record("op", "suspend", "u1", "spam", "op@example.test", "u1@example.test");
+        var entry = log.Recent(1).Single();
+        Assert.Equal("u1@example.test", entry.TargetEmail);
+        Assert.Equal("op@example.test", entry.OperatorEmail);
+    }
 }

@@ -5,6 +5,8 @@ import { formatBytes } from '../../format';
 import { UsageTable } from '../billing/UsageTable';
 import { Badge, CopyId, DataTable, Drawer, PageHead, TabPanel, Tabs, type Column } from './ui';
 import { dateTime, plural, shortDate, type Ctx } from './shared';
+import { accountLabel, lookup, NOT_KNOWN, searchText, shortUid, type People } from './people';
+import { Who } from './Who';
 
 const statusBadge = (r: AdminAccountRow) => (r.suspended ? <Badge tone="bad">Suspended</Badge> : <Badge tone="ok">Active</Badge>);
 const planCell = (r: AdminAccountRow) => <>{r.planName}{r.state === 'grace' && <> <Badge tone="wait">Ended, grace period</Badge></>}</>;
@@ -12,19 +14,20 @@ const planCell = (r: AdminAccountRow) => <>{r.planName}{r.state === 'grace' && <
 export function Accounts({ ctx, rows }: { ctx: Ctx; rows: AdminAccountRow[] }) {
   const [open, setOpen] = useState<string | null>(null);
   const columns = useMemo<Column<AdminAccountRow>[]>(() => [
-    { key: 'uid', header: 'Account', text: (r) => `${r.uid} ${r.orgName ?? ''}`, sort: (a, b) => a.uid.localeCompare(b.uid), cell: (r) => <button type="button" className="rowlink" onClick={() => setOpen(r.uid)} aria-label={`Open account ${r.uid}`}><bdi>{r.uid}</bdi></button> },
+    { key: 'uid', header: 'Account', text: (r) => `${searchText(ctx.people, r.uid)} ${r.orgName ?? ''}`, sort: (a, b) => (lookup(ctx.people, a.uid).email ?? a.uid).localeCompare(lookup(ctx.people, b.uid).email ?? b.uid),
+      cell: (r) => <button type="button" className="rowlink who-link" onClick={() => setOpen(r.uid)} aria-label={`Open account ${lookup(ctx.people, r.uid).email ?? shortUid(r.uid)}`}><Who uid={r.uid} people={ctx.people} /></button> },
     { key: 'status', header: 'Status', sort: (a, b) => Number(a.suspended) - Number(b.suspended), cell: statusBadge },
     { key: 'plan', header: 'Plan', sort: (a, b) => a.planName.localeCompare(b.planName), cell: planCell },
     { key: 'org', header: 'Organisation', text: (r) => r.orgName ?? '', sort: (a, b) => (a.orgName ?? '').localeCompare(b.orgName ?? ''), cell: (r) => r.orgName ? <bdi>{r.orgName}</bdi> : <span className="hint">None</span> },
     { key: 'pcs', header: 'PCs', numeric: true, sort: (a, b) => a.pcs - b.pcs, cell: (r) => r.pcs },
     { key: 'dev', header: 'Browsers', numeric: true, sort: (a, b) => a.devices - b.devices, cell: (r) => r.devices },
     { key: 'today', header: 'Sent today', numeric: true, sort: (a, b) => a.bytesToday - b.bytesToday, cell: (r) => <>{plural(r.filesToday, 'file')}, {formatSize(r.bytesToday)}</> },
-  ], []);
+  ], [ctx.people]);
   const plans = [...new Set(rows.map((r) => r.planName))];
   return (
     <>
-      <PageHead title="Accounts" summary="Account ids and counts only. Email addresses, names, folders and files are never shown." />
-      <DataTable testId="admin-users" rows={rows} columns={columns} rowKey={(r) => r.uid} caption="Accounts" searchLabel="Search by account id or organisation" empty="No accounts yet. They appear here when someone signs in."
+      <PageHead title="Accounts" summary="Each account is shown by its email address (and name, if the sign-in gave one) with a short id, so you always know whom a change affects. Only you and the other operators see these. Folders and files are never shown." />
+      <DataTable testId="admin-users" rows={rows} columns={columns} rowKey={(r) => r.uid} caption="Accounts" searchLabel="Search by email, name, account id or organisation" empty="No accounts yet. They appear here when someone signs in."
         filters={[
           { label: 'Status', options: [{ value: 'active', label: 'Active' }, { value: 'suspended', label: 'Suspended' }], test: (r, v) => (v === 'suspended') === r.suspended },
           { label: 'Plan', options: plans.map((p) => ({ value: p, label: p })), test: (r, v) => r.planName === v },
@@ -47,12 +50,15 @@ function AccountDrawer({ ctx, uid, onClose }: { ctx: Ctx; uid: string; onClose: 
   }, [session, uid]);
   useEffect(() => { void load(); }, [load]);
 
+  // The drawer's own detail is the freshest source for this account's email; the shared directory covers every other account.
+  const people = useMemo<People>(() => (detail?.email ? new Map(ctx.people).set(uid, { uid, email: detail.email, name: detail.name }) : ctx.people), [ctx.people, detail, uid]);
+  const label = accountLabel(people, uid);
   const act = (action: 'suspend' | 'unsuspend' | 'revoke-all' | 'reset-relay-allowance', spec: { title: string; effect: string; confirm: string; danger?: boolean; done: string }) =>
-    ctx.ask({ title: spec.title, effect: <>{spec.effect} Account <bdi>{uid}</bdi>.</>, confirmLabel: spec.confirm, danger: spec.danger, done: spec.done, run: async (reason) => { await api.adminUserAction(session, uid, action, reason); await load(); } });
+    ctx.ask({ title: spec.title, effect: <>{spec.effect} Account: <strong><bdi>{label}</bdi></strong>.</>, confirmLabel: spec.confirm, danger: spec.danger, done: spec.done, run: async (reason) => { await api.adminUserAction(session, uid, action, reason); await load(); } });
   const plan = detail?.plan;
   return (
-    <Drawer testId="admin-account-detail" title={<>Account <bdi>{uid}</bdi></>} onClose={onClose}
-      subtitle={detail && <>{detail.plan.planName}{detail.suspended ? ' · suspended' : ''}{detail.orgName ? ` · ${detail.orgName}` : ''}</>}>
+    <Drawer testId="admin-account-detail" title={<>Account <bdi>{lookup(people, uid).email ?? shortUid(uid)}</bdi></>} onClose={onClose}
+      subtitle={detail && <>{shortUid(uid)} · {detail.plan.planName}{detail.suspended ? ' · suspended' : ''}{detail.orgName ? ` · ${detail.orgName}` : ''}</>}>
       {error && <p role="alert" className="notice error">{error}</p>}
       {!detail || !plan ? !error && <p className="empty" role="status">Loading…</p> : (
         <>
@@ -62,6 +68,8 @@ function AccountDrawer({ ctx, uid, onClose }: { ctx: Ctx; uid: string; onClose: 
               <section className="section" aria-label="Summary">
                 <dl className="facts">
                   <dt>Status</dt><dd>{detail.suspended ? <Badge tone="bad">Suspended</Badge> : <Badge tone="ok">Active</Badge>}</dd>
+                  <dt>Email</dt><dd>{detail.email ? <><bdi>{detail.email}</bdi> <CopyId value={detail.email} label="email address" /></> : <span className="hint">{NOT_KNOWN}</span>}</dd>
+                  {detail.name && <><dt>Name</dt><dd><bdi>{detail.name}</bdi></dd></>}
                   <dt>Account id</dt><dd><bdi>{uid}</bdi> <CopyId value={uid} label="account id" /></dd>
                   <dt>Plan</dt><dd>{plan.planName}{plan.state !== 'free' && plan.endsAt ? `, until ${shortDate(plan.endsAt)}` : ''}{plan.state === 'grace' ? ' (grace period)' : ''}</dd>
                   <dt>Organisation</dt><dd>{detail.orgName ? <><bdi>{detail.orgName}</bdi> ({detail.orgRole})</> : 'None'}</dd>
@@ -100,7 +108,7 @@ function AccountDrawer({ ctx, uid, onClose }: { ctx: Ctx; uid: string; onClose: 
                     <label>Months<input inputMode="numeric" value={pass.months} onChange={(e) => setPass({ ...pass, months: e.target.value })} /></label>
                     <label>How it was paid<select value={pass.source} onChange={(e) => setPass({ ...pass, source: e.target.value as 'grant' | 'manual' })}><option value="grant">Gift or partner</option><option value="manual">Paid by hand</option></select></label>
                   </div>
-                  <p className="actions"><button type="button" disabled={!(Number(pass.months) >= 1)} onClick={() => ctx.ask({ title: 'Add a pass', effect: <>Give {pass.planId === 'office' ? 'Office' : 'Plus'} for {monthsLabel(Number(pass.months))} to account <bdi>{uid}</bdi>.</>, confirmLabel: 'Add pass', done: 'Pass added',
+                  <p className="actions"><button type="button" disabled={!(Number(pass.months) >= 1)} onClick={() => ctx.ask({ title: 'Add a pass', effect: <>Give {pass.planId === 'office' ? 'Office' : 'Plus'} for {monthsLabel(Number(pass.months))} to account: <strong><bdi>{label}</bdi></strong>.</>, confirmLabel: 'Add pass', done: 'Pass added',
                     run: async (reason) => { await billingApi.addPass(session, uid, pass.planId, Number(pass.months), reason, pass.source); await load(); } })}>Add pass</button></p>
                 </section>
                 <section className="section" aria-label="Orders"><h3>Orders</h3>

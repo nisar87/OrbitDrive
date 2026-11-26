@@ -3,6 +3,8 @@ import { ApiError } from '../../api';
 import { billingApi, formatPkr, formatUsd, GIB, MIB, monthsLabel, type AdminBilling, type Coupon, type EditablePlan, type Order } from '../../billing';
 import { Badge, DataTable, PageHead, TabPanel, Tabs, type Column } from './ui';
 import { plural, shortDate, type Ctx } from './shared';
+import { accountLabel, searchText, uidOfSubject } from './people';
+import { Who } from './Who';
 
 const numberOrNull = (text: string): number | null => (text.trim() === '' ? null : Number(text));
 const statusLabel: Record<string, [string, 'wait' | 'ok' | 'bad' | 'plain']> = {
@@ -37,22 +39,22 @@ export function Billing({ ctx, orders, waiting }: { ctx: Ctx; orders: Order[]; w
 function OrdersTable({ ctx, orders, after }: { ctx: Ctx; orders: Order[]; after: () => Promise<void> }) {
   const decide = (o: Order, kind: 'verify' | 'reject') => ctx.ask({
     title: kind === 'verify' ? 'Activate this order' : 'Reject this order',
-    effect: kind === 'verify' ? <>You have received the money for {o.planId}, {monthsLabel(o.months)}, {formatPkr(o.duePkr, false)} ({formatUsd(o.dueUsd)}). The pass starts now.</> : <>The customer is told the order was not accepted. No pass is added.</>,
+    effect: kind === 'verify' ? <>You have received the money for {o.planId}, {monthsLabel(o.months)}, {formatPkr(o.duePkr, false)} ({formatUsd(o.dueUsd)}) from <strong><bdi>{accountLabel(ctx.people, uidOfSubject(o.subject) ?? o.subject)}</bdi></strong>. The pass starts now.</> : <><strong><bdi>{accountLabel(ctx.people, uidOfSubject(o.subject) ?? o.subject)}</bdi></strong> is told the order was not accepted. No pass is added.</>,
     confirmLabel: kind === 'verify' ? 'Money received: activate' : 'Reject order', danger: kind === 'reject', done: kind === 'verify' ? 'Order activated' : 'Order rejected',
     run: async (reason) => { await (kind === 'verify' ? billingApi.verify(ctx.session, o.id, reason) : billingApi.reject(ctx.session, o.id, reason)); await after(); },
   });
   const columns = useMemo<Column<Order>[]>(() => [
-    { key: 'order', header: 'Order', sort: (a, b) => a.createdAt.localeCompare(b.createdAt), text: (o) => `${o.planId} ${o.id}`, cell: (o) => <><strong>{o.planId}</strong>, {monthsLabel(o.months)}<small className="hint block">Placed {shortDate(o.createdAt)}{o.couponCode ? `, code ${o.couponCode}` : ''}</small></> },
-    { key: 'who', header: 'Account', text: (o) => o.subject, cell: (o) => <bdi className="idtext" title={o.subject}>{o.subject.replace(/^acct:/, '')}</bdi> },
+    { key: 'order', header: 'Order', sort: (a, b) => a.createdAt.localeCompare(b.createdAt), text: (o) => `${o.planId} ${o.id} ${searchText(ctx.people, uidOfSubject(o.subject) ?? o.subject)}`, cell: (o) => <><strong>{o.planId}</strong>, {monthsLabel(o.months)}<small className="hint block">Placed {shortDate(o.createdAt)}{o.couponCode ? `, code ${o.couponCode}` : ''}</small></> },
+    { key: 'who', header: 'Account', text: (o) => searchText(ctx.people, uidOfSubject(o.subject) ?? o.subject), cell: (o) => <Who uid={uidOfSubject(o.subject) ?? o.subject} people={ctx.people} /> },
     { key: 'amount', header: 'Amount', numeric: true, sort: (a, b) => a.dueUsd - b.dueUsd, cell: (o) => <>{formatPkr(o.duePkr, false)} <span className="hint">({formatUsd(o.dueUsd)})</span></> },
     { key: 'paid', header: 'Payment', text: (o) => `${o.method ?? ''} ${o.reference ?? ''}`, cell: (o) => (o.status === 'proof_submitted' ? <>{o.method}, reference <bdi>{o.reference}</bdi>{o.sameReferenceAs && o.sameReferenceAs.length > 0 && <Badge tone="bad">Same reference on {plural(o.sameReferenceAs.length, 'other order')}</Badge>}</> : <span className="hint">None yet</span>) },
     { key: 'status', header: 'Status', sort: (a, b) => a.status.localeCompare(b.status), cell: (o) => { const [text, tone] = statusLabel[o.status] ?? [o.status, 'plain' as const]; return <Badge tone={tone}>{text}</Badge>; } },
     { key: 'do', header: 'Decision', cell: (o) => (o.status === 'proof_submitted' || o.status === 'requested')
       ? <span className="actions"><button type="button" className="small" onClick={() => decide(o, 'verify')}>Activate</button><button type="button" className="ghost small" onClick={() => decide(o, 'reject')}>Reject</button></span> : null },
-  ], []); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [ctx.people]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div data-testid="billing-orders">
-      <DataTable rows={orders} columns={columns} rowKey={(o) => o.id} caption="Orders" searchLabel="Search by plan or account" initialSort={{ key: 'order', dir: 'desc' }} empty="No orders yet."
+      <DataTable rows={orders} columns={columns} rowKey={(o) => o.id} caption="Orders" searchLabel="Search by plan, email or account id" initialSort={{ key: 'order', dir: 'desc' }} empty="No orders yet."
         filters={[{ label: 'Status', options: [{ value: 'proof_submitted', label: 'Paid, to check' }, { value: 'requested', label: 'Not paid yet' }, { value: 'closed', label: 'Finished' }],
           test: (o, v) => (v === 'closed' ? o.status !== 'requested' && o.status !== 'proof_submitted' : o.status === v) }]} />
     </div>
