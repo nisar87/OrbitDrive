@@ -78,10 +78,12 @@ public sealed class UpdateClient(HttpClient http, UpdateVerifier verifier, Updat
         try
         {
             using var response = await http.GetAsync(update.File.Url, HttpCompletionOption.ResponseHeadersRead, cancellation);
+            // The file is removed when a newer version is published, so a "not found" means this version was replaced while the person was updating.
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound) throw new UpdateRejectedException(UpdateRejection.Interrupted, "A newer version of MyOrbitDrive was published while you were updating. Nothing was installed. Choose Check for updates again to get the newest one.");
             response.EnsureSuccessStatusCode();
             await using var body = await response.Content.ReadAsStreamAsync(cancellation);
             return await stager.StageAsync(update, body, cancellation);
         }
-        catch (HttpRequestException) { throw new UpdateRejectedException(UpdateRejection.Interrupted, "The download failed. Nothing was installed."); }
+        catch (HttpRequestException) { throw new UpdateRejectedException(UpdateRejection.Interrupted, "The download failed. Nothing was installed. Check this PC's internet connection (a firewall, VPN or antivirus can block downloads from GitHub) and try again."); }
     }
 }
