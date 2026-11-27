@@ -1,6 +1,6 @@
 # Security
 
-MyOrbitDrive is pre-release software. A development relay and web app are live for testing (real email sign-in; the Windows app is an unsigned preview).
+MyOrbitDrive is an early version. A development relay and web app are live for testing (real email sign-in; the Windows app is an unsigned early version).
 Do not expose a gateway that has development identities switched on: they are not real authentication, and a production gateway refuses to start with them.
 
 - Report vulnerabilities privately to the repository owner (GitHub security advisory on this repository).
